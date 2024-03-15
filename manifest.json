@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "SeeAct Web Agent for Chrome",
+  "version": "1.0",
+  "description": "Allows the user to invoke the SeeAct web agent to perform tasks in the current browser tab/window.",
+  "permissions": [
+    "storage", "tabCapture", "scripting", "debugger", "activeTab"
+  ],
+  "comment_on_permissions": "might want to revisit webNavigation, desktopCapture, tabs, sidePanel, ; also, remove debugger permission before release",
+  "comment_on_host_permissions": "maybe give <all_urls> if/when we want SeeAct agent to be able to move off the current website and/or look things up in a separate tab partway through a process; would also need to do that and nix activeTab if activeTab doesn't cover navigation within the current website",
+  "options_page": "src/options.html"
+
+}

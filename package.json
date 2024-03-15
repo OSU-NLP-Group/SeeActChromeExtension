@@ -1,0 +1,25 @@
+{
+  "name": "osu-nlp-grp-see-act-chrome-extension",
+  "version": "1.0.0",
+  "description": "chrome extension to allow end-users to leverage the logic/behavior of the Python code in the SeeAct repository (i.e. just installing a chrome extension from chrome web store rather than having to install python and playwright locally and then download/run SeeAct).",
+  "scripts": {
+    "test": "jest",
+    "lint": "eslint . --ext .ts"
+  },
+  "keywords": [],
+  "author": "Scott Stephen Salisbury",
+  "license": "UNLICENSED",
+  "private": "true",
+  "devDependencies": {
+    "@types/jest": "^29.5.12",
+    "@typescript-eslint/eslint-plugin": "^7.2.0",
+    "@typescript-eslint/parser": "^7.2.0",
+    "eslint": "^8.57.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.2",
+    "typescript": "^5.4.2"
+  },
+  "dependencies": {
+    "chrome-types": "^0.1.273"
+  }
+}

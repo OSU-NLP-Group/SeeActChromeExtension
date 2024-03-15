@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>SeeAct Agent Options</title>
+</head>
+<body>
+
+<!--todo add code to initialize everything on options page load based on chrome.storage.local-->
+
+<label for="open-ai-api-key">OpenAI API Key</label>
+<input type="text" id="open-ai-api-key" placeholder="Enter OpenAI API key here">
+
+<label for="fixed-choice-batch-size">Fixed-Choice Batch Size (how many elements to show to agent at a time when it's deciding what to interact with next)</label>
+<input type="number" id="fixed-choice-batch-size" min="0" value="17", step="1">
+
+<label for="dynamic-choice-batch-size">Dynamic factor for batch size of choices; Explanation below</label>
+<input type="number" id="dynamic-choice-batch-size" min="-1" value="-1", step="1">
+<span id="dynamic-choice-batch-size-explanation">If this is greater than 0, the batch size of choices will be determined
+    by dividing the scrolling-height of the page by this number and using the quotient as the number of batches
+    (i.e. splitting the set of interactable elements into that many batches).
+    If this is -1, the Fixed-Choice Batch Size will be used instead.</span>
+
+
+<div id="status"></div>
+
+<button id="save">Save</button>
+<!--todo add js code for save button-->
+<!--can get more example code from these
+https://developer.chrome.com/docs/extensions/develop/ui/options-page
+https://developer.chrome.com/docs/extensions/reference/api/storage
+-->
+
+</body>
+</html>
