@@ -34,7 +34,7 @@ describe('generateNewQueryPrompt', () => {
         const questionDesc: string = "some question desc string";
 
         const expectedPrevActionsStr: string = prevActions.join("\n");
-        const [sysRole, queryText] = generateNewQueryPrompt(sysPrompt, task, [],
+        const [sysRole, queryText] = generateNewQueryPrompt(sysPrompt, task, prevActions,
             questionDesc);
         expect(sysRole).toContain(sysPrompt);
 

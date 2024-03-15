@@ -1,3 +1,9 @@
+/**
+ * @fileoverview This file contains utility functions for formatting prompts
+ */
+
+import _ from "lodash";
+
 export const basicPromptIntro: string = "You are asked to complete the following task: ";
 export const prevActionsIntro: string = "Previous Actions:\n";
 export const noPrevActions: string = "No prior actions\n";
@@ -19,7 +25,19 @@ export const generateNewQueryPrompt =
     (systemPrompt: string, task: string, previousActions: Array<string> | null,
      questionDescription: string
     ): Array<string> => {
+        //can make this a let if a requirement comes in that we should add to or modify it
+        const sysRole: string = systemPrompt;
 
+        let queryText: string = basicPromptIntro + task + "\n\n" + prevActionsIntro;
+        if (_.isEmpty(previousActions)) {
+            queryText += noPrevActions;
+        } else {
+            //previousActions can't be null here b/c of the contract of _.isEmpty()
+            queryText += (previousActions as Array<string>).join("\n") + "\n";
+            //todo ask Boyuan- was the python code supposed to add a newline after the last previous action?
+            // that behavior's been reproduced here for now
+        }
+        queryText += "\n" + questionDescription;
 
-        return ["dummy sys role", "dummy query text"];
+        return [sysRole, queryText];
     }
