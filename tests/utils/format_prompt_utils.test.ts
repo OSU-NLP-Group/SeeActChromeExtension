@@ -1,4 +1,5 @@
 import {
+    _formatOptions,
     _generateOptionName,
     basicPromptIntro,
     generateNewQueryPrompt,
@@ -87,5 +88,41 @@ describe('_generateOptionName', () => {
     });
     it('should return "ZZ" for index 701', () => {
         expect(_generateOptionName(25 + 26 * 26)).toBe("ZZ");
+    });
+    it('should throw an error for index 702', () => {
+        expect(() => _generateOptionName(25 + 26 * 26 + 1)).toThrow();
+    });
+});
+
+describe('_formatOptions', () => {
+    it('should return a string containing a none of the above option if given an empty array', () => {
+        const emptyChoices: Array<Array<string>> = [];
+        const resultStr = _formatOptions(emptyChoices);
+        expect(resultStr).toContain('If none of these elements match your target element, '
+            + 'please select A. None of the other options match the correct element.\n'
+            + 'A. None of the other options match the correct element');
+    });
+    it('should return a string containing the options and a none of the above option if given a non-empty array', () => {
+        const realChoices: Array<Array<string>> = [
+            ["0", "<a id=\"0\">Skip to content</a>"],
+            ["1", "<a id=\"1\">Skip to navigation</a>"],
+            ["5", "button type=\"button\" id=\"5\">Product</button>"]
+        ];
+        const resultStr = _formatOptions(realChoices);
+        const expectedHeader = 'If none of these elements match your target element, '
+            + 'please select D. None of the other options match the correct element.\n';
+        const expectedOptionA = 'A. <a id="0">Skip to content</a>\n';
+        const expectedOptionB = 'B. <a id="1">Skip to navigation</a>\n';
+        const expectedOptionC = 'C. button type="button" id="5">Product</button>\n';
+        const expectedOptionD = 'D. None of the other options match the correct element';
+        expect(resultStr).toContain(expectedHeader)
+        expect(resultStr).toContain(expectedOptionA);
+        expect(resultStr.indexOf(expectedHeader)).toBeLessThan(resultStr.indexOf(expectedOptionA));
+        expect(resultStr).toContain(expectedOptionB);
+        expect(resultStr.indexOf(expectedOptionA)).toBeLessThan(resultStr.indexOf(expectedOptionB));
+        expect(resultStr).toContain(expectedOptionC);
+        expect(resultStr.indexOf(expectedOptionB)).toBeLessThan(resultStr.indexOf(expectedOptionC));
+        expect(resultStr).toContain(expectedOptionD);
+        expect(resultStr.indexOf(expectedOptionC)).toBeLessThan(resultStr.indexOf(expectedOptionD));
     });
 });

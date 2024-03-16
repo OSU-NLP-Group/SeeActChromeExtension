@@ -51,7 +51,7 @@ export const generateNewQueryPrompt =
  * ...
  * ZA-ZZ
  * @param index the 0-based index of an option
- *              behavior undefined if index > (25 + 26*26), i.e. index > 701
+ * @throws Error if index > (25 + 26*26), i.e. index > 701
  * @return an alphabetic identifier for the option
  */
 export const _generateOptionName = (index: number): string => {
@@ -60,19 +60,29 @@ export const _generateOptionName = (index: number): string => {
 
     if (index < 26) {
         return indexToCapitalLetter(index);
-    } else {
+    } else if (index < 702) {
         const firstLetterIndex: number = Math.floor(index / 26) - 1;
         const secondLetterIndex: number = index % 26;
         return indexToCapitalLetter(firstLetterIndex) + indexToCapitalLetter(secondLetterIndex);
+    } else {
+        throw new Error("index out of range");
     }
 }
 
-//todo finish signature
-// todo add docstring
 // todo unit tests
-// const formatOptions(): string => {
-// //todo implement
-// }
+/**
+ * Only exported for use in whitebox-type unit tests. Do not reference in application code outside this module.
+ * @description convert a list of choices to a string, with an introduction at the start and
+ *  a 'none of the above' option added at the end
+ * @param choices a list of lists of strings; each entry in the top-level list represents a choice
+ *                 a given sublist contains the string version of the choice's index
+ *                 and the string describing the option
+ * @return a string representation of the choices, with a 'none of the above' option added at the end
+ */
+export const _formatOptions = (choices: Array<Array<string>>): string => {
+    //todo implement
+    return "dummy";
+}
 
 
 /* todo finish making signature (and then tests) for this once format_options() is done
