@@ -80,8 +80,16 @@ export const _generateOptionName = (index: number): string => {
  * @return a string representation of the choices, with a 'none of the above' option added at the end
  */
 export const _formatOptions = (choices: Array<Array<string>>): string => {
-    //todo implement
-    return "dummy";
+    const noneOfAboveOptionName: string = _generateOptionName(choices.length);
+
+    return `If none of these elements match your target element, please select ${noneOfAboveOptionName}. ` +
+        'None of the other options match the correct element.\n' +
+        choices.map((value, index) =>
+            `${_generateOptionName(index)}. ${value.length === 2 ?
+                value[1] : `invalid choice sublist of length ${value.length}`
+            }\n`
+        ).join('') +
+        `${noneOfAboveOptionName}. None of the other options match the correct element\n\n`;
 }
 
 
