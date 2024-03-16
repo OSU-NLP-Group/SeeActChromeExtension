@@ -55,8 +55,16 @@ export const generateNewQueryPrompt =
  * @return an alphabetic identifier for the option
  */
 export const _generateOptionName = (index: number): string => {
-    return "blargh";
-    //todo actually implement
+    const indexToCapitalLetter = (capitalLetterIndex: number): string =>
+        String.fromCharCode('A'.charCodeAt(0) + capitalLetterIndex);
+
+    if (index < 26) {
+        return indexToCapitalLetter(index);
+    } else {
+        const firstLetterIndex: number = Math.floor(index / 26) - 1;
+        const secondLetterIndex: number = index % 26;
+        return indexToCapitalLetter(firstLetterIndex) + indexToCapitalLetter(secondLetterIndex);
+    }
 }
 
 //todo finish signature
