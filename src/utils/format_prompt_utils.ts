@@ -41,3 +41,43 @@ export const generateNewQueryPrompt =
 
         return [sysRole, queryText];
     }
+
+/**
+ * Only exported for use in whitebox-type unit tests. Do not reference in application code outside this module.
+ * @description convert index to name consisting of one or two letters
+ * A-Z
+ * AA-AZ
+ * BA-BZ
+ * ...
+ * ZA-ZZ
+ * @param index the 0-based index of an option
+ *              behavior undefined if index > (25 + 26*26), i.e. index > 701
+ * @return an alphabetic identifier for the option
+ */
+export const _generateOptionName = (index: number): string => {
+    return "blargh";
+    //todo actually implement
+}
+
+//todo finish signature
+// todo add docstring
+// todo unit tests
+// const formatOptions(): string => {
+// //todo implement
+// }
+
+
+/* todo finish making signature (and then tests) for this once format_options() is done
+const generateNewReferringPrompt = (referringDescription: string, elementFormat: string, actionFormat: string,
+                                    valueFormat: string, choices: Array<string> | null
+): string => {
+
+}*/
+
+
+/*
+//todo docstring
+//todo unit test
+export const getIndexFromOptionName = (optName: string): number => {
+    return 0;//todo implement
+}*/

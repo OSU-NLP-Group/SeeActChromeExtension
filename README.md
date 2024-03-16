@@ -10,3 +10,7 @@ then download/run SeeAct).
 
 Files which export multiple utility methods will have all_lowercase names. Files which export a single class will have
 PascalCase names.
+
+## Testing
+
+White-box as well as black-box types of unit tests (both using jest).

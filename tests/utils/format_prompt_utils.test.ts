@@ -1,4 +1,5 @@
 import {
+    _generateOptionName,
     basicPromptIntro,
     generateNewQueryPrompt,
     noPrevActions,
@@ -47,5 +48,44 @@ describe('generateNewQueryPrompt', () => {
         expect(queryText.indexOf(prevActionsIntro)).toBeLessThan(queryText.indexOf(expectedPrevActionsStr));
         expect(queryText).toContain(questionDesc);
         expect(queryText.indexOf(expectedPrevActionsStr)).toBeLessThan(queryText.indexOf(questionDesc));
+    });
+});
+
+describe('_generateOptionName', () => {
+    it('should return "A" for index 0', () => {
+        expect(_generateOptionName(0)).toBe("A");
+    });
+    it('should return "P" for index 15', () => {
+        expect(_generateOptionName(15)).toBe("P");
+    });
+    it('should return "Z" for index 25', () => {
+        expect(_generateOptionName(25)).toBe("Z");
+    });
+    it('should return "AA" for index 26', () => {
+        expect(_generateOptionName(25 + 1)).toBe("AA");
+    });
+    it('should return "AL" for index 37', () => {
+        expect(_generateOptionName(25 + 12)).toBe("AL");
+    });
+    it('should return "AZ" for index 51', () => {
+        expect(_generateOptionName(25 + 26)).toBe("AZ");
+    });
+    it('should return "BA" for index 52', () => {
+        expect(_generateOptionName(25 + 26 + 1)).toBe("BA");
+    });
+    it('should return "BF" for index 57', () => {
+        expect(_generateOptionName(25 + 26 + 6)).toBe("BF");
+    });
+    it('should return "BZ" for index 77', () => {
+        expect(_generateOptionName(25 + 2 * 26)).toBe("BZ");
+    });
+    it('should return "ZA" for index 677', () => {
+        expect(_generateOptionName(25 + 25 * 26 + 1)).toBe("ZA");
+    });
+    it('should return "ZQ" for index 692', () => {
+        expect(_generateOptionName(25 + 25 * 26 + 17)).toBe("ZQ");
+    });
+    it('should return "ZZ" for index 701', () => {
+        expect(_generateOptionName(25 + 26 * 26)).toBe("ZZ");
     });
 });
