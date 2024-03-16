@@ -139,9 +139,14 @@ export const generateNewReferringPrompt = (referringDescription: string, element
 }
 
 
-/*
-//todo docstring
 //todo unit test
+/**
+ * @description Convert an option name to an index
+ * Inverts the operation of _generateOptionName
+ * @param optName a 1 or 2 letter string representing an option
+ * @throws Error if given a string of length 0, of length > 2, or containing characters that aren't in [A-Z]
+ * @return the 0-based index of the option
+ */
 export const getIndexFromOptionName = (optName: string): number => {
-    return 0;//todo implement
-}*/
+    return -1;//todo implement
+}

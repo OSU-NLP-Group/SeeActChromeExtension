@@ -4,6 +4,7 @@ import {
     basicPromptIntro,
     generateNewQueryPrompt,
     generateNewReferringPrompt,
+    getIndexFromOptionName,
     noPrevActions,
     prevActionsIntro
 } from "../../src/utils/format_prompt_utils";
@@ -168,5 +169,38 @@ describe('generateNewReferringPrompt', () => {
             valueFormat;
         expect(generateNewReferringPrompt(
             referringDescription, elementFormat, actionFormat, valueFormat, choices)).toBe(expectedPrompt);
+    });
+});
+
+describe('getIndexFromOptionName', () => {
+    it('should return 0 for "A"', () => {
+        expect(getIndexFromOptionName("A")).toBe(0);
+    });
+    it('should return 25 for "Z"', () => {
+        expect(getIndexFromOptionName("Z")).toBe(25);
+    });
+    it('should return 26 for "AA"', () => {
+        expect(getIndexFromOptionName("AA")).toBe(26);
+    });
+    it('should return 51 for "AZ"', () => {
+        expect(getIndexFromOptionName("AZ")).toBe(51);
+    });
+    it('should return 52 for "BA"', () => {
+        expect(getIndexFromOptionName("BA")).toBe(52);
+    });
+    it('should return 77 for "BZ"', () => {
+        expect(getIndexFromOptionName("BZ")).toBe(77);
+    });
+    it('should return 701 for "ZZ"', () => {
+        expect(getIndexFromOptionName("ZZ")).toBe(701);
+    });
+    it('should throw an error for "AAA"', () => {
+        expect(() => getIndexFromOptionName("AAA")).toThrow();
+    });
+    it('should throw an error for ""', () => {
+        expect(() => getIndexFromOptionName("")).toThrow();
+    });
+    it('should throw an error for "A!"', () => {
+        expect(() => getIndexFromOptionName("A!")).toThrow();
     });
 });
