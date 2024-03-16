@@ -138,8 +138,6 @@ export const generateNewReferringPrompt = (referringDescription: string, element
     return referringPrompt;
 }
 
-
-//todo unit test
 /**
  * @description Convert an option name to an index
  * Inverts the operation of _generateOptionName
@@ -148,5 +146,16 @@ export const generateNewReferringPrompt = (referringDescription: string, element
  * @return the 0-based index of the option
  */
 export const getIndexFromOptionName = (optName: string): number => {
-    return -1;//todo implement
+    if (!optName.match(/^[A-Z]{1,2}$/)) {
+        throw new Error("Invalid option name");
+    }
+    
+    const capitalLetterToIndex = (capitalLetter: string): number =>
+        capitalLetter.charCodeAt(0) - 'A'.charCodeAt(0);
+
+    if (optName.length === 1) {
+        return capitalLetterToIndex(optName);
+    } else {
+        return (capitalLetterToIndex(optName[0]) + 1) * 26 + capitalLetterToIndex(optName[1]);
+    }
 }
