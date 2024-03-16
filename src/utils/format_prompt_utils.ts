@@ -116,27 +116,24 @@ export const generateNewReferringPrompt = (referringDescription: string, element
     // If he's ok with that, maybe inline this method?
 
     //Add description about how to format output
-    if (referringDescription) {
-        // referringPrompt += referringDescription + "\n\n";
-        //todo reenable after tests are written
-    }
+    referringPrompt += referringDescription + "\n\n";
 
     //Add element prediction format and choices
-
     //Prepare Option texts
     // For exp {1, 2, 4}, generate option
     // For element_attribute, set options field at None
     // todo confer with Boyuan about what the above meant and how it might be clarified
     if (choices) {
-        // referringPrompt += _formatOptions(choices);
-        //todo reenable after tests are written
+        referringPrompt += _formatOptions(choices);
     }
 
+    referringPrompt += elementFormat + "\n\n";
+
     //Format Action Prediction
-    //todo finish impl after tests
+    referringPrompt += actionFormat + "\n\n";
 
     //Format Value Prediction
-    //todo finish impl after tests
+    referringPrompt += valueFormat;
 
     return referringPrompt;
 }
