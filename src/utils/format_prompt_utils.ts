@@ -93,12 +93,53 @@ export const _formatOptions = (choices: Array<Array<string>>): string => {
 }
 
 
-/* todo finish making signature (and then tests) for this once format_options() is done
-const generateNewReferringPrompt = (referringDescription: string, elementFormat: string, actionFormat: string,
-                                    valueFormat: string, choices: Array<string> | null
+/**
+ * @description Generate a new referring prompt based on several components
+ * @param referringDescription describes the overall purpose of the prompt,
+ *                              which involves 'referring' to a particular element in the page
+ * @param elementFormat instructions about how to specify the target element
+ * @param actionFormat instructions about how to specify what action should be performed on the target element
+ * @param valueFormat instructions about whether/how to specify a text value
+ *                      that would be used by that action on the target element
+ * @param choices describes the elements which might be interacted with; each entry in the top-level list is a length-2
+ *                 list, with the first entry being the string version of the choice's index and the second entry
+ *                 being an abbreviated version of the element's html
+ * @return a full prompt for the model to generate an action that refers to a particular element in the page
+ */
+export const generateNewReferringPrompt = (referringDescription: string, elementFormat: string, actionFormat: string,
+                                           valueFormat: string, choices: Array<Array<string>> | null
 ): string => {
+    let referringPrompt: string = "";
 
-}*/
+    //TODO check with Boyuan- I didn't implement the "if some string arg is empty, skip it when building the prompt"
+    // logic from the python code b/c online SeeAct scenarios in python code would always provide all 4 strings
+    // If he's ok with that, maybe inline this method?
+
+    //Add description about how to format output
+    if (referringDescription) {
+        // referringPrompt += referringDescription + "\n\n";
+        //todo reenable after tests are written
+    }
+
+    //Add element prediction format and choices
+
+    //Prepare Option texts
+    // For exp {1, 2, 4}, generate option
+    // For element_attribute, set options field at None
+    // todo confer with Boyuan about what the above meant and how it might be clarified
+    if (choices) {
+        // referringPrompt += _formatOptions(choices);
+        //todo reenable after tests are written
+    }
+
+    //Format Action Prediction
+    //todo finish impl after tests
+
+    //Format Value Prediction
+    //todo finish impl after tests
+
+    return referringPrompt;
+}
 
 
 /*
