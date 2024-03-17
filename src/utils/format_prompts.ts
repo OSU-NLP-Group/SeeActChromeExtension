@@ -1,4 +1,3 @@
-//todo unit test
 /**
  * Only exported for use in whitebox-type unit tests. Do not reference in application code outside this module.
  * @description clean some prefixes/suffixes from a string
@@ -6,6 +5,12 @@
  * @return the processed string
  */
 export const _processString = (input: string): string => {
-    // todo impl
-    return "ktl3qht9urwq";
+    if (input.startsWith('"') && input.endsWith('"')) {
+        input = input.slice(1, -1);
+    }
+    if (input.endsWith(".")) {
+        input = input.slice(0, -1);
+    }
+
+    return input;
 }
