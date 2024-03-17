@@ -19,7 +19,6 @@ export const _processString = (input: string): string => {
 
 export type StrTriple = [string, string, string];
 
-//todo unit test
 /**
  * @description format a list of choices for elements that might be interacted with
  * Note- relative to the original method format_choices() in src/format_prompt.py, the entries in the argument elements
@@ -31,11 +30,26 @@ export type StrTriple = [string, string, string];
  *                  2nd piece is string containing just the element's tag name
  * @param candidateIds the indices of the elements to be included in the formatted list
  * @return a list of pairs of strings, where
- *        the first string in each pair is the index of the element in the list of choices
+ *        the first string in each pair is the index of the element from the original list of elements
  *        and the second string is an abbreviated version of the element's html
  *          (abbreviated start tag, some description, and end tag)
  */
 export const formatChoices = (elements: Array<StrTriple>, candidateIds: Array<number>): Array<StrPair> => {
-    //todo implement
-    return [["bleh", "blargh"]];
+    const badCandidateIds = candidateIds.filter((id) => id < 0 || id >= elements.length);
+    if (badCandidateIds.length > 0) {
+        throw new Error(`out of the candidate id's [${candidateIds}], the id's [${badCandidateIds}] were out of range`);
+    }
+
+    return candidateIds.map((id) => {
+        const [description, tagAndRoleType, tagName] = elements[id];
+
+        let possiblyAbbrevDesc = description;
+        const descriptionSplit: Array<string> = description.split(/\s+/);
+        if ("select" !== tagName && descriptionSplit.length >= 30) {
+            possiblyAbbrevDesc = descriptionSplit.slice(0, 29).join(" ") + "...";
+        }
+
+        const abbreviatedHtml = `<${tagAndRoleType} id="${id}">${possiblyAbbrevDesc}</${tagName}>`;
+        return [`${id}`, abbreviatedHtml];
+    });
 }

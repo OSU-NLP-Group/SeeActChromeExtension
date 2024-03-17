@@ -49,9 +49,9 @@ describe('formatChoices', () => {
     it('should throw an error if a candidate index is out of range', () => {
         const elements: Array<StrTriple> = [['aria-label="Google apps"', 'a role="button"', "a"],
             ['title="Share"', "button", "button"]];
-        const candidateIds: Array<number> = [0, 2];
+        const candidateIds: Array<number> = [0, -1, 2];
         expect(() => formatChoices(elements, candidateIds))
-            .toThrowError("candidate index 2 (at position 1 in the candidateIds array) was out of range");
+            .toThrowError("out of the candidate id's [0,-1,2], the id's [-1,2] were out of range");
     });
     it("should return a list of pairs of strings, where the first string in each pair is the index of the " +
         "element in the list of choices and the second string is an abbreviated representation of the element's html",
@@ -63,6 +63,18 @@ describe('formatChoices', () => {
             expect(formatChoices(elements, candidateIds)).toEqual([["0", '<a id="0">Gmail</a>'],
                 ["2", '<div role="button" id="2">aria-label="Clear"</div>']]);
         });
+
+    it("shouldn't truncate the description of a select element with 29 whitespace-separated segments in the description string", () => {
+        const hugeSelectDescWith29Segments = 'parent_node: COURSE TYPE Selected Options: Select Course Type - ' +
+            'Options: Select Course Type | Juvenile training (422) | Behind-the-Wheel (406) | ' +
+            'Three-time fail course (325) | In-person Course (229)';
+        const elements: Array<StrTriple> = [['Gmail', "a", "a"],
+            [hugeSelectDescWith29Segments, "select", "select"]
+        ];
+        const candidateIds: Array<number> = [1];
+        expect(formatChoices(elements, candidateIds)).toEqual([["1",
+            '<select id="1">' + hugeSelectDescWith29Segments + '</select>']]);
+    });
 
     it("shouldn't truncate the description of a select element with 30 whitespace-separated segments in the description string", () => {
         const hugeSelectDescWith30Segments = 'parent_node: COURSE TYPE Selected Options: Select Course Type - ' +
@@ -76,37 +88,26 @@ describe('formatChoices', () => {
             '<select id="1">' + hugeSelectDescWith30Segments + '</select>']]);
     });
 
-    it("shouldn't truncate the description of a select element with 31 whitespace-separated segments in the description string", () => {
-        const hugeSelectDescWith31Segments = 'parent_node: COURSE TYPE Selected Options: Select Course Type - ' +
-            'Options: Select Course Type | Juvenile and adult training (422) | Behind-the-Wheel (406) | ' +
-            'Three-time fail course (325) | In-person Course (229)';
+
+    it("shouldn't truncate the description of a non-select element with 29 whitespace-separated segments in the description string", () => {
+        const hugeInputDescWith29Segments = 'input value="Some Search String with an ' +
+            'improbable number of words in it in total" parent_node: SEARCH name="keyword" placeholder="Search ' +
+            '(by City, Location, Zip Code, Name, County, Township, or School District)"';
         const elements: Array<StrTriple> = [['Gmail', "a", "a"],
-            [hugeSelectDescWith31Segments, "select", "select"]
-        ];
-        const candidateIds: Array<number> = [1];
-        expect(formatChoices(elements, candidateIds)).toEqual([["1",
-            '<select id="1">' + hugeSelectDescWith31Segments + '</select>']]);
+            [hugeInputDescWith29Segments, 'input type="text"', 'input']];
+        const candidateIds: Array<number> = [0, 1];
+        expect(formatChoices(elements, candidateIds)).toEqual([["0", '<a id="0">Gmail</a>'],
+            ["1", '<input type="text" id="1">' + hugeInputDescWith29Segments + '</input>']]);
     });
 
-    it("shouldn't truncate the description of a non-select element with 30 whitespace-separated segments in the description string", () => {
+    it("should truncate the description of a non-select element with 30 whitespace-separated segments in the description string", () => {
         const hugeInputDescWith30Segments = 'input value="Some Search String with an ' +
             'improbable number of words in it in total" parent_node: SEARCH name="keyword" placeholder="Search ' +
             '(by City, Location, Zip Code, Name, County, Township, Borough, or School District)"';
-        const elements: Array<StrTriple> = [['Gmail', "a", "a"],
-            [hugeInputDescWith30Segments, 'input type="text"', 'input']];
-        const candidateIds: Array<number> = [0, 1];
-        expect(formatChoices(elements, candidateIds)).toEqual([["0", '<a id="0">Gmail</a>'],
-            ["1", '<input type="text" id="1">' + hugeInputDescWith30Segments + '</input>']]);
-    });
-
-    it("should truncate the description of a non-select element with 31 whitespace-separated segments in the description string", () => {
-        const hugeInputDescWith31Segments = 'input readonly="false" value="Some Search String with an ' +
-            'improbable number of words in it in total" parent_node: SEARCH name="keyword" placeholder="Search ' +
-            '(by City, Location, Zip Code, Name, County, Township, Borough, or School District)"';
-        const elements: Array<StrTriple> = [[hugeInputDescWith31Segments, 'input type="text"', 'input']];
+        const elements: Array<StrTriple> = [[hugeInputDescWith30Segments, 'input type="text"', 'input']];
         const candidateIds: Array<number> = [0];
-        expect(formatChoices(elements, candidateIds)).toEqual([["1", '<input type="text" id="1">input ' +
-        'readonly="false" value="Some Search String with an improbable ' +
+        expect(formatChoices(elements, candidateIds)).toEqual([["0", '<input type="text" id="0">input ' +
+        'value="Some Search String with an improbable ' +
         'number of words in it in total" parent_node: SEARCH name="keyword" placeholder="Search (by City, ' +
         'Location, Zip Code, Name, County, Township, Borough, or School...</input>']]);
     });
