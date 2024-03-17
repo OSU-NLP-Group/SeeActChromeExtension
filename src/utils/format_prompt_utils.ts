@@ -43,7 +43,7 @@ export const generateNewQueryPrompt =
     }
 
 /**
- * Only exported for use in whitebox-type unit tests. Do not reference in application code outside this module.
+ * Only exported for use in white-box-type unit tests. Do not reference in application code outside this module.
  * @description convert index to name consisting of one or two letters
  * A-Z
  * AA-AZ
@@ -69,9 +69,33 @@ export const _generateOptionName = (index: number): string => {
     }
 }
 
-// todo unit tests
 /**
- * Only exported for use in whitebox-type unit tests. Do not reference in application code outside this module.
+ * @description Convert an option name to an index
+ * Inverts the operation of _generateOptionName
+ * @param optName a 1 or 2 letter string representing an option
+ * @throws Error if given a string of length 0, of length > 2, or containing characters that aren't in [A-Z]
+ * @return the 0-based index of the option
+ */
+export const getIndexFromOptionName = (optName: string): number => {
+    if (!optName.match(/^[A-Z]{1,2}$/)) {
+        throw new Error("Invalid option name");
+    }
+
+    const capitalLetterToIndex = (capitalLetter: string): number =>
+        capitalLetter.charCodeAt(0) - 'A'.charCodeAt(0);
+
+    if (optName.length === 1) {
+        return capitalLetterToIndex(optName);
+    } else {
+        return (capitalLetterToIndex(optName[0]) + 1) * 26 + capitalLetterToIndex(optName[1]);
+    }
+}
+
+
+export type StrPair = [string, string];
+
+/**
+ * Only exported for use in white-box-type unit tests. Do not reference in application code outside this module.
  * @description convert a list of choices to a string, with an introduction at the start and
  *  a 'none of the above' option added at the end
  * @param choices a list of lists of strings; each entry in the top-level list represents a choice
@@ -79,19 +103,14 @@ export const _generateOptionName = (index: number): string => {
  *                 and the string describing the option
  * @return a string representation of the choices, with a 'none of the above' option added at the end
  */
-export const _formatOptions = (choices: Array<Array<string>>): string => {
+export const _formatOptions = (choices: Array<StrPair>): string => {
     const noneOfAboveOptionName: string = _generateOptionName(choices.length);
 
     return `If none of these elements match your target element, please select ${noneOfAboveOptionName}. ` +
         'None of the other options match the correct element.\n' +
-        choices.map((value, index) =>
-            `${_generateOptionName(index)}. ${value.length === 2 ?
-                value[1] : `invalid choice sublist of length ${value.length}`
-            }\n`
-        ).join('') +
+        choices.map((value, index) => `${_generateOptionName(index)}. ${value[1]}\n`).join('') +
         `${noneOfAboveOptionName}. None of the other options match the correct element\n\n`;
 }
-
 
 /**
  * @description Generate a new referring prompt based on several components
@@ -107,7 +126,7 @@ export const _formatOptions = (choices: Array<Array<string>>): string => {
  * @return a full prompt for the model to generate an action that refers to a particular element in the page
  */
 export const generateNewReferringPrompt = (referringDescription: string, elementFormat: string, actionFormat: string,
-                                           valueFormat: string, choices: Array<Array<string>> | null
+                                           valueFormat: string, choices: Array<StrPair> | null
 ): string => {
     let referringPrompt: string = "";
 
@@ -136,26 +155,4 @@ export const generateNewReferringPrompt = (referringDescription: string, element
     referringPrompt += valueFormat;
 
     return referringPrompt;
-}
-
-/**
- * @description Convert an option name to an index
- * Inverts the operation of _generateOptionName
- * @param optName a 1 or 2 letter string representing an option
- * @throws Error if given a string of length 0, of length > 2, or containing characters that aren't in [A-Z]
- * @return the 0-based index of the option
- */
-export const getIndexFromOptionName = (optName: string): number => {
-    if (!optName.match(/^[A-Z]{1,2}$/)) {
-        throw new Error("Invalid option name");
-    }
-    
-    const capitalLetterToIndex = (capitalLetter: string): number =>
-        capitalLetter.charCodeAt(0) - 'A'.charCodeAt(0);
-
-    if (optName.length === 1) {
-        return capitalLetterToIndex(optName);
-    } else {
-        return (capitalLetterToIndex(optName[0]) + 1) * 26 + capitalLetterToIndex(optName[1]);
-    }
 }

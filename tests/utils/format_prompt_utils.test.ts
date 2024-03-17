@@ -6,7 +6,8 @@ import {
     generateNewReferringPrompt,
     getIndexFromOptionName,
     noPrevActions,
-    prevActionsIntro
+    prevActionsIntro,
+    StrPair
 } from "../../src/utils/format_prompt_utils";
 
 
@@ -98,14 +99,14 @@ describe('_generateOptionName', () => {
 
 describe('_formatOptions', () => {
     it('should return a string containing a none of the above option if given an empty array', () => {
-        const emptyChoices: Array<Array<string>> = [];
+        const emptyChoices: Array<StrPair> = [];
         const resultStr = _formatOptions(emptyChoices);
         expect(resultStr).toContain('If none of these elements match your target element, '
             + 'please select A. None of the other options match the correct element.\n'
             + 'A. None of the other options match the correct element');
     });
     it('should return a string containing the options and a none of the above option if given a non-empty array', () => {
-        const realChoices: Array<Array<string>> = [
+        const realChoices: Array<StrPair> = [
             ["0", "<a id=\"0\">Skip to content</a>"],
             ["1", "<a id=\"1\">Skip to navigation</a>"],
             ["5", "button type=\"button\" id=\"5\">Product</button>"]
@@ -128,26 +129,6 @@ describe('_formatOptions', () => {
         expect(resultStr.indexOf(expectedOptionC)).toBeLessThan(resultStr.lastIndexOf(expectedOptionD));
     });
 
-    it('should return a string containing the options and a none of the above option ' +
-        'if given a non-empty but partially invalid array', () => {
-        const realChoices: Array<Array<string>> = [
-            ["0", "<a id=\"0\">Skip to content</a>"],
-            ["4"]
-        ];
-        const resultStr = _formatOptions(realChoices);
-        const expectedHeader = 'If none of these elements match your target element, '
-            + 'please select C. None of the other options match the correct element.\n';
-        const expectedOptionA = 'A. <a id="0">Skip to content</a>\n';
-        const expectedOptionB = 'B. invalid choice sublist of length 1\n';
-        const expectedOptionC = 'C. None of the other options match the correct element';
-        expect(resultStr).toContain(expectedHeader)
-        expect(resultStr).toContain(expectedOptionA);
-        expect(resultStr.indexOf(expectedHeader)).toBeLessThan(resultStr.indexOf(expectedOptionA));
-        expect(resultStr).toContain(expectedOptionB);
-        expect(resultStr.indexOf(expectedOptionA)).toBeLessThan(resultStr.indexOf(expectedOptionB));
-        expect(resultStr).toContain(expectedOptionC);
-        expect(resultStr.indexOf(expectedOptionB)).toBeLessThan(resultStr.lastIndexOf(expectedOptionC));
-    });
 });
 
 describe('generateNewReferringPrompt', () => {
@@ -156,7 +137,7 @@ describe('generateNewReferringPrompt', () => {
         const elementFormat: string = "some element format";
         const actionFormat: string = "some action format";
         const valueFormat: string = "some value format";
-        const choices: Array<Array<string>> = [
+        const choices: Array<StrPair> = [
             ["0", "<a id=\"0\">Skip to content</a>"],
             ["1", "<a id=\"1\">Skip to navigation</a>"],
             ["5", "button type=\"button\" id=\"5\">Product</button>"]
