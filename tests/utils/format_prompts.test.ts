@@ -1,4 +1,17 @@
-import {_processString, formatChoices, postProcessActionLlm, StrTriple} from "../../src/utils/format_prompts";
+import {
+    _processString,
+    formatChoices,
+    generatePrompt,
+    onlineActionFormat,
+    onlineElementFormat,
+    onlineQuestionDesc,
+    onlineReferringPromptDesc,
+    onlineSystemPrompt,
+    onlineValueFormat,
+    postProcessActionLlm,
+    StrTriple
+} from "../../src/utils/format_prompts";
+import {generateNewQueryPrompt, generateNewReferringPrompt, StrPair} from "../../src/utils/format_prompt_utils";
 
 
 describe('_processString', () => {
@@ -145,5 +158,25 @@ describe('postProcessActionLlm', () => {
     it('should return default values if llm text has nothing relevant', () => {
         expect(postProcessActionLlm("")).toEqual(["Invalid", "None", ""]);
     });
+});
 
+describe('generatePrompt', () => {
+    it('should produce the system prompt for online activity, a query prompt that reflects the current task ' +
+        'and previous actions, and a referring prompt that reflects the current choices', () => {
+        const task = "some task";
+        const previousActions = ["previous action 1 description", "previous action 2 description",
+            "previous action 3 description"];
+        const choices: Array<StrPair> = [
+            ["0", "<a id=\"0\">Skip to content</a>"],
+            ["1", "<a id=\"1\">Skip to navigation</a>"],
+            ["5", "button type=\"button\" id=\"5\">Product</button>"]
+        ];
+        const [expectedSysPrompt, expectedQueryPrompt] = generateNewQueryPrompt(onlineSystemPrompt, task, previousActions, onlineQuestionDesc);
+        const expectedReferringPrompt = generateNewReferringPrompt(onlineReferringPromptDesc, onlineElementFormat, onlineActionFormat, onlineValueFormat, choices);
+
+        const [actualSysPrompt, actualQueryPrompt, actualReferringPrompt] = generatePrompt(task, previousActions, choices);
+        expect(actualSysPrompt).toEqual(expectedSysPrompt);
+        expect(actualQueryPrompt).toEqual(expectedQueryPrompt);
+        expect(actualReferringPrompt).toEqual(expectedReferringPrompt);
+    });
 });
