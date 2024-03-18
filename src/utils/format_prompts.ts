@@ -1,4 +1,4 @@
-import {StrPair} from "./format_prompt_utils";
+import {generateNewQueryPrompt, generateNewReferringPrompt, StrPair} from "./format_prompt_utils";
 
 /**
  * Only exported for use in whitebox-type unit tests. Do not reference in application code outside this module.
@@ -184,9 +184,8 @@ export const onlineValueFormat = "VALUE: Provide additional input based on ACTIO
  *          3) a prompt for the model identifying the element to interact with and how to interact with it
  */
 export const generatePrompt = (task: string, previousActions: Array<string>, choices: Array<StrPair>): StrTriple => {
-
-
-    //todo impl
-    return ["invalid system prompt", "invalid step planning prompt", "invalid grounding/referring prompt"];
+    const [sysPrompt, queryPrompt] = generateNewQueryPrompt(onlineSystemPrompt, task, previousActions, onlineQuestionDesc);
+    const referringPrompt = generateNewReferringPrompt(onlineReferringPromptDesc, onlineElementFormat, onlineActionFormat, onlineValueFormat, choices);
+    return [sysPrompt, queryPrompt, referringPrompt];
 }
 
