@@ -117,31 +117,33 @@ describe('postProcessActionLlm', () => {
     it('should extract element name, TYPE action, and value when LLM follows instructions', () => {
         const valueStr = "GPT-4V(ision) is a Generalist Web Agent, if Grounded arXiv";
         expect(postProcessActionLlm("ELEMENT: I\nACTION: TYPE\nVALUE: " + valueStr))
-            .toBe(["I", "TYPE", valueStr]);
+            .toEqual(["I", "TYPE", valueStr]);
     });
     it('should extract element name, SELECT action, and value even when LLM adds junk', () => {
         const optionValue: string = "Three time fail course (325)";
         expect(postProcessActionLlm("The uppercase letter of your choice. Choose one of the following " +
             "elements if it matches the target element based on your analysis:\nELEMENT: AJ" +
             "\nChoose an action from {CLICK, TYPE, SELECT}.ACTION: SELECT\nProvide additional input based on ACTION." +
-            "\nVALUE: " + optionValue))
-            .toBe(["AJ", "SELECT", optionValue]);
+            "\nVALUE: " + optionValue + "\nother random stuff"))
+            .toEqual(["AJ", "SELECT", optionValue]);
     });
     it('should extract non-existent element, TERMINATE action, and no value even when LLM adds junk', () => {
         expect(postProcessActionLlm("The uppercase letter of my choice based on the analysis is "
-            + "ELEMENT: N/A.\nChoose an action from {CLICK, TYPE, SELECT}.\n\nACTION: TERMINATE\nVALUE: None"))
-            .toBe(["Invalid", "TERMINATE", "None"]);
+            + "ELEMENT: not applicable.\nChoose an action from {CLICK, TYPE, SELECT}.\n\nACTION: TERMINATE\nVALUE: None"))
+            .toEqual(["Invalid", "TERMINATE", "None"]);
     });
 
-    it('should extract element name, PRESS_ENTER action, and no value even when LLM adds junk', () => {
+    it('should extract element name, PRESS ENTER action, and no value even when LLM adds junk', () => {
         expect(postProcessActionLlm("The uppercase letter of your choice based on your analysis is:\n\n"
-            + "ELEMENT: BL\nACTION: PRESS_ENTER")).toBe(["BL", "PRESS_ENTER", ""]);
+            + "ELEMENT: BL\nACTION: PRESS ENTER")).toEqual(["BL", "PRESS ENTER", ""]);
     });
     it('should extract element name, CLICK action, and no value even when LLM adds junk', () => {
         expect(postProcessActionLlm("The uppercase letter of my choice is:\n"
             + "ELEMENT: JD\nThe correct choice based on the analysis would be:\n" +
-            "ACTION: CLICK\nVALUE: None")).toBe(["JD", "CLICK", "None"]);
+            "ACTION: CLICK\nVALUE: None")).toEqual(["JD", "CLICK", "None"]);
     });
-
+    it('should return default values if llm text has nothing relevant', () => {
+        expect(postProcessActionLlm("")).toEqual(["Invalid", "None", ""]);
+    });
 
 });
