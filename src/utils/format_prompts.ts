@@ -53,3 +53,17 @@ export const formatChoices = (elements: Array<StrTriple>, candidateIds: Array<nu
         return [`${id}`, abbreviatedHtml];
     });
 }
+
+/**
+ * @description processes the output of the LLM and isolates a) the alphabetic name of the element which should be
+ * interacted with, b) the action which should be performed on that element, and optionally c) the text value
+ * which should be used in that action
+ * @param llmText the output of the LLM when asked what element should be interacted with and how
+ * @return a 3-tuple of strings, where the first string is the alphabetic name of the element which should be
+ *          interacted with, the second string is the action which should be performed on that element, and the
+ *          third string is the text value (empty string if no value was available)
+ */
+export const postProcessActionLlm = (llmText: string): [string, string, string] => {
+    //todo impl
+    return ["notreal", "meh", "-1"];
+}
