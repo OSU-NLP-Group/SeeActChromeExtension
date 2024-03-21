@@ -1,4 +1,6 @@
-class OpenAiEngine {
+export class OpenAiEngine {
+    static readonly noApiKeyErrMsg = "must pass on the api_key or set OPENAI_API_KEY in the environment";
+
     apiKeys: Array<string>;
     stop: string;
     model: string;
@@ -8,22 +10,21 @@ class OpenAiEngine {
     nextAvailTime: Array<number>;
     currKeyIdx: number;
 
-    //todo unit test
     /**
-     * @description todo
-     * @param apiKey todo
-     * @param stop todo
-     * @param rateLimit todo
-     * @param model todo
-     * @param temperature todo
+     * @description Create an OpenAiEngine to call the OpenAI API for some particular model
+     * @param model Model type to call in OpenAI API
+     * @param apiKey one or more API keys to use for the OpenAI API (if more than one, will rotate through them)
+     * @param stop Tokens indicate stop of sequence
+     * @param rateLimit Max number of requests per minute
+     * @param temperature what temperature to use when sampling from the model
      */
-    constructor(apiKey: string | Array<string> | null, stop: string = "\n\n", rateLimit: number = -1,
-                model: string, temperature: number = 0) {
+    constructor(model: string, apiKey?: string | Array<string>, stop: string = "\n\n", rateLimit: number = -1,
+                temperature: number = 0) {
         let apiKeys: Array<string> = [];
-        if (apiKey === undefined || apiKey === null) {
+        if (apiKey == undefined) {
             const envApiKey = process.env.OPENAI_API_KEY;
-            if (envApiKey === undefined || envApiKey === null) {
-                throw new Error("must pass on the api_key or set OPENAI_API_KEY in the environment");
+            if (envApiKey == undefined) {
+                throw new Error(OpenAiEngine.noApiKeyErrMsg);
             } else {
                 apiKeys.push(envApiKey);
             }
@@ -40,8 +41,7 @@ class OpenAiEngine {
         this.model = model;
         this.temperature = temperature;
 
-        //todo calculate requestInterval from rateLimit
-        this.requestInterval = -1000;
+        this.requestInterval = rateLimit <= 0 ? 0 : 60 / rateLimit;
 
         this.nextAvailTime = new Array<number>(this.apiKeys.length).fill(0);
         this.currKeyIdx = 0;
