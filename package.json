@@ -20,6 +20,7 @@
     "lodash": "4.17.21",
     "openai": "^4.29.2",
     "ts-jest": "^29.1.2",
+    "ts-jest-mocker": "^1.0.0",
     "typescript": "^5.4.2"
   },
   "dependencies": {

@@ -1,6 +1,10 @@
+import {StrTriple} from "./format_prompts";
+import OpenAI from "openai";
+
 export class OpenAiEngine {
     static readonly noApiKeyErrMsg = "must pass on the api_key or set OPENAI_API_KEY in the environment";
 
+    openAi: OpenAI;
     apiKeys: Array<string>;
     stop: string;
     model: string;
@@ -14,14 +18,18 @@ export class OpenAiEngine {
      * @description Create an OpenAiEngine to call the OpenAI API for some particular model
      * @param model Model type to call in OpenAI API
      * @param apiKey one or more API keys to use for the OpenAI API (if more than one, will rotate through them)
+     * @param openAi object for accessing OpenAI API (dependency injection)
      * @param stop Tokens indicate stop of sequence
      * @param rateLimit Max number of requests per minute
      * @param temperature what temperature to use when sampling from the model
      */
-    constructor(model: string, apiKey?: string | Array<string>, stop: string = "\n\n", rateLimit: number = -1,
+    constructor(model: string, apiKey?: string | Array<string>, openAi?: OpenAI, stop: string = "\n\n", rateLimit: number = -1,
                 temperature: number = 0) {
+        this.openAi = openAi ?? new OpenAI();
         let apiKeys: Array<string> = [];
-        if (apiKey == undefined) {
+        const apiKeyInputUseless = apiKey == undefined ||
+            (Array.isArray(apiKey) && apiKey.length == 0);
+        if (apiKeyInputUseless) {
             const envApiKey = process.env.OPENAI_API_KEY;
             if (envApiKey == undefined) {
                 throw new Error(OpenAiEngine.noApiKeyErrMsg);
@@ -48,10 +56,25 @@ export class OpenAiEngine {
     }
 
 
-    //todo write stub for generate method
-    //todo unit test the generate method
-    //todo implement the generate method to pass unit tests
-
-    //todo run the generate method in modified 'unit' tests a couple times where the openai stuff isn't being mocked
-
+    /**
+     * @description Generate a completion from the OpenAI API
+     * @param prompts system prompt, prompt for planning the next action, and
+     *                  prompt for identifying the specific next element to interact with next
+     * @param turnInStep the 0-based index of the current query in the preparation for the current step's action
+     *                      0 means we're asking the model to analyze situation and plan next move
+     *                      1 means we're asking the model to identify the specific element to interact with next
+     * @param imgDataUrl a data url containing a base-64 encoded image to be used as input to the model
+     * @param priorStageOutput the output from the previous turn in the preparation for the current step's action
+     * @param maxNewTokens the maximum number of tokens to generate in this turn
+     * @param temp the temperature to use when sampling from the model
+     *              (optional, by default uses the temperature set in the constructor)
+     * @param model the model to use for this completion
+     *               (optional, by default uses the model set in the constructor)
+     * @return the model's response for the current query
+     */
+    generate = (prompts: StrTriple, turnInStep: number, imgDataUrl?: string, priorStageOutput?: string,
+                maxNewTokens: number = 4096, temp?: number, model?: string): string => {
+        //todo implement this method
+        return "nonsense";
+    }
 }
