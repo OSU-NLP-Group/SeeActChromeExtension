@@ -63,6 +63,7 @@ export const formatChoices = (elements: Array<StrTriple>, candidateIds: Array<nu
  *          interacted with, the second string is the action which should be performed on that element, and the
  *          third string is the text value (empty string if no value was available)
  */
+//todo later idea for improvement is to leverage open ai api's "forced json" output mode instead of this regex-based parsing
 export const postProcessActionLlm = (llmText: string): [string, string, string] => {
     //sorted/deduplicated copy of list from src/format_prompt.py
     //todo confer with Boyuan about whether this particular pre-processing is actually adding any value at this point

@@ -24,6 +24,7 @@
     "typescript": "^5.4.2"
   },
   "dependencies": {
-    "chrome-types": "^0.1.273"
+    "chrome-types": "^0.1.273",
+    "ts-retry": "^4.2.5"
   }
 }

@@ -16,11 +16,13 @@ export const noPrevActions: string = "No prior actions\n";
  * @param systemPrompt the system prompt for the web agent
  *                      todo confer with Boyuan about why this string is passed to the method
  *                          and then returned untouched as part of the return array
+ *                          Feedback- allowed to refactor this to stop passing-in/returning the sys prompt without modification
  * @param task the current task specification from the user
  * @param previousActions an array of string descriptions of previous actions by the web agent
  * @param questionDescription the immediate question to the web agent (e.g. about what it should do next)
  * @return an array with the 'system role' (i.e. system prompt) and the full query/main-prompt for the model
  */
+//todo can rename 'query' to analysis or analysisPlanning or something
 export const generateNewQueryPrompt =
     (systemPrompt: string, task: string, previousActions: Array<string> | null,
      questionDescription: string
@@ -125,6 +127,7 @@ export const _formatOptions = (choices: Array<StrPair>): string => {
  *                 being an abbreviated version of the element's html
  * @return a full prompt for the model to generate an action that refers to a particular element in the page
  */
+//todo can rename to grounding over referring
 export const generateNewReferringPrompt = (referringDescription: string, elementFormat: string, actionFormat: string,
                                            valueFormat: string, choices: Array<StrPair> | null
 ): string => {
@@ -133,15 +136,12 @@ export const generateNewReferringPrompt = (referringDescription: string, element
     //TODO check with Boyuan- I didn't implement the "if some string arg is empty, skip it when building the prompt"
     // logic from the python code b/c online SeeAct scenarios in python code would always provide all 4 strings
     // If he's ok with that, maybe inline this method?
+    // confirmed that's ok
 
     //Add description about how to format output
     referringPrompt += referringDescription + "\n\n";
 
     //Add element prediction format and choices
-    //Prepare Option texts
-    // For exp {1, 2, 4}, generate option
-    // For element_attribute, set options field at None
-    // todo confer with Boyuan about what the above meant and how it might be clarified
     if (choices) {
         referringPrompt += _formatOptions(choices);
     }

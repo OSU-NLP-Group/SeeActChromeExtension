@@ -3,6 +3,7 @@ import OpenAI from "openai";
 import {Mock, mock} from "ts-jest-mocker";
 import {ChatCompletion} from "openai/resources";
 import {StrTriple} from "../../src/utils/format_prompts";
+import {APIConnectionError, InternalServerError, RateLimitError} from "openai/error";
 
 const exampleModel = "gpt-4-vision-preview";
 
@@ -47,8 +48,9 @@ describe('OpenAiEngine', () => {
 });
 
 
+const dummyImgDataUrl = "data:image/jpeg;base64,9j4AAQSkZJRgABAQAAAQABAAD2wCEAAkGBxMTEhUTExMWFhUXGBgYGBgYGBgYGBgYGBgYGBgYGBgYHSggGBolGxgXITEhJSkrLi4uGB8zODMtNygtLisBCgoKDg0OGxAQGy0lICY";
+
 describe('OpenAiEngine.generate', () => {
-    const dummyImgDataUrl = "data:image/jpeg;base64,9j4AAQSkZJRgABAQAAAQABAAD2wCEAAkGBxMTEhUTExMWFhUXGBgYGBgYGBgYGBgYGBgYGBgYGBgYHSggGBolGxgXITEhJSkrLi4uGB8zODMtNygtLisBCgoKDg0OGxAQGy0lICY";
 
     let mockOpenAi: Mock<OpenAI>;
     let mockCompletions: Mock<OpenAI.Chat.Completions>;
@@ -126,13 +128,138 @@ describe('OpenAiEngine.generate', () => {
         expect(result1).toEqual(t1RespTxt);
     });
 
-
-    //todo tests for backoff behavior
-
-    //todo tests for rate limiting sleep behavior
-
-    //todo reminders- need some tests to just use 1 key
-    //  need some test to start with index pointing to 3rd key
+    it('should error if given no previous turn input for turn 1', async () => {
+        expect(() => new OpenAiEngine(exampleModel, "key1")
+            .generate(["sys", "query", "referring"], 1, dummyImgDataUrl))
+            .toThrow("priorTurnOutput must be provided for turn 1")
+    });
 
 
+    //todo (low priority) tests for rate limiting sleep behavior
 });
+
+describe('OpenAiEngine.generateWithRetry', () => {
+
+    let mockOpenAi: Mock<OpenAI>;
+    let mockCompletions: Mock<OpenAI.Chat.Completions>;
+    beforeEach(() => {
+        jest.resetAllMocks();
+
+        mockOpenAi = mock(OpenAI);
+        mockOpenAi.chat = mock(OpenAI.Chat);
+        mockCompletions = mock(OpenAI.Chat.Completions);
+        mockOpenAi.chat.completions = mockCompletions;
+
+    });
+
+    //this is also serving as a basic test of the key wrap-around scenario in generate()
+    it('should succeed immediately if no api problems', async () => {
+        const apiKeys = ["key1", "key2"];
+        const prompts: StrTriple = ["some sys prompt", "some query prompt", "some referring prompt"];
+
+        const engine = new OpenAiEngine(exampleModel, apiKeys, mockOpenAi, undefined, -1, undefined);
+
+        const t0RespTxt = "turn 0 completion";
+        mockCompletions.create.mockResolvedValueOnce({
+            choices: [
+                {message: {content: t0RespTxt}, index: 0, finish_reason: "stop"} as ChatCompletion.Choice
+            ]
+        } as ChatCompletion);
+
+        const increasedBaseBackoffDelay = 500;
+
+        const req0Start = Date.now();
+        const result0 = await engine.generateWithRetry(prompts, 0, dummyImgDataUrl,
+            undefined, undefined, undefined, undefined, increasedBaseBackoffDelay);
+        const req0Time = Date.now() - req0Start;
+        expect(req0Time).toBeLessThan(increasedBaseBackoffDelay);
+        expect(result0).toEqual(t0RespTxt);
+        expect(mockOpenAi.apiKey).toEqual(apiKeys[1]);
+        expect(engine.currKeyIdx).toEqual(1);
+
+        const t1RespTxt = "turn 1 completion";
+        mockCompletions.create.mockResolvedValueOnce({
+            choices: [
+                {message: {content: t1RespTxt}, index: 0, finish_reason: "stop"} as ChatCompletion.Choice
+            ]
+        } as ChatCompletion);
+
+        const req1Start = Date.now();
+        const result1 = await engine.generateWithRetry(prompts, 1, dummyImgDataUrl, t0RespTxt);
+        const req1Time = Date.now() - req1Start;
+        expect(req1Time).toBeLessThan(increasedBaseBackoffDelay);
+        expect(result1).toEqual(t1RespTxt);
+        expect(mockOpenAi.apiKey).toEqual(apiKeys[0]);
+        expect(engine.currKeyIdx).toEqual(0);
+    });
+
+    //this is also serving as a basic test of the single key scenario in generate()
+    it('should do exponential backoff and succeed despite 3 or 5 failures', async () => {
+        const soleApiKey = "key1";
+        const prompts: StrTriple = ["some sys prompt", "some query prompt", "some referring prompt"];
+        const engine = new OpenAiEngine(exampleModel, soleApiKey, mockOpenAi, undefined, -1);
+
+        const t0RespTxt = "turn 0 completion";
+        mockCompletions.create.mockImplementationOnce(() => {
+            throw new APIConnectionError({message: "some error message"});
+        })
+            .mockImplementationOnce(() => {
+                throw new RateLimitError(429, undefined, "some error message", undefined);
+            })
+            .mockImplementationOnce(() => {
+                throw new InternalServerError(500, undefined, "some error message", undefined);
+            })
+            .mockResolvedValueOnce({
+                choices: [
+                    {message: {content: t0RespTxt}, index: 0, finish_reason: "stop"} as ChatCompletion.Choice
+                ]
+            } as ChatCompletion);
+
+        const req0Start = Date.now();
+        const result0 = await engine.generateWithRetry(prompts, 0, dummyImgDataUrl, undefined);
+        const req0Time = Date.now() - req0Start;
+        expect(req0Time).toBeGreaterThan(100 + 200 + 400);
+        expect(req0Time).toBeLessThan(100 + 200 + 400 + 800);
+        expect(result0).toEqual(t0RespTxt);
+        expect(mockOpenAi.apiKey).toEqual(soleApiKey);
+        expect(engine.currKeyIdx).toEqual(0);
+
+        const t1RespTxt = "turn 1 completion";
+        mockCompletions.create.mockImplementationOnce(() => {
+            throw new APIConnectionError({message: "some error message"});
+        })
+            .mockImplementationOnce(() => {
+                throw new RateLimitError(429, undefined, "some error message", undefined);
+            })
+            .mockImplementationOnce(() => {
+                throw new RateLimitError(429, undefined, "some error message", undefined);
+            })
+            .mockImplementationOnce(() => {
+                throw new InternalServerError(500, undefined, "some error message", undefined);
+            })
+            .mockImplementationOnce(() => {
+                throw new RateLimitError(429, undefined, "some error message", undefined);
+            })
+            .mockResolvedValueOnce({
+                choices: [
+                    {message: {content: t1RespTxt}, index: 0, finish_reason: "stop"} as ChatCompletion.Choice
+                ]
+            } as ChatCompletion);
+
+        const req1Start = Date.now();
+        const result1 = await engine.generateWithRetry(prompts, 1, dummyImgDataUrl, t0RespTxt);
+        const req1Time = Date.now() - req1Start;
+        expect(req1Time).toBeGreaterThan(100 + 200 + 400 + 800 + 1600);
+        expect(req1Time).toBeLessThan(100 + 200 + 400 + 800 + 1600 + 3200);
+        expect(result1).toEqual(t1RespTxt);
+        expect(mockOpenAi.apiKey).toEqual(soleApiKey);
+        expect(engine.currKeyIdx).toEqual(0);
+
+
+    }, 30_000);
+
+    //todo test for backoff behavior terminating early if non-backoff-able error like AuthenticationError
+
+    //todo test for backoff ultimately failing if maxTries exceeded
+
+})
