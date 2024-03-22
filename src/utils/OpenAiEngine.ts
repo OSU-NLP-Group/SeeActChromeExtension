@@ -1,5 +1,7 @@
 import {StrTriple} from "./format_prompts";
 import OpenAI from "openai";
+import ChatCompletionMessageParam = OpenAI.ChatCompletionMessageParam;
+import ChatCompletionContentPart = OpenAI.ChatCompletionContentPart;
 
 export class OpenAiEngine {
     static readonly noApiKeyErrMsg = "must pass on the api_key or set OPENAI_API_KEY in the environment";
@@ -55,7 +57,6 @@ export class OpenAiEngine {
         this.currKeyIdx = 0;
     }
 
-
     /**
      * @description Generate a completion from the OpenAI API
      * @param prompts system prompt, prompt for planning the next action, and
@@ -72,9 +73,78 @@ export class OpenAiEngine {
      *               (optional, by default uses the model set in the constructor)
      * @return the model's response for the current query
      */
-    generate = (prompts: StrTriple, turnInStep: number, imgDataUrl?: string, priorStageOutput?: string,
-                maxNewTokens: number = 4096, temp?: number, model?: string): string => {
-        //todo implement this method
-        return "nonsense";
+    generate = async (prompts: StrTriple, turnInStep: 0 | 1, imgDataUrl?: string, priorStageOutput?: string,
+                      maxNewTokens: number = 4096, temp?: number, model?: string): Promise<string> => {
+        this.currKeyIdx = (this.currKeyIdx + 1) % this.apiKeys.length;
+        //todo unit test and implement rate-limit-respecting sleep code if Boyuan confirms it's still desired
+        /*
+            start_time = time.time()
+        if (
+                self.request_interval > 0
+                and start_time < self.next_avil_time[self.current_key_idx]
+        ):
+            time.sleep(self.next_avil_time[self.current_key_idx] - start_time)
+         */
+        this.openAi.apiKey = this.apiKeys[this.currKeyIdx];
+
+        const tempToUse = temp ?? this.temperature;
+        const modelToUse = model ?? this.model;
+
+        const messages: Array<ChatCompletionMessageParam> = [
+            {
+                role: "system",
+                content: prompts[0]
+            },
+            {
+                role: "user",
+                content: [
+                    {type: "text", text: prompts[1]}
+                ]
+            }
+        ];
+        if (imgDataUrl) {
+            (messages[1].content as Array<ChatCompletionContentPart>)
+                .push({type: "image_url", image_url: {url: imgDataUrl, detail: "high"}});
+        }
+
+        let respStr: string | undefined | null;
+        if (turnInStep === 0) {
+            const response = await this.openAi.chat.completions.create({
+                messages: messages, model: modelToUse, temperature: tempToUse, max_tokens: maxNewTokens
+            });
+            respStr = response.choices?.[0].message?.content;
+            //todo confer with Boyuan- should this log warning with response object if respStr null? or throw error?
+
+        } else if (turnInStep === 1) {
+            if (priorStageOutput) {
+                messages.push({
+                    role: "assistant",
+                    content: priorStageOutput
+                });
+            } else {
+                throw new Error("priorStageOutput must be provided for turn 1");
+                //todo unit test
+            }
+
+            messages.push({
+                role: "user",
+                content: prompts[2]
+            });
+
+            const response = await this.openAi.chat.completions.create({
+                messages: messages, model: modelToUse, temperature: tempToUse, max_tokens: maxNewTokens
+            });
+            respStr = response.choices?.[0].message?.content;
+            //todo confer with Boyuan- should this log warning with response object if respStr null? or throw error?
+        }
+        //todo unit test and implement rate-limit-respecting code if Boyuan confirms it's still desired
+        /*
+            if self.request_interval > 0:
+                self.next_avil_time[self.current_key_idx] = time.time() + self.request_interval
+         */
+
+
+        return respStr ?? "no response from OpenAI API";
     }
+    //todo implement backoff mechanism
 }

@@ -1,7 +1,7 @@
 import {OpenAiEngine} from "../../src/utils/OpenAiEngine";
 import OpenAI from "openai";
 import {Mock, mock} from "ts-jest-mocker";
-import {ChatCompletion, CompletionChoice} from "openai/resources";
+import {ChatCompletion} from "openai/resources";
 import {StrTriple} from "../../src/utils/format_prompts";
 
 const exampleModel = "gpt-4-vision-preview";
@@ -63,7 +63,7 @@ describe('OpenAiEngine.generate', () => {
     });
 
 
-    it('should generate turn 0 and turn 1 completions with 3 keys', () => {
+    it('should generate turn 0 and turn 1 completions with 3 keys', async () => {
         const dummyApiKeys = ["key1", "key2", "key3"];
         const prompts: StrTriple = ["some sys prompt", "some query prompt", "some referring prompt"];
 
@@ -71,10 +71,9 @@ describe('OpenAiEngine.generate', () => {
         const engine = new OpenAiEngine(exampleModel, dummyApiKeys, mockOpenAi, "\n\n", -1, baseTemp);
 
         const t0RespTxt = "turn 0 completion";
-        // @ts-expect-error testing, will fail if code starts needing more members of ChatCompletion or CompletionChoice
         mockCompletions.create.mockResolvedValueOnce({
             choices: [
-                {text: t0RespTxt, index: 0, finish_reason: "stop"} as CompletionChoice
+                {message: {content: t0RespTxt}, index: 0, finish_reason: "stop"} as ChatCompletion.Choice
             ]
         } as ChatCompletion);
 
@@ -88,10 +87,10 @@ describe('OpenAiEngine.generate', () => {
 
         const req0Temp = 0.1;
         const req0MaxTokens = 8192;
-        const result0 = engine.generate(prompts, 0, dummyImgDataUrl, undefined, req0MaxTokens, req0Temp);
+        const result0 = await engine.generate(prompts, 0, dummyImgDataUrl, undefined, req0MaxTokens, req0Temp);
         expect(engine.currKeyIdx).toEqual(1);
         expect(engine.nextAvailTime).toEqual([0, 0, 0]);
-        expect(mockOpenAi.apiKey).toEqual(dummyApiKeys[0]);
+        expect(mockOpenAi.apiKey).toEqual(dummyApiKeys[1]);
         // @ts-expect-error testing, will fail if create not called
         const request0Body = mockCompletions.create.mock.lastCall[0];
         expect(request0Body.model).toEqual(exampleModel);
@@ -101,18 +100,17 @@ describe('OpenAiEngine.generate', () => {
         expect(result0).toEqual(t0RespTxt);
 
         const t1RespTxt = "turn 1 completion";
-        // @ts-expect-error testing, will fail if code starts needing more members of ChatCompletion or CompletionChoice
         mockCompletions.create.mockResolvedValueOnce({
             choices: [
-                {text: t1RespTxt, index: 0, finish_reason: "stop"} as CompletionChoice
+                {message: {content: t1RespTxt}, index: 0, finish_reason: "stop"} as ChatCompletion.Choice
             ]
         } as ChatCompletion);
 
         const req1Model = "gpt-4-vision-preview-alt";
-        const result1 = engine.generate(prompts, 1, dummyImgDataUrl, t0RespTxt, undefined, undefined, req1Model);
+        const result1 = await engine.generate(prompts, 1, dummyImgDataUrl, t0RespTxt, undefined, undefined, req1Model);
         expect(engine.currKeyIdx).toEqual(2);
         expect(engine.nextAvailTime).toEqual([0, 0, 0]);
-        expect(mockOpenAi.apiKey).toEqual(dummyApiKeys[1]);
+        expect(mockOpenAi.apiKey).toEqual(dummyApiKeys[2]);
         //@ts-expect-error testing, will fail if create not called
         const request1Body = mockCompletions.create.mock.lastCall[0];
         expect(request1Body.model).toEqual(req1Model);
