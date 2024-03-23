@@ -35,6 +35,12 @@ export class BrowserHelper {
      * @return up to 8 whitespace-separated segments of the first line of the text
      */
     getFirstLine = (text: string): string => {
-        return "todo";
+        const firstLine = text.split(/[\r\n]/, 1)[0];
+        const firstLineSegments = firstLine.split(/\s+/);
+        if (firstLineSegments.length <= 8) {
+            return firstLine;
+        } else {
+            return firstLineSegments.slice(0, 8).join(" ") + "...";
+        }
     }
 }

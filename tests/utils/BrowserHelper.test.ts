@@ -34,7 +34,7 @@ describe('BrowserHelper.getFirstLine', () => {
     it('should truncate a long first line of a multi-line string to 8 segments', () => {
         expect(browserHelper.getFirstLine("Once upon a midnight dreary, while I pondered, weak and weary,\n" +
             "Over many a quaint and curious volume of forgotten lore"))
-            .toBe("Once upon a midnight dreary, while I pondered...");
+            .toBe("Once upon a midnight dreary, while I pondered,...");
     });
 
 
