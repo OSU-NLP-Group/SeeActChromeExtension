@@ -19,7 +19,22 @@ export class BrowserHelper {
         this.elementFetcher = htmlFetcher ?? BrowserHelper.defaultElementFetcher;
     }
 
-    removeAndCollapseEol = (text: string): string => {
-        return text.replace("\n", " ").replace(/\s{2,}/g, " ");
+    /**
+     * @description converts line breaks to spaces and collapse multiple consecutive whitespace characters into a single space
+     * This handles carriage-returns in addition to line feeds, unlike remove_extra_eol from browser_helper.py
+     * @param text the text to process
+     * @return string without any newlines or consecutive whitespace characters
+     */
+    removeEolAndCollapseWhitespace = (text: string): string => {
+        return text.replace(/[\r\n]/g, " ").replace(/\s{2,}/g, " ");
+    }
+
+    /**
+     * @description Get up to 8 whitespace-separated segments of the first line of a multi-line text
+     * @param text the text to process, possibly containing line breaks
+     * @return up to 8 whitespace-separated segments of the first line of the text
+     */
+    getFirstLine = (text: string): string => {
+        return "todo";
     }
 }
