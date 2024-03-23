@@ -1,5 +1,5 @@
 import {OpenAiEngine} from "../../src/utils/OpenAiEngine";
-import OpenAI from "openai";
+import OpenAI, {AuthenticationError} from "openai";
 import {Mock, mock} from "ts-jest-mocker";
 import {ChatCompletion} from "openai/resources";
 import {StrTriple} from "../../src/utils/format_prompts";
@@ -140,6 +140,8 @@ describe('OpenAiEngine.generate', () => {
 
 describe('OpenAiEngine.generateWithRetry', () => {
 
+    const prompts: StrTriple = ["some sys prompt", "some query prompt", "some referring prompt"];
+
     let mockOpenAi: Mock<OpenAI>;
     let mockCompletions: Mock<OpenAI.Chat.Completions>;
     beforeEach(() => {
@@ -155,7 +157,6 @@ describe('OpenAiEngine.generateWithRetry', () => {
     //this is also serving as a basic test of the key wrap-around scenario in generate()
     it('should succeed immediately if no api problems', async () => {
         const apiKeys = ["key1", "key2"];
-        const prompts: StrTriple = ["some sys prompt", "some query prompt", "some referring prompt"];
 
         const engine = new OpenAiEngine(exampleModel, apiKeys, mockOpenAi, undefined, -1, undefined);
 
@@ -196,8 +197,7 @@ describe('OpenAiEngine.generateWithRetry', () => {
     //this is also serving as a basic test of the single key scenario in generate()
     it('should do exponential backoff and succeed despite 3 or 5 failures', async () => {
         const soleApiKey = "key1";
-        const prompts: StrTriple = ["some sys prompt", "some query prompt", "some referring prompt"];
-        const engine = new OpenAiEngine(exampleModel, soleApiKey, mockOpenAi, undefined, -1);
+        const engine = new OpenAiEngine(exampleModel, soleApiKey, mockOpenAi);
 
         const t0RespTxt = "turn 0 completion";
         mockCompletions.create.mockImplementationOnce(() => {
@@ -258,8 +258,43 @@ describe('OpenAiEngine.generateWithRetry', () => {
 
     }, 30_000);
 
-    //todo test for backoff behavior terminating early if non-backoff-able error like AuthenticationError
+    it('should fail if maxTries exceeded', async () => {
+        const soleApiKey = "key1";
+        const engine = new OpenAiEngine(exampleModel, soleApiKey, mockOpenAi);
 
-    //todo test for backoff ultimately failing if maxTries exceeded
+        const finalError = new InternalServerError(500, undefined, "some error message3", undefined);
+        mockCompletions.create.mockImplementationOnce(() => {
+            throw new APIConnectionError({message: "some error message1"});
+        })
+            .mockImplementationOnce(() => {
+                throw new RateLimitError(429, undefined, "some error message2", undefined);
+            })
+            .mockImplementationOnce(() => {
+                throw finalError;
+            });
+        await expect(async () => {
+            await engine.generateWithRetry(prompts, 0, dummyImgDataUrl, undefined, undefined, undefined, undefined, undefined, 3)
+        }).rejects.toThrow(finalError);
+    });
+
+    it('should fail if non-backoff-able error', async () => {
+        const soleApiKey = "key1";
+        const engine = new OpenAiEngine(exampleModel, soleApiKey, mockOpenAi);
+
+        const authenticationError = new AuthenticationError(401, undefined, "some error message", undefined);
+        mockCompletions.create.mockImplementationOnce(() => {
+            throw authenticationError;
+        })
+
+        const increasedBaseBackoffDelay = 500;
+        const start = Date.now();
+        await expect(async () => {
+            await engine.generateWithRetry(prompts, 0, dummyImgDataUrl, undefined,
+                undefined, undefined, undefined, increasedBaseBackoffDelay)
+        })
+            .rejects.toThrow(authenticationError);
+        const time = Date.now() - start;
+        expect(time).toBeLessThan(increasedBaseBackoffDelay);
+    });
 
 })
