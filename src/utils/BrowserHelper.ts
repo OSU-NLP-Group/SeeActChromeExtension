@@ -1,3 +1,5 @@
+import {DOMWindow} from "jsdom";
+
 /**
  * @description class with thin wrappers around DOM interaction
  * This is a class so that it can be mocked in unit tests
@@ -7,9 +9,12 @@ export class DomHelper {
     static readonly XPATH_RESULT_1ST_ORDERED_NODE_TYPE = XPathResult ? XPathResult.FIRST_ORDERED_NODE_TYPE : 9;
 
     private dom: Document;
+    private window: Window | DOMWindow;
 
-    constructor(domToUse: Document) {
-        this.dom = domToUse;
+    constructor(windowToUse: Window | DOMWindow) {
+        const {document} = windowToUse;
+        this.dom = document;
+        this.window = windowToUse;
     }
 
     /**
@@ -44,6 +49,40 @@ export class DomHelper {
         return element.innerText;
     }
 
+    /**
+     * trivial wrapper around element.getBoundingClientRect() because jsdom doesn't properly support that element (all numbers are 0's)
+     * and so it has to be mocked in unit tests
+     * @param element the element to grab the bounding rect of
+     * @returns the bounding rect of the element
+     */
+    grabClientBoundingRect = (element: HTMLElement): DOMRect => {
+        return element.getBoundingClientRect();
+    }
+
+    /**
+     * @description Determine whether an element is hidden, based on its CSS properties and the hidden attribute
+     * @param element the element which might be hidden
+     * @return true if the element is hidden, false if it is visible
+     */
+    calcIsHidden = (element: HTMLElement): boolean => {
+        const elementComputedStyle = this.window.getComputedStyle(element);
+        const isElementHiddenForOverflow = elementComputedStyle.overflow === "hidden" &&
+            (element.scrollHeight > element.clientHeight || element.scrollWidth > element.clientWidth);//thanks to https://stackoverflow.com/a/9541579/10808625
+        return elementComputedStyle.display === "none" || elementComputedStyle.visibility === "hidden"
+            || element.hidden || isElementHiddenForOverflow || elementComputedStyle.opacity === "0"
+            || elementComputedStyle.height === "0px" || elementComputedStyle.width === "0px";
+        //maybe eventually update this once content-visibility is supported outside chromium (i.e. in firefox/safari)
+        // https://developer.mozilla.org/en-US/docs/Web/CSS/content-visibility
+    }
+
+}
+
+export type ElementData = {
+    centerCoords: [number, number],//used as pseudo-unique identifier
+    description: string,
+    tagHead: string,
+    boundingBox: [number, number, number, number],//x1, y1, x2, y2 for top-left and bottom-right corners
+    tagName: string
 }
 
 export class BrowserHelper {
@@ -52,7 +91,7 @@ export class BrowserHelper {
     private domHelper: DomHelper;
 
     constructor(domHelper?: DomHelper) {
-        this.domHelper = domHelper ?? new DomHelper(document);
+        this.domHelper = domHelper ?? new DomHelper(window);
     }
 
     /**
@@ -186,4 +225,26 @@ export class BrowserHelper {
 
         return "cannot_build_element_description";
     }
+
+    /**
+     * @description Get data about an element, including its tag name, role/type attributes, bounding box,
+     * center coordinates, and a description
+     * @param element the element to get data about
+     * @return data about the element
+     */
+    getElementData = async (element: HTMLElement): Promise<ElementData | null> => {
+        const tagName = element.tagName;
+
+
+        //todo implement this method
+        return {
+            centerCoords: [-1, -1],
+            description: "element_data_not_implemented_yet",
+            tagHead: "element_data_not_implemented_yet",
+            boundingBox: [-1, -1, -1, -1],
+            tagName: "nonsense"//tagName
+        };
+    }
+
+
 }

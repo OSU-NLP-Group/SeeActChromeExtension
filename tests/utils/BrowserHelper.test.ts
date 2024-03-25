@@ -3,8 +3,8 @@ import {JSDOM} from "jsdom";
 
 
 describe('BrowserHelper.removeAndCollapseEol', () => {
-    const {document} = (new JSDOM(`<!DOCTYPE html><body></body>`)).window;
-    const domHelper = new DomHelper(document);
+    const {window} = new JSDOM(`<!DOCTYPE html><body></body>`);
+    const domHelper = new DomHelper(window);
     const browserHelper = new BrowserHelper(domHelper);
 
     it("shouldn't affect a string with no newlines and no consecutive whitespace chars", () => {
@@ -22,8 +22,8 @@ describe('BrowserHelper.removeAndCollapseEol', () => {
 });
 
 describe('BrowserHelper.getFirstLine', () => {
-    const {document} = (new JSDOM(`<!DOCTYPE html><body></body>`)).window;
-    const domHelper = new DomHelper(document);
+    const {window} = (new JSDOM(`<!DOCTYPE html><body></body>`));
+    const domHelper = new DomHelper(window);
     const browserHelper = new BrowserHelper(domHelper);
 
     it("should return a short single-line string unchanged", () => {
@@ -48,7 +48,7 @@ describe('BrowserHelper.getFirstLine', () => {
 describe('BrowserHelper.getElementDescription', () => {
 
     it('should describe a select element with its parent and its options', async () => {
-        const {document} = (new JSDOM(`<!DOCTYPE html><body>
+        const {window} = new JSDOM(`<!DOCTYPE html><body>
         <div class="facets-widget-dropdown">
             <label id="facet_clinic_school_type_label">TYPE</label>  
             <select data-drupal-facet-filter-key="f" data-drupal-facet-id="clinic_school_type" 
@@ -60,8 +60,8 @@ describe('BrowserHelper.getElementDescription', () => {
                 <option value="type:school" class="facets-dropdown" selected="selected"> School (508)</option>
                 <option value="type:clinic" class="facets-dropdown"> Clinic (364)</option>
             </select>
-        </div></body>`)).window;
-        const domHelper = new DomHelper(document);
+        </div></body>`);
+        const domHelper = new DomHelper(window);
         const browserHelper = new BrowserHelper(domHelper);
         domHelper.getInnerText = jest.fn().mockReturnValueOnce("TYPE \nSelect Type\nSchool (508)\nClinic (364)")
             .mockReturnValueOnce('Select Type\nSchool (508)\nClinic (364)');
@@ -74,7 +74,7 @@ describe('BrowserHelper.getElementDescription', () => {
     });
 
     it('describes a select with empty default option using textContent', async () => {
-        const {document} = (new JSDOM(`<!DOCTYPE html><body>
+        const {window} = new JSDOM(`<!DOCTYPE html><body>
         <div class="facets-widget-dropdown">
             <label id="facet_clinic_school_type_label">TYPE</label>  
             <select data-drupal-facet-filter-key="f" data-drupal-facet-id="clinic_school_type" 
@@ -86,8 +86,8 @@ describe('BrowserHelper.getElementDescription', () => {
                 <option value="type:school" class="facets-dropdown"> School (508)</option>
                 <option value="type:clinic" class="facets-dropdown"> Clinic (364)</option>
             </select>
-        </div></body>`)).window;
-        const domHelper = new DomHelper(document);
+        </div></body>`);
+        const domHelper = new DomHelper(window);
         const browserHelper = new BrowserHelper(domHelper);
         domHelper.getInnerText = jest.fn().mockReturnValueOnce('TYPE \nSchool (508)\nClinic (364)')
             .mockReturnValueOnce('School (508)\nClinic (364)');
@@ -114,10 +114,10 @@ describe('BrowserHelper.getElementDescription', () => {
 
 
     it('should describe a textarea with value but no parent-text or textContent, using value & attributes', async () => {
-        const {document} = (new JSDOM(`<!DOCTYPE html><body>
+        const {window} = new JSDOM(`<!DOCTYPE html><body>
             <textarea class="gLFyf" aria-controls="Alh6id" aria-owns="Alh6id" autofocus="" title="Search" value="" jsaction="paste:puy29d;" aria-label="Search" aria-autocomplete="both" aria-expanded="false" aria-haspopup="false" autocapitalize="off" autocomplete="off" autocorrect="off" id="APjFqb" maxlength="2048" name="q" role="combobox" rows="1" spellcheck="false" data-ved="0ahUKEwjE7tT35I-FAxU3HDQIHeaZBeQQ39UDCA4" style="" aria-activedescendant=""></textarea>
-        </body>`)).window;
-        const domHelper = new DomHelper(document);
+        </body>`);
+        const domHelper = new DomHelper(window);
         const browserHelper = new BrowserHelper(domHelper);
         domHelper.getInnerText = jest.fn().mockReturnValueOnce("").mockReturnValueOnce("");
 
@@ -128,10 +128,10 @@ describe('BrowserHelper.getElementDescription', () => {
     });
 
     it('should describe a link element with just its text content', async () => {
-        const {document} = new JSDOM(`<!DOCTYPE html><body><div id="search_header">
+        const {window} = new JSDOM(`<!DOCTYPE html><body><div id="search_header">
         <a class="gb_H" aria-label="Gmail (opens a new tab)" data-pid="23" href="https://mail.google.com/mail/&amp;ogbl" target="_top">Gmail</a>
-        </div></body>`).window;
-        const domHelper = new DomHelper(document);
+        </div></body>`);
+        const domHelper = new DomHelper(window);
         const browserHelper = new BrowserHelper(domHelper);
         domHelper.getInnerText = jest.fn().mockReturnValueOnce("Gmail").mockReturnValueOnce('Gmail');
 
@@ -140,7 +140,7 @@ describe('BrowserHelper.getElementDescription', () => {
     });
 
     it('describes a textarea element with short text content using value and? textContent', async () => {
-        const {document} = new JSDOM(`<!DOCTYPE html><body>
+        const {window} = new JSDOM(`<!DOCTYPE html><body>
         <div id="site_review">
             <label for="w3review">Review of W3Schools:</label>
             <textarea id="w3review" name="w3review" rows="4" cols="50">
@@ -150,8 +150,8 @@ will learn how to make a website.
 :)
 </textarea>
             <button id="submit_review" type="submit">Submit</button>
-        </div></body>`).window;
-        const domHelper = new DomHelper(document);
+        </div></body>`);
+        const domHelper = new DomHelper(window);
         const browserHelper = new BrowserHelper(domHelper);
         domHelper.getInnerText = jest.fn().mockReturnValueOnce('Review of W3Schools:  Submit')
             .mockReturnValueOnce('');//grabbing innerText for a <textarea> element is weird and seems to always return empty string
@@ -165,7 +165,7 @@ will learn how to make a website.
 
     it('describes a textarea element with no value but long text content as generic element ' +
         '(because innerText isn\'t defined for textarea', async () => {
-        const {document} = (new JSDOM(`<!DOCTYPE html><body>
+        const {window} = (new JSDOM(`<!DOCTYPE html><body>
         <div id="site_review">
             <label for="w3review">Review of W3Schools:</label>
             <textarea id="w3review" name="w3review" rows="4" cols="50">
@@ -176,8 +176,8 @@ will learn how to make a website.
             More text here, on and on and on.
             </textarea>
             <button id="submit_review" type="submit">Submit</button>
-        </div></body>`)).window;
-        const domHelper = new DomHelper(document);
+        </div></body>`));
+        const domHelper = new DomHelper(window);
         const browserHelper = new BrowserHelper(domHelper);
         domHelper.getInnerText = jest.fn().mockReturnValueOnce('Review of W3Schools:  Submit')
             .mockReturnValueOnce('');//grabbing innerText for a <textarea> element is weird and seems to always return empty string
@@ -189,13 +189,13 @@ will learn how to make a website.
     });
 
     it('describes an input element with a value but no text content', async () => {
-        const {document} = (new JSDOM(`<!DOCTYPE html><body>
+        const {window} = new JSDOM(`<!DOCTYPE html><body>
         <div id="search_bar" role="search">
             <input placeholder="Search or add a post..." id="search-box" name="post-search" class="form-control" value="hirsch">
             <button id="clearSearchButtonId" aria-label="Clear" role="button" type="button" class="close btn btn-link">
                 <span aria-hidden="true">x</span></button>
-        </div></body>`)).window;
-        const domHelper = new DomHelper(document);
+        </div></body>`);
+        const domHelper = new DomHelper(window);
         const browserHelper = new BrowserHelper(domHelper);
         domHelper.getInnerText = jest.fn().mockReturnValueOnce(" x").mockReturnValueOnce("");
 
@@ -206,13 +206,13 @@ will learn how to make a website.
     });
 
     it('should describe an input element with a parent but no value or text content', async () => {
-        const {document} = (new JSDOM(`<!DOCTYPE html><body>
+        const {window} = new JSDOM(`<!DOCTYPE html><body>
         <div class="c-form-item c-form-item--text       c-form-item--id-keyword js-form-item js-form-type-textfield js-form-item-keyword">
             <label for="edit-keyword" class="c-form-item__label">Search</label>
             <input placeholder="Search (by City/Location, Zip Code or Name)" data-drupal-selector="edit-keyword" 
             type="text" id="edit-keyword" name="keyword" value="" size="30" maxlength="128" class="c-form-item__text">
-        </div></body>`)).window;
-        const domHelper = new DomHelper(document);
+        </div></body>`);
+        const domHelper = new DomHelper(window);
         const browserHelper = new BrowserHelper(domHelper);
         domHelper.getInnerText = jest.fn().mockReturnValueOnce("Search ").mockReturnValueOnce("");
 
@@ -222,12 +222,12 @@ will learn how to make a website.
     });
 
     it('should describe a div element with no parent text or text content or relevant attributes but a child with relevant attributes', async () => {
-        const {document} = (new JSDOM(`<!DOCTYPE html><body><div id="files_downloads">
+        const {window} = new JSDOM(`<!DOCTYPE html><body><div id="files_downloads">
         <div id="download_button" role="button">
             <svg class="icon icon-download" aria-label="Download document">
             <use href="#icon-download"></use></svg>
-        </div></div></body>`)).window;
-        const domHelper = new DomHelper(document);
+        </div></div></body>`);
+        const domHelper = new DomHelper(window);
         const browserHelper = new BrowserHelper(domHelper);
         domHelper.getInnerText = jest.fn().mockReturnValueOnce("").mockReturnValueOnce("");
 
@@ -235,6 +235,87 @@ will learn how to make a website.
         await expect(browserHelper.getElementDescription(divElementWithChild)).resolves
             .toEqual(`aria-label="Download document"`);
     });
+});
+
+describe('BrowserHelper.getElementData', () => {
+
+    it('should return null if the element is hidden', async () => {
+        const {window} = new JSDOM(`<!DOCTYPE html><body><div id="search_header">
+        <a class="gb_H" hidden="hidden" aria-label="Gmail (opens a new tab)" data-pid="23" href="https://mail.google.com/mail/&amp;ogbl" target="_top">Gmail</a>
+        </div></body>`);
+        const domHelper = new DomHelper(window);
+        const browserHelper = new BrowserHelper(domHelper);
+        domHelper.calcIsHidden = jest.fn().mockReturnValueOnce(true);
+        const linkElement = domHelper.grabElementByXpath("//a") as HTMLElement;
+        await expect(browserHelper.getElementData(linkElement)).resolves.toBeNull();
+    });
+
+    it('should return null if the element is disabled', async () => {
+        const {window} = new JSDOM(`<!DOCTYPE html><body>
+        <div id="site_review">
+            <label for="w3review">Review of W3Schools:</label>
+            <textarea id="w3review" name="w3review" rows="4" cols="50">
+            At w3schools.com you will learn how to make a website.
+            </textarea>
+            <button id="submit_review" type="submit" disabled="disabled">Submit</button>
+        </div></body>`);
+        const domHelper = new DomHelper(window);
+        const browserHelper = new BrowserHelper(domHelper);
+        domHelper.calcIsHidden = jest.fn().mockReturnValueOnce(false);
+        const submitButton = domHelper.grabElementByXpath("//button") as HTMLElement;
+        await expect(browserHelper.getElementData(submitButton)).resolves.toBeNull();
+    });
+
+    it('should assemble element data if the element has role and type defined', async () => {
 
 
+        //todo
+    });
+
+    it('should assemble element data if the element has role defined', async () => {
+
+
+        //todo
+    });
+
+    it('should assemble element data if element has type defined', async () => {
+
+
+        //todo
+    });
+
+    it('should assemble element data if element has neither role nor type defined', async () => {
+        const {window} = new JSDOM(`<!DOCTYPE html><body>
+        <div id="site_review">
+            <label for="w3review">Review of W3Schools:</label>
+            <textarea id="w3review" name="w3review" rows="4" cols="50">
+At w3schools.com you 
+will learn how to make a website.
+
+:)
+</textarea>
+            <button id="submit_review" type="submit">Submit</button>
+        </div></body>`);
+        const domHelper = new DomHelper(window);
+        const browserHelper = new BrowserHelper(domHelper);
+        domHelper.getInnerText = jest.fn().mockReturnValueOnce('Review of W3Schools:  Submit')
+            .mockReturnValueOnce('');//grabbing innerText for a <textarea> element is weird and seems to always return empty string
+        domHelper.calcIsHidden = jest.fn().mockReturnValueOnce(false);
+        const boundingBox = {
+            height: 66.4000015258789, width: 388.8000183105469, x: 160.1374969482422, y: 8
+        };//based on actually putting this html in a file, opening in browser, and inspecting the element with dev console
+        // as with other mock return value in this file, aside from the calcIsHidden calls
+        domHelper.grabClientBoundingRect = jest.fn().mockReturnValueOnce(boundingBox);
+
+        const textareaElement = domHelper.grabElementByXpath("//textarea") as HTMLElement;
+        const elementData = await browserHelper.getElementData(textareaElement);
+        expect(elementData).not.toBeNull();
+        expect(elementData?.centerCoords).toEqual([boundingBox.x + boundingBox.width / 2,
+            boundingBox.y + boundingBox.height / 2]);
+        expect(elementData?.description).toEqual(`INPUT_VALUE="At w3schools.com you \nwill learn how to make a website.\n\n:)\n" At w3schools.com you will learn how to make a website. :)`)
+        expect(elementData?.tagHead).toEqual("textarea");
+        expect(elementData?.boundingBox).toEqual([boundingBox.x, boundingBox.y,
+            boundingBox.x + boundingBox.width, boundingBox.y + boundingBox.height]);
+        expect(elementData?.tagName).toEqual("textarea");
+    });
 });
