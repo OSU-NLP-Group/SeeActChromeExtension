@@ -1,7 +1,11 @@
-import {BrowserHelper} from "../../src/utils/BrowserHelper";
+import {BrowserHelper, DomHelper} from "../../src/utils/BrowserHelper";
+import {JSDOM} from "jsdom";
+
 
 describe('BrowserHelper.removeAndCollapseEol', () => {
-    const browserHelper = new BrowserHelper();
+    const {document} = (new JSDOM(`<!DOCTYPE html><body></body>`)).window;
+    const domHelper = new DomHelper(document);
+    const browserHelper = new BrowserHelper(domHelper);
 
     it("shouldn't affect a string with no newlines and no consecutive whitespace chars", () => {
         expect(browserHelper.removeEolAndCollapseWhitespace("hello world")).toBe("hello world");
@@ -18,7 +22,9 @@ describe('BrowserHelper.removeAndCollapseEol', () => {
 });
 
 describe('BrowserHelper.getFirstLine', () => {
-    const browserHelper = new BrowserHelper();
+    const {document} = (new JSDOM(`<!DOCTYPE html><body></body>`)).window;
+    const domHelper = new DomHelper(document);
+    const browserHelper = new BrowserHelper(domHelper);
 
     it("should return a short single-line string unchanged", () => {
         expect(browserHelper.getFirstLine("hello world")).toBe("hello world");
@@ -35,6 +41,189 @@ describe('BrowserHelper.getFirstLine', () => {
         expect(browserHelper.getFirstLine("Once upon a midnight dreary, while I pondered, weak and weary,\n" +
             "Over many a quaint and curious volume of forgotten lore"))
             .toBe("Once upon a midnight dreary, while I pondered,...");
+    });
+});
+
+
+describe('BrowserHelper.getElementDescription', () => {
+
+    it('should describe a select element with its parent and its options', async () => {
+        const {document} = (new JSDOM(`<!DOCTYPE html><body>
+        <div class="facets-widget-dropdown">
+            <label id="facet_clinic_school_type_label">Type</label>  
+            <select data-drupal-facet-filter-key="f" data-drupal-facet-id="clinic_school_type" 
+                data-drupal-facet-alias="type" data-drupal-facet-ajax="0" 
+                class="facet-inactive item-list__dropdown facets-dropdown js-facets-widget js-facets-dropdown" 
+                data-once="facets-dropdown-transform js-facet-filter" name="f[]" 
+                aria-labelledby="facet_clinic_school_type_label">
+                <option value="" selected="selected">Select Type</option>
+                <option value="type:school" class="facets-dropdown"> School (508)</option>
+                <option value="type:clinic" class="facets-dropdown"> Clinic (364)</option>
+            </select>
+        </div></body>`)).window;
+        const domHelper = new DomHelper(document);
+        const browserHelper = new BrowserHelper(domHelper);
+
+        const selectElement = domHelper.grabElementByXpath("//select") as HTMLElement;
+
+        await expect(browserHelper.getElementDescription(selectElement)).resolves
+            .toEqual("parent_node: TYPE Selected Options: Select Type - Options: Select Type | School (496) | Clinic (358)");
+
+    });
+
+    it('describes a select with no selected option based on textContent', async () => {
+        const {document} = (new JSDOM(`<!DOCTYPE html><body>
+        <div class="facets-widget-dropdown">
+            <label id="facet_clinic_school_type_label">Type</label>  
+            <select data-drupal-facet-filter-key="f" data-drupal-facet-id="clinic_school_type" 
+                data-drupal-facet-alias="type" data-drupal-facet-ajax="0" 
+                class="facet-inactive item-list__dropdown facets-dropdown js-facets-widget js-facets-dropdown" 
+                data-once="facets-dropdown-transform js-facet-filter" name="f[]" 
+                aria-labelledby="facet_clinic_school_type_label">
+                <option value="">Select Type</option>
+                <option value="type:school" class="facets-dropdown"> School (508)</option>
+                <option value="type:clinic" class="facets-dropdown"> Clinic (364)</option>
+            </select>
+        </div></body>`)).window;
+        const domHelper = new DomHelper(document);
+        const browserHelper = new BrowserHelper(domHelper);
+
+        const selectElement = domHelper.grabElementByXpath("//select") as HTMLElement;
+
+        await expect(browserHelper.getElementDescription(selectElement)).resolves
+            .toEqual("Select Type School (496) Clinic (358)");
+        //todo note to Boyuan that the | separators between options are lost in this case, also the parent text is lost
+    });
+
+    //?select with parent whose first line of innerText is just whitespace
+    // and element.options is not populated???? but element.textContent is
+    //   Not testing this because, based on 15-20min of research, it doesn't seem like this would be possible.
+    //    There's the react-select library that could be used to create a select element with no <option> elements,
+    //      but then the tag wouldn't be a <select>
+
+    //?select element whose parent has no innerText
+    // and element.options is not populated??? and element.textContent is empty but?? element.innerText is not
+    // How is innerText supposed to be non-empty when textContent was empty???
+    //   Not testing this because, based on 15-20min of research, it doesn't seem like this would be possible.
+    //    There's the react-select library that could be used to create a select element with no <option> elements,
+    //      but then the tag wouldn't be a <select>
+
+
+    it('should describe a textarea with value but no parent-text or textContent, using value & attributes', async () => {
+        const {document} = (new JSDOM(`<!DOCTYPE html><body>
+            <textarea class="gLFyf" aria-controls="Alh6id" aria-owns="Alh6id" autofocus="" title="Search" value="" jsaction="paste:puy29d;" aria-label="Search" aria-autocomplete="both" aria-expanded="false" aria-haspopup="false" autocapitalize="off" autocomplete="off" autocorrect="off" id="APjFqb" maxlength="2048" name="q" role="combobox" rows="1" spellcheck="false" data-ved="0ahUKEwjE7tT35I-FAxU3HDQIHeaZBeQQ39UDCA4" style="" aria-activedescendant=""></textarea>
+        </body>`)).window;
+        const domHelper = new DomHelper(document);
+        const browserHelper = new BrowserHelper(domHelper);
+
+        const textareaElement = domHelper.grabElementByXpath("//textarea") as HTMLInputElement;
+        textareaElement.value = "GPT-4V(ision) is a Generalist Web Agent, if Grounded";//mimicking the user typing into the textarea
+        await expect(browserHelper.getElementDescription(textareaElement)).resolves
+            .toEqual(`input value="GPT-4V(ision) is a Generalist Web Agent, if Grounded" aria-label="Search" name="q" title="Search"`);
+    });
+
+    it('should describe a link element with just its text content', async () => {
+        const {document} = new JSDOM(`<!DOCTYPE html><body>
+        <a class="gb_H" aria-label="Gmail (opens a new tab)" data-pid="23" href="https://mail.google.com/mail/&amp;ogbl" target="_top">Gmail</a>
+        </div></body>`).window;
+        const domHelper = new DomHelper(document);
+        const browserHelper = new BrowserHelper(domHelper);
+
+        const linkElement = domHelper.grabElementByXpath("//a") as HTMLElement;
+        await expect(browserHelper.getElementDescription(linkElement)).resolves.toEqual(`Gmail`);
+    });
+
+    it('describes a textarea element with short text content using value and? textContent', async () => {
+        const {document} = new JSDOM(`<!DOCTYPE html><body>
+        <div id="site_review">
+            <label for="w3review">Review of W3Schools:</label>
+            <textarea id="w3review" name="w3review" rows="4" cols="50">
+At w3schools.com you 
+will learn how to make a website.
+
+:)
+</textarea>
+            <button id="submit_review" type="submit">Submit</button>
+        </div></body>`).window;
+        const domHelper = new DomHelper(document);
+        const browserHelper = new BrowserHelper(domHelper);
+
+        const textareaElement = domHelper.grabElementByXpath("//textarea") as HTMLElement;
+        await expect(browserHelper.getElementDescription(textareaElement)).resolves
+            .toEqual(`input value="At w3schools.com you 
+will learn how to make a website.
+
+:)
+" At w3schools.com you will learn how to make a website. :)`);
+        //problem is that it duplicates the text b/c of how <textarea>'s value _property_ works at runtime (and doesn't 'clean' the input value)
+        // todo ask Boyuan whether this (textArea with initial textContent value in the raw html) is rare enough to ignore or if behavior should change
+    });
+
+    it('should describe a textarea element with no value but long text content, using innerText', async () => {
+        const {document} = (new JSDOM(`<!DOCTYPE html><body>
+        <div id="site_review">
+            <label for="w3review">Review of W3Schools:</label>
+            <textarea id="w3review" name="w3review" rows="4" cols="50">
+            At w3schools.com you 
+            will learn how  to make a website.
+            
+            :)
+            <span style="display:none">HIDDEN TEXT that makes textContent much much longer</span>
+            </textarea>
+            <button id="submit_review" type="submit">Submit</button>
+        </div></body>`)).window;
+        const domHelper = new DomHelper(document);
+        const browserHelper = new BrowserHelper(domHelper);
+
+        const textareaElement = domHelper.grabElementByXpath("//textarea") as HTMLInputElement;
+        textareaElement.value = "";//mimicking the user wiping the contents of the textarea
+        await expect(browserHelper.getElementDescription(textareaElement)).resolves
+            .toEqual(`At w3schools.com you will learn how to make a website. :)`);
+    });
+
+    it('describes an input element with a value but no text content', async () => {
+        const {document} = (new JSDOM(`<!DOCTYPE html><body>
+        <div id="search_bar" role="search">
+            <input placeholder="Search or add a post..." id="search-box" name="post-search" class="form-control" value="hirsch">
+            <button id="clearSearchButtonId" aria-label="Clear" role="button" type="button" class="close btn btn-link">
+                <span aria-hidden="true">×</span></button>
+        </div></body>`)).window;
+        const domHelper = new DomHelper(document);
+        const browserHelper = new BrowserHelper(domHelper);
+
+        const inputElement = domHelper.grabElementByXpath("//input") as HTMLElement;
+        await expect(browserHelper.getElementDescription(inputElement)).resolves
+            .toEqual(`input value="hirsch" placeholder="Search or add a post..." name="post-search" value="hirsch"`);
+        //todo ask Boyuan whether the duplication of the value attribute should be fixed
+    });
+
+    it('should describe an input element with a parent but no value or text content', async () => {
+        const {document} = (new JSDOM(`<!DOCTYPE html><body>
+        <div class="c-form-item c-form-item--text       c-form-item--id-keyword js-form-item js-form-type-textfield js-form-item-keyword">
+            <label for="edit-keyword" class="c-form-item__label">Search</label>
+            <input placeholder="Search (by City/Location, Zip Code or Name)" data-drupal-selector="edit-keyword" 
+            type="text" id="edit-keyword" name="keyword" value="" size="30" maxlength="128" class="c-form-item__text">
+        </div></body>`)).window;
+        const domHelper = new DomHelper(document);
+        const browserHelper = new BrowserHelper(domHelper);
+
+        const inputElement = domHelper.grabElementByXpath("//input") as HTMLElement;
+        await expect(browserHelper.getElementDescription(inputElement)).resolves
+            .toEqual("parent_node: SEARCH name=\"keyword\" placeholder=\"Search (by City/Location, Zip Code or Name)\"");
+    });
+
+    it('should describe a div element with no parent text or text content or relevant attributes but a child with relevant attributes', async () => {
+        const {document} = (new JSDOM(`<!DOCTYPE html><body>
+        <div id="download_button" role="button">
+            <svg class="icon icon-download" aria-label="Download document">
+            <use href="#icon-download"></use></svg>
+        </div></body>`)).window;
+        const domHelper = new DomHelper(document);
+        const browserHelper = new BrowserHelper(domHelper);
+
+        const divElementWithChild = domHelper.grabElementByXpath("//div") as HTMLElement;
+        await expect(browserHelper.getElementDescription(divElementWithChild)).resolves
+            .toEqual(`aria-label="Download document"`);
     });
 
 

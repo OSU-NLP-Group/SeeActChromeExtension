@@ -34,7 +34,7 @@ describe('OpenAiEngine', () => {
     });
 
     it('should error if no api key given and none in environment variable', () => {
-        expect(() => new OpenAiEngine(exampleModel, [])).toThrow(OpenAiEngine.noApiKeyErrMsg);
+        expect(() => new OpenAiEngine(exampleModel, [])).toThrow(OpenAiEngine.NO_API_KEY_ERR);
     });
 
     it('should create an OpenAiEngine with multiple api keys', () => {

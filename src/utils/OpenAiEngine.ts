@@ -6,7 +6,7 @@ import ChatCompletionMessageParam = OpenAI.ChatCompletionMessageParam;
 import ChatCompletionContentPart = OpenAI.ChatCompletionContentPart;
 
 export class OpenAiEngine {
-    static readonly noApiKeyErrMsg = "must pass on the api_key or set OPENAI_API_KEY in the environment";
+    static readonly NO_API_KEY_ERR = "must pass on the api_key or set OPENAI_API_KEY in the environment";
 
     openAi: OpenAI;
     apiKeys: Array<string>;
@@ -38,7 +38,7 @@ export class OpenAiEngine {
         if (apiKeyInputUseless) {
             const envApiKey = process.env.OPENAI_API_KEY;
             if (envApiKey == undefined) {
-                throw new Error(OpenAiEngine.noApiKeyErrMsg);
+                throw new Error(OpenAiEngine.NO_API_KEY_ERR);
             } else {
                 apiKeys.push(envApiKey);
             }
