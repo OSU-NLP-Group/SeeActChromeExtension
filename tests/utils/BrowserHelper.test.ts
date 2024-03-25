@@ -50,49 +50,53 @@ describe('BrowserHelper.getElementDescription', () => {
     it('should describe a select element with its parent and its options', async () => {
         const {document} = (new JSDOM(`<!DOCTYPE html><body>
         <div class="facets-widget-dropdown">
-            <label id="facet_clinic_school_type_label">Type</label>  
+            <label id="facet_clinic_school_type_label">TYPE</label>  
             <select data-drupal-facet-filter-key="f" data-drupal-facet-id="clinic_school_type" 
                 data-drupal-facet-alias="type" data-drupal-facet-ajax="0" 
                 class="facet-inactive item-list__dropdown facets-dropdown js-facets-widget js-facets-dropdown" 
                 data-once="facets-dropdown-transform js-facet-filter" name="f[]" 
                 aria-labelledby="facet_clinic_school_type_label">
-                <option value="" selected="selected">Select Type</option>
-                <option value="type:school" class="facets-dropdown"> School (508)</option>
+                <option value="" >Select Type</option>
+                <option value="type:school" class="facets-dropdown" selected="selected"> School (508)</option>
                 <option value="type:clinic" class="facets-dropdown"> Clinic (364)</option>
             </select>
         </div></body>`)).window;
         const domHelper = new DomHelper(document);
         const browserHelper = new BrowserHelper(domHelper);
+        domHelper.getInnerText = jest.fn().mockReturnValueOnce("TYPE \nSelect Type\nSchool (508)\nClinic (364)")
+            .mockReturnValueOnce('Select Type\nSchool (508)\nClinic (364)');
+        //2nd mocking above is just in case something weird happens and the code tries to get innerText of <select>
 
         const selectElement = domHelper.grabElementByXpath("//select") as HTMLElement;
 
         await expect(browserHelper.getElementDescription(selectElement)).resolves
-            .toEqual("parent_node: TYPE Selected Options: Select Type - Options: Select Type | School (496) | Clinic (358)");
-
+            .toEqual("parent_node: TYPE Selected Options: School (508) - Options: Select Type | School (508) | Clinic (364)");
     });
 
-    it('describes a select with no selected option based on textContent', async () => {
+    it('describes a select with empty default option using textContent', async () => {
         const {document} = (new JSDOM(`<!DOCTYPE html><body>
         <div class="facets-widget-dropdown">
-            <label id="facet_clinic_school_type_label">Type</label>  
+            <label id="facet_clinic_school_type_label">TYPE</label>  
             <select data-drupal-facet-filter-key="f" data-drupal-facet-id="clinic_school_type" 
                 data-drupal-facet-alias="type" data-drupal-facet-ajax="0" 
                 class="facet-inactive item-list__dropdown facets-dropdown js-facets-widget js-facets-dropdown" 
                 data-once="facets-dropdown-transform js-facet-filter" name="f[]" 
                 aria-labelledby="facet_clinic_school_type_label">
-                <option value="">Select Type</option>
+                <option value=""></option>
                 <option value="type:school" class="facets-dropdown"> School (508)</option>
                 <option value="type:clinic" class="facets-dropdown"> Clinic (364)</option>
             </select>
         </div></body>`)).window;
         const domHelper = new DomHelper(document);
         const browserHelper = new BrowserHelper(domHelper);
+        domHelper.getInnerText = jest.fn().mockReturnValueOnce('TYPE \nSchool (508)\nClinic (364)')
+            .mockReturnValueOnce('School (508)\nClinic (364)');
+        //2nd mocking above is just in case something weird happens and the code tries to get innerText of <select>
 
         const selectElement = domHelper.grabElementByXpath("//select") as HTMLElement;
 
-        await expect(browserHelper.getElementDescription(selectElement)).resolves
-            .toEqual("Select Type School (496) Clinic (358)");
-        //todo note to Boyuan that the | separators between options are lost in this case, also the parent text is lost
+        await expect(browserHelper.getElementDescription(selectElement)).resolves.toEqual("School (508) Clinic (364)");
+        //todo highlight to Boyuan how this loses parent node info and also separator between options
     });
 
     //?select with parent whose first line of innerText is just whitespace
@@ -115,19 +119,21 @@ describe('BrowserHelper.getElementDescription', () => {
         </body>`)).window;
         const domHelper = new DomHelper(document);
         const browserHelper = new BrowserHelper(domHelper);
+        domHelper.getInnerText = jest.fn().mockReturnValueOnce("").mockReturnValueOnce("");
 
         const textareaElement = domHelper.grabElementByXpath("//textarea") as HTMLInputElement;
         textareaElement.value = "GPT-4V(ision) is a Generalist Web Agent, if Grounded";//mimicking the user typing into the textarea
         await expect(browserHelper.getElementDescription(textareaElement)).resolves
-            .toEqual(`input value="GPT-4V(ision) is a Generalist Web Agent, if Grounded" aria-label="Search" name="q" title="Search"`);
+            .toEqual(`INPUT_VALUE="GPT-4V(ision) is a Generalist Web Agent, if Grounded" aria-label="Search" name="q" title="Search"`);
     });
 
     it('should describe a link element with just its text content', async () => {
-        const {document} = new JSDOM(`<!DOCTYPE html><body>
+        const {document} = new JSDOM(`<!DOCTYPE html><body><div id="search_header">
         <a class="gb_H" aria-label="Gmail (opens a new tab)" data-pid="23" href="https://mail.google.com/mail/&amp;ogbl" target="_top">Gmail</a>
         </div></body>`).window;
         const domHelper = new DomHelper(document);
         const browserHelper = new BrowserHelper(domHelper);
+        domHelper.getInnerText = jest.fn().mockReturnValueOnce("Gmail").mockReturnValueOnce('Gmail');
 
         const linkElement = domHelper.grabElementByXpath("//a") as HTMLElement;
         await expect(browserHelper.getElementDescription(linkElement)).resolves.toEqual(`Gmail`);
@@ -147,19 +153,18 @@ will learn how to make a website.
         </div></body>`).window;
         const domHelper = new DomHelper(document);
         const browserHelper = new BrowserHelper(domHelper);
+        domHelper.getInnerText = jest.fn().mockReturnValueOnce('Review of W3Schools:  Submit')
+            .mockReturnValueOnce('');//grabbing innerText for a <textarea> element is weird and seems to always return empty string
 
         const textareaElement = domHelper.grabElementByXpath("//textarea") as HTMLElement;
         await expect(browserHelper.getElementDescription(textareaElement)).resolves
-            .toEqual(`input value="At w3schools.com you 
-will learn how to make a website.
-
-:)
-" At w3schools.com you will learn how to make a website. :)`);
+            .toEqual(`INPUT_VALUE="At w3schools.com you \nwill learn how to make a website.\n\n:)\n" At w3schools.com you will learn how to make a website. :)`);
         //problem is that it duplicates the text b/c of how <textarea>'s value _property_ works at runtime (and doesn't 'clean' the input value)
         // todo ask Boyuan whether this (textArea with initial textContent value in the raw html) is rare enough to ignore or if behavior should change
     });
 
-    it('should describe a textarea element with no value but long text content, using innerText', async () => {
+    it('describes a textarea element with no value but long text content as generic element ' +
+        '(because innerText isn\'t defined for textarea', async () => {
         const {document} = (new JSDOM(`<!DOCTYPE html><body>
         <div id="site_review">
             <label for="w3review">Review of W3Schools:</label>
@@ -168,17 +173,19 @@ will learn how to make a website.
             will learn how  to make a website.
             
             :)
-            <span style="display:none">HIDDEN TEXT that makes textContent much much longer</span>
+            More text here, on and on and on.
             </textarea>
             <button id="submit_review" type="submit">Submit</button>
         </div></body>`)).window;
         const domHelper = new DomHelper(document);
         const browserHelper = new BrowserHelper(domHelper);
+        domHelper.getInnerText = jest.fn().mockReturnValueOnce('Review of W3Schools:  Submit')
+            .mockReturnValueOnce('');//grabbing innerText for a <textarea> element is weird and seems to always return empty string
 
         const textareaElement = domHelper.grabElementByXpath("//textarea") as HTMLInputElement;
         textareaElement.value = "";//mimicking the user wiping the contents of the textarea
         await expect(browserHelper.getElementDescription(textareaElement)).resolves
-            .toEqual(`At w3schools.com you will learn how to make a website. :)`);
+            .toEqual(`INPUT_VALUE="" parent_node: Review of W3Schools: Submit name="w3review"`);
     });
 
     it('describes an input element with a value but no text content', async () => {
@@ -186,14 +193,15 @@ will learn how to make a website.
         <div id="search_bar" role="search">
             <input placeholder="Search or add a post..." id="search-box" name="post-search" class="form-control" value="hirsch">
             <button id="clearSearchButtonId" aria-label="Clear" role="button" type="button" class="close btn btn-link">
-                <span aria-hidden="true">×</span></button>
+                <span aria-hidden="true">x</span></button>
         </div></body>`)).window;
         const domHelper = new DomHelper(document);
         const browserHelper = new BrowserHelper(domHelper);
+        domHelper.getInnerText = jest.fn().mockReturnValueOnce(" x").mockReturnValueOnce("");
 
         const inputElement = domHelper.grabElementByXpath("//input") as HTMLElement;
         await expect(browserHelper.getElementDescription(inputElement)).resolves
-            .toEqual(`input value="hirsch" placeholder="Search or add a post..." name="post-search" value="hirsch"`);
+            .toEqual(`INPUT_VALUE="hirsch" parent_node: x name="post-search" placeholder="Search or add a post..." value="hirsch"`);
         //todo ask Boyuan whether the duplication of the value attribute should be fixed
     });
 
@@ -206,22 +214,24 @@ will learn how to make a website.
         </div></body>`)).window;
         const domHelper = new DomHelper(document);
         const browserHelper = new BrowserHelper(domHelper);
+        domHelper.getInnerText = jest.fn().mockReturnValueOnce("Search ").mockReturnValueOnce("");
 
         const inputElement = domHelper.grabElementByXpath("//input") as HTMLElement;
         await expect(browserHelper.getElementDescription(inputElement)).resolves
-            .toEqual("parent_node: SEARCH name=\"keyword\" placeholder=\"Search (by City/Location, Zip Code or Name)\"");
+            .toEqual(`INPUT_VALUE="" parent_node: Search name="keyword" placeholder="Search (by City/Location, Zip Code or Name)"`);
     });
 
     it('should describe a div element with no parent text or text content or relevant attributes but a child with relevant attributes', async () => {
-        const {document} = (new JSDOM(`<!DOCTYPE html><body>
+        const {document} = (new JSDOM(`<!DOCTYPE html><body><div id="files_downloads">
         <div id="download_button" role="button">
             <svg class="icon icon-download" aria-label="Download document">
             <use href="#icon-download"></use></svg>
-        </div></body>`)).window;
+        </div></div></body>`)).window;
         const domHelper = new DomHelper(document);
         const browserHelper = new BrowserHelper(domHelper);
+        domHelper.getInnerText = jest.fn().mockReturnValueOnce("").mockReturnValueOnce("");
 
-        const divElementWithChild = domHelper.grabElementByXpath("//div") as HTMLElement;
+        const divElementWithChild = domHelper.grabElementByXpath(`//*[@id="download_button"]`) as HTMLElement;
         await expect(browserHelper.getElementDescription(divElementWithChild)).resolves
             .toEqual(`aria-label="Download document"`);
     });
