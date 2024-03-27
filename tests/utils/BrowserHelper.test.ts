@@ -321,3 +321,12 @@ describe('BrowserHelper.getElementData', () => {
     });
 
 });
+
+describe('BrowserHelper.getInteractiveElements', () => {
+    //todo test where no elements are interactive
+
+    //todo test where all interactive elements can't be described or else are hidden/disabled
+
+    //todo test where only some interactive elements can't be described or else are hidden/disabled
+    // some element should be picked up by multiple selectors- confirm that it isn't duplicated in return array
+});

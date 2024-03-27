@@ -81,7 +81,7 @@ export class DomHelper {
 
 export type ElementData = {
     /**
-     * used as pseudo-unique identifier
+     * used as pseudo-unique identifier by python code, but might no longer be relevant
      */
     centerCoords: readonly [number, number],
     description: string,
@@ -294,4 +294,30 @@ export class BrowserHelper {
         //todo FULLY unit test this on apr6
     }
 
+    /**
+     * @description Get interactive elements in the DOM, including links, buttons, inputs, selects, textareas, and elements with certain roles
+     * @return data about the interactive elements
+     */
+    getInteractiveElements = (): ElementData[] => {
+        const interactiveElementSelectors = ['a', 'button', 'input', 'select', 'textarea', 'adc-tab',
+            '[role="button"]', '[role="radio"]', '[role="option"]', '[role="combobox"]', '[role="textbox"]',
+            '[role="listbox"]', '[role="menu"]', '[type="button"]', '[type="radio"]', '[type="combobox"]',
+            '[type="textbox"]', '[type="listbox"]', '[type="menu"]', '[tabindex]:not([tabindex="-1"])',
+            '[contenteditable]:not([contenteditable="false"])', '[onclick]', '[onfocus]', '[onkeydown]',
+            '[onkeypress]', '[onkeyup]', "[checkbox]", '[aria-disabled="false"],[data-link]'];
+
+        const uniqueInteractiveElements = new Set<HTMLElement>();
+        interactiveElementSelectors.forEach(selector => {
+            this.domHelper.fetchElementsByCss(selector).forEach(element => {
+                uniqueInteractiveElements.add(element);
+            });
+        });
+        //based on https://developer.mozilla.org/en-US/docs/Web/API/Node/isSameNode, I'm pretty confident that simple
+        // element === element checks by the Set class will prevent duplicates
+
+        return Array.from(uniqueInteractiveElements).map(element => this.getElementData(element)).filter(Boolean) as ElementData[];
+        //dummy impl for confirming that unit tests initially fail
+        // return [{centerCoords: [-1, -1], description: "test", tagHead: "test", boundingBox: {tLx: -1, tLy: -1, bRx: -1, bRy: -1}, tagName: "test"}];
+    }
+    //todo fully unit test above on apr6
 }
