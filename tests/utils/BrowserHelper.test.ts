@@ -245,7 +245,7 @@ describe('BrowserHelper.getElementData', () => {
         </div></body>`);
         const domHelper = new DomHelper(window);
         const browserHelper = new BrowserHelper(domHelper);
-        domHelper.calcIsHidden = jest.fn().mockReturnValueOnce(true);
+        window.getComputedStyle = jest.fn().mockReturnValueOnce({display: "none"});
         const linkElement = domHelper.grabElementByXpath("//a") as HTMLElement;
         await expect(browserHelper.getElementData(linkElement)).resolves.toBeNull();
     });
@@ -261,61 +261,47 @@ describe('BrowserHelper.getElementData', () => {
         </div></body>`);
         const domHelper = new DomHelper(window);
         const browserHelper = new BrowserHelper(domHelper);
-        domHelper.calcIsHidden = jest.fn().mockReturnValueOnce(false);
+        window.getComputedStyle = jest.fn().mockReturnValueOnce({});
         const submitButton = domHelper.grabElementByXpath("//button") as HTMLElement;
         await expect(browserHelper.getElementData(submitButton)).resolves.toBeNull();
     });
 
-    it('should assemble element data if the element has role and type defined', async () => {
+    it.each<[string | undefined, string | undefined]>(
+        [[undefined, undefined], ["textbox", undefined], [undefined, "text"], ["textbox", "text"]])(
+        'should assemble element data if the element has role %s and type %s', async (role?: string, type?: string) => {
+            const roleSpecInTag = role ? ` role="${role}"` : "";
+            const typeSpecInTag = type ? ` type="${type}"` : "";
+            const {window} = new JSDOM(`<!DOCTYPE html>
+<body>
+<div id="site_review">
+    <label for="w3review">Review of W3Schools:</label>
+    <input id="w3review" name="w3review"${roleSpecInTag}${typeSpecInTag} value="At w3schools.com you
+    will learn how to make a website.
 
+    :)">
+    <button id="submit_review" type="submit">Submit</button>
+</div>
+</body>`);
+            const domHelper = new DomHelper(window);
+            const browserHelper = new BrowserHelper(domHelper);
+            domHelper.getInnerText = jest.fn().mockReturnValueOnce('Review of W3Schools:  Submit')
+                .mockReturnValueOnce('');
+            window.getComputedStyle = jest.fn().mockReturnValueOnce({});
+            const boundingBox = {
+                height: 21.200000762939453, width: 169.6000061035, x: 160.1374969482422, y: 8
+            };//based on actually putting this html in a file, opening in browser, and inspecting the element with dev console
+            // as with other mock return value in this file, aside from the window.getComputedStyle() calls
+            domHelper.grabClientBoundingRect = jest.fn().mockReturnValueOnce(boundingBox);
 
-        //todo
-    });
-
-    it('should assemble element data if the element has role defined', async () => {
-
-
-        //todo
-    });
-
-    it('should assemble element data if element has type defined', async () => {
-
-
-        //todo
-    });
-
-    it('should assemble element data if element has neither role nor type defined', async () => {
-        const {window} = new JSDOM(`<!DOCTYPE html><body>
-        <div id="site_review">
-            <label for="w3review">Review of W3Schools:</label>
-            <textarea id="w3review" name="w3review" rows="4" cols="50">
-At w3schools.com you 
-will learn how to make a website.
-
-:)
-</textarea>
-            <button id="submit_review" type="submit">Submit</button>
-        </div></body>`);
-        const domHelper = new DomHelper(window);
-        const browserHelper = new BrowserHelper(domHelper);
-        domHelper.getInnerText = jest.fn().mockReturnValueOnce('Review of W3Schools:  Submit')
-            .mockReturnValueOnce('');//grabbing innerText for a <textarea> element is weird and seems to always return empty string
-        domHelper.calcIsHidden = jest.fn().mockReturnValueOnce(false);
-        const boundingBox = {
-            height: 66.4000015258789, width: 388.8000183105469, x: 160.1374969482422, y: 8
-        };//based on actually putting this html in a file, opening in browser, and inspecting the element with dev console
-        // as with other mock return value in this file, aside from the calcIsHidden calls
-        domHelper.grabClientBoundingRect = jest.fn().mockReturnValueOnce(boundingBox);
-
-        const textareaElement = domHelper.grabElementByXpath("//textarea") as HTMLElement;
-        const elementData = await browserHelper.getElementData(textareaElement);
-        expect(elementData).not.toBeNull();
-        expect(elementData?.centerCoords).toEqual([boundingBox.x + boundingBox.width / 2,
-            boundingBox.y + boundingBox.height / 2]);
-        expect(elementData?.description).toEqual(`INPUT_VALUE="At w3schools.com you \nwill learn how to make a website.\n\n:)\n" At w3schools.com you will learn how to make a website. :)`)
-        expect(elementData?.tagHead).toEqual("textarea");
-        expect(elementData?.boundingBox).toEqual([boundingBox.x, boundingBox.y,
-            boundingBox.x + boundingBox.width, boundingBox.y + boundingBox.height]);
-        expect(elementData?.tagName).toEqual("textarea");
-    });
+            const textareaElement = domHelper.grabElementByXpath("//input") as HTMLElement;
+            const elementData = await browserHelper.getElementData(textareaElement);
+            expect(elementData).not.toBeNull();
+            expect(elementData?.centerCoords).toEqual([boundingBox.x + boundingBox.width / 2,
+                boundingBox.y + boundingBox.height / 2]);
+            expect(elementData?.description).toEqual(`INPUT_VALUE="At w3schools.com you    will learn how to make a website.    :)" parent_node: Review of W3Schools: Submit name="w3review" value="At w3schools.com you    will learn how to make a website.    :)"`)
+            expect(elementData?.tagHead).toEqual("input" + roleSpecInTag + typeSpecInTag);
+            expect(elementData?.boundingBox).toEqual([boundingBox.x, boundingBox.y,
+                boundingBox.x + boundingBox.width, boundingBox.y + boundingBox.height]);
+            expect(elementData?.tagName).toEqual("input");
+        });
 });

@@ -73,6 +73,7 @@ export class DomHelper {
             || elementComputedStyle.height === "0px" || elementComputedStyle.width === "0px";
         //maybe eventually update this once content-visibility is supported outside chromium (i.e. in firefox/safari)
         // https://developer.mozilla.org/en-US/docs/Web/CSS/content-visibility
+        //todo FULLY unit test this by mocking window.getComputedStyle
     }
 
 }
@@ -205,6 +206,9 @@ export class BrowserHelper {
             const attrValue = element.getAttribute(attr);
             return attrValue ? `${attr}="${attrValue}"` : "";
         }).filter(Boolean).join(" ")
+        //todo ask Boyuan- seems undesirable for an input element's value attribute to be repeated here if it's already in the input value part (from querying the value property)
+        // is initializing an input element with a non-empty value attribute common if setting a default value?
+
 
         const elementDescWithAttributes = (parentValue + getRelevantAttributes(element)).trim();
         //why do we ignore child attributes if the parent text is defined but the current element doesn't have any
@@ -235,6 +239,7 @@ export class BrowserHelper {
     getElementData = async (element: HTMLElement): Promise<ElementData | null> => {
         const tagName = element.tagName;
 
+        //todo disabled check should just check the disabled boolean property
 
         //todo implement this method
         return {
