@@ -19,15 +19,16 @@ module.exports = {
     module: {
         rules: [
             {
-                test: /\.tsx?$/,
+                test: /\.ts$/,
                 loader: "ts-loader",
-                exclude: /node_modules/,
+                exclude: [path.resolve(__dirname, "..", 'node_modules'), path.resolve(__dirname, "..", 'tests')]
             },
         ],
-    },
+    }
+    ,
     plugins: [
         new CopyPlugin({
-            patterns: [{from: ".", to: ".", context: "public"}]
+            patterns: [{from: "public"}, {from: "images"}]
         }),
     ],
 };
