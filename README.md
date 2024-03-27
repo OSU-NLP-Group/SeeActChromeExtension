@@ -14,3 +14,6 @@ PascalCase names.
 ## Testing
 
 White-box as well as black-box types of unit tests (both using jest).
+
+TODO if we decide to open-source this, b4 doing that, go through code and mark things private or something similar
+wherever possible (to leave room for maneuver in later updates)

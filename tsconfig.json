@@ -13,7 +13,8 @@
     /* Language and Environment */
     "target": "es2022",
     /* Set the JavaScript language version for emitted JavaScript and include compatible library declarations. */
-    // "lib": [],                                        /* Specify a set of bundled library declaration files that describe the target runtime environment. */
+    "lib": ["dom"],
+    /* Specify a set of bundled library declaration files that describe the target runtime environment. */
     // "jsx": "preserve",                                /* Specify what JSX code is generated. */
     // "experimentalDecorators": true,                   /* Enable experimental support for legacy experimental decorators. */
     // "emitDecoratorMetadata": true,                    /* Emit design-type metadata for decorated declarations in source files. */
@@ -86,7 +87,6 @@
     // "preserveSymlinks": true,                         /* Disable resolving symlinks to their realpath. This correlates to the same flag in node. */
     /* Ensure that casing is correct in imports. */
     "forceConsistentCasingInFileNames": true,
-
     /* Type Checking */
     /* Enable all strict type-checking options. */
     "strict": true,

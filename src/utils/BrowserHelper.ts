@@ -1,4 +1,5 @@
 import {DOMWindow} from "jsdom";
+import getXPath from "get-xpath";
 
 /**
  * @description class with thin wrappers around DOM interaction
@@ -73,16 +74,27 @@ export class DomHelper {
             || elementComputedStyle.height === "0px" || elementComputedStyle.width === "0px";
         //maybe eventually update this once content-visibility is supported outside chromium (i.e. in firefox/safari)
         // https://developer.mozilla.org/en-US/docs/Web/CSS/content-visibility
-        //todo FULLY unit test this by mocking window.getComputedStyle
+        //todo FULLY unit test this on apr6 by mocking window.getComputedStyle
     }
 
 }
 
 export type ElementData = {
-    centerCoords: [number, number],//used as pseudo-unique identifier
+    /**
+     * used as pseudo-unique identifier
+     */
+    centerCoords: readonly [number, number],
     description: string,
     tagHead: string,
-    boundingBox: [number, number, number, number],//x1, y1, x2, y2 for top-left and bottom-right corners
+    /**
+     * tL: top-left corner and bR: bottom-right corner
+     */
+    boundingBox: {
+        tLx: number;
+        tLy: number;
+        bRx: number;
+        bRy: number
+    },
     tagName: string
 }
 
@@ -128,7 +140,7 @@ export class BrowserHelper {
      * @param element the element to describe
      * @return a one-line description of the element
      */
-    getElementDescription = async (element: HTMLElement): Promise<string> => {
+    getElementDescription = (element: HTMLElement): string | null => {
         const tagName = element.tagName.toLowerCase();
         const roleValue = element.getAttribute("role");
         const typeValue = element.getAttribute("type");
@@ -227,7 +239,8 @@ export class BrowserHelper {
             }
         }
 
-        return "cannot_build_element_description";
+        console.warn("unable to create element description for element at xpath", getXPath(element));
+        return null;
     }
 
     /**
@@ -236,20 +249,49 @@ export class BrowserHelper {
      * @param element the element to get data about
      * @return data about the element
      */
-    getElementData = async (element: HTMLElement): Promise<ElementData | null> => {
-        const tagName = element.tagName;
+    getElementData = (element: HTMLElement): ElementData | null => {
+        if (this.domHelper.calcIsHidden(element) || this.calcIsDisabled(element)) return null;
 
-        //todo disabled check should just check the disabled boolean property
+        const description = this.getElementDescription(element);
+        if (!description) return null;
 
-        //todo implement this method
+        const tagName = element.tagName.toLowerCase();
+        const roleValue = element.getAttribute("role");
+        const typeValue = element.getAttribute("type");
+        const tagHead = tagName + (roleValue ? ` role="${roleValue}"` : "") + (typeValue ? ` type="${typeValue}"` : "");
+        //does it matter that this (& original python code) treat "" as equivalent to null for role and type attributes?
+
+        const boundingRect = this.domHelper.grabClientBoundingRect(element);
+        const centerPoint = [boundingRect.x + boundingRect.width / 2,
+            boundingRect.y + boundingRect.height / 2] as const;
+        const mainDiagCorners = {
+            tLx: boundingRect.x, tLy: boundingRect.y,
+            bRx: boundingRect.x + boundingRect.width, bRy: boundingRect.y + boundingRect.height
+        };
+
         return {
-            centerCoords: [-1, -1],
-            description: "element_data_not_implemented_yet",
-            tagHead: "element_data_not_implemented_yet",
-            boundingBox: [-1, -1, -1, -1],
-            tagName: "nonsense"//tagName
+            centerCoords: centerPoint,
+            description: description,
+            tagHead: tagHead,
+            boundingBox: mainDiagCorners,
+            tagName: tagName
         };
     }
 
+    /**
+     * @description Determine whether an element is disabled, based on its attributes and properties
+     * @param element the element which might be disabled
+     * @return true if the element is disabled, false if it is enabled
+     */
+    calcIsDisabled = (element: HTMLElement): boolean => {
+        return element.ariaDisabled === "true"
+            || ((element instanceof HTMLButtonElement || element instanceof HTMLInputElement
+                    || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement
+                    || element instanceof HTMLOptGroupElement || element instanceof HTMLOptionElement
+                    || element instanceof HTMLFieldSetElement)
+                && element.disabled)
+            || element.getAttribute("disabled") != null;
+        //todo FULLY unit test this on apr6
+    }
 
 }
