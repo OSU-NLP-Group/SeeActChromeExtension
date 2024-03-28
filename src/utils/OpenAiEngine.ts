@@ -29,9 +29,6 @@ export class OpenAiEngine {
      */
     constructor(model: string, apiKey?: string | Array<string>, openAi?: OpenAI, stop: string = "\n\n", rateLimit: number = -1,
                 temperature: number = 0) {
-        //only a person's own api key will be used, within their own browser instance, so it isn't dangerous
-        // for this chrome extension to use an api key in the browser
-        this.openAi = openAi ?? new OpenAI({dangerouslyAllowBrowser: true});
         let apiKeys: Array<string> = [];
         const apiKeyInputUseless = apiKey == undefined ||
             (Array.isArray(apiKey) && apiKey.length == 0);
@@ -50,6 +47,9 @@ export class OpenAiEngine {
             }
         }
         this.apiKeys = apiKeys;
+        //only a person's own api key will be used, within their own browser instance, so it isn't dangerous
+        // for this chrome extension to use an api key in the browser
+        this.openAi = openAi ?? new OpenAI({dangerouslyAllowBrowser: true, apiKey: apiKeys[0]});
 
         this.stop = stop;
         this.model = model;

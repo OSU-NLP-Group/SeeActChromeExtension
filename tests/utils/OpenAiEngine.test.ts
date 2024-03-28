@@ -1,3 +1,4 @@
+import 'openai/shims/node';
 import {OpenAiEngine} from "../../src/utils/OpenAiEngine";
 import OpenAI, {AuthenticationError} from "openai";
 import {Mock, mock} from "ts-jest-mocker";
@@ -129,8 +130,8 @@ describe('OpenAiEngine.generate', () => {
     });
 
     it('should error if given no previous turn input for turn 1', async () => {
-        expect(() => new OpenAiEngine(exampleModel, "key1")
-            .generate(["sys", "query", "referring"], 1, dummyImgDataUrl))
+        await expect(() => new OpenAiEngine(exampleModel, "key1")
+            .generate(["sys", "query", "referring"], 1, dummyImgDataUrl)).rejects
             .toThrow("priorTurnOutput must be provided for turn 1")
     });
 
