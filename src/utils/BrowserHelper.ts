@@ -317,6 +317,9 @@ export class BrowserHelper {
         //based on https://developer.mozilla.org/en-US/docs/Web/API/Node/isSameNode, I'm pretty confident that simple
         // element === element checks by the Set class will prevent duplicates
 
+        //todo once MVP delivered, ask Boyuan about filtering out elements whose client bounding rect is 0x0
+        // (at least on github there are a lot of those)
+
         return Array.from(uniqueInteractiveElements).map(element => this.getElementData(element)).filter(Boolean) as ElementData[];
         //dummy impl for confirming that unit tests initially fail
         // return [{centerCoords: [-1, -1], description: "test", tagHead: "test", boundingBox: {tLx: -1, tLy: -1, bRx: -1, bRy: -1}, tagName: "test"}];

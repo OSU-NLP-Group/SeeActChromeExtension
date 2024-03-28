@@ -25,7 +25,7 @@ export const getActiveTabId = async (): Promise<number | undefined> => {
 // with an injected mock of the chrome api helper object
 
 startButton.addEventListener('click', async () => {
-    console.log('startAgent button clicked');//todo figure out where I would see this logging output
+    console.log('startAgent button clicked');
     const tabId = await getActiveTabId();
     if (!tabId) {
         console.warn("Can't inject agent script into chrome:// URLs for security reasons; " +
@@ -38,5 +38,5 @@ startButton.addEventListener('click', async () => {
             tabId: tabId
         }
     });
-    console.log('agent script injected into page:', result);//todo figure out where I would see this logging output
+    console.log('agent script injected into page:', result);
 });
