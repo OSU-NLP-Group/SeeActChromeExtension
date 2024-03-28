@@ -1,6 +1,8 @@
 import {DOMWindow} from "jsdom";
 import getXPath from "get-xpath";
 
+//todo come up with better naming scheme to differentiate between actual/normal classes like BrowserHelper and
+// classes like DomHelper that are _mostly just a wrapper around hard-to-mock things like window/document or chrome apis
 /**
  * @description class with thin wrappers around DOM interaction
  * This is a class so that it can be mocked in unit tests

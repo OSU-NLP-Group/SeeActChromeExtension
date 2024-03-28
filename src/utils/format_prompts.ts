@@ -21,7 +21,7 @@ export type StrTriple = [string, string, string];
 
 /**
  * @description format a list of choices for elements that might be interacted with
- * Note- relative to the original method format_choices() in src/format_prompt.py, the entries in the argument elements
+ * Note - relative to the original method format_choices() in src/format_prompt.py, the entries in the argument elements
  * have been simplified to just 3 strings because the original method didn't use the 0/3/4-index parts of each
  * 6-part entry in its elements argument
  * @param elements 3 pieces of information for each of the possibly interactable elements

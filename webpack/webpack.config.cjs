@@ -1,14 +1,22 @@
 //credit to https://betterprogramming.pub/creating-chrome-extensions-with-typescript-914873467b65
 
 const path = require('path');
+
+const {CleanWebpackPlugin} = require('clean-webpack-plugin');
 const CopyPlugin = require('copy-webpack-plugin');
+const HtmlWebpackPlugin = require('html-webpack-plugin');
+
 const root = path.resolve(__dirname, "..");
+const pathsToClean = [path.resolve(root, 'dist')];
 module.exports = {
-    mode: "production",
+    mode: "development",
     context: root,
     entry: {
         background: path.resolve(root, "src", "background.ts"),
+        popup: path.resolve(root, "src", "popup.ts"),
+        page_interaction: path.resolve(root, "src", "page_interaction.ts"),
     },
+    devtool: "source-map",
     output: {
         path: path.join(root, "dist", "src"),
         filename: "[name].js",
@@ -28,17 +36,27 @@ module.exports = {
     }
     ,
     plugins: [
+        new CleanWebpackPlugin({cleanOnceBeforeBuildPatterns: pathsToClean}),
         new CopyPlugin({
             patterns: [
-                {from: path.resolve(root, "public"), to: path.resolve(root, "dist")},
+                {from: path.resolve(root, "manifest.json"), to: path.resolve(root, "dist")},
                 {from: "images", to: path.resolve(root, "dist", "images"), context: root},
-                {
-                    from: "src/**/*",
-                    to: path.resolve(root, "dist", "[path][name][ext]"),//todo see if the [path] is doing what I want and where that syntax is defined
-                    context: root,
-                    filter: filepath => filepath.endsWith(".html")
-                    //todo why don't I need to set context here?
-                }]
+            ]
         }),
+        new HtmlWebpackPlugin({
+            template: path.resolve(root, "src", "popup.html"),
+            filename: "popup.html",
+            chunks: ["popup"],
+            showErrors: true,
+            inject: "body"
+        }),
+        new HtmlWebpackPlugin({
+            template: path.resolve(root, "src", "options.html"),
+            filename: "options.html",
+            // chunks: ["todo"],
+            showErrors: true,
+            inject: false
+        }),
+
     ],
 };
