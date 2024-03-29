@@ -1,5 +1,5 @@
 import {createLogger, format} from "winston";
-import {BrowserBackgroundTransport} from "./utils/BrowserBackgroundTransport";
+import {BrowserBackgroundTransport} from "./utils/shared_logging_setup";
 
 const logger = createLogger({
     transports: [new BrowserBackgroundTransport({})],

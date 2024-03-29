@@ -34,23 +34,11 @@
         "webpack-cli": "^5.1.4"
     },
     "dependencies": {
-        "assert": "^2.1.0",
-        "browserify-zlib": "^0.2.0",
-        "buffer": "^6.0.3",
         "chrome-types": "^0.1.273",
         "get-xpath": "^3.1.0",
-        "https-browserify": "^1.0.0",
         "lodash": "4.17.21",
-        "logform": "^2.6.0",
+        "loglevel": "^1.9.1",
         "openai": "^4.29.2",
-        "os-browserify": "^0.3.0",
-        "path-browserify": "^1.0.1",
-        "stream-browserify": "^3.0.0",
-        "stream-http": "^3.2.0",
-        "ts-retry": "^4.2.5",
-        "url": "^0.11.3",
-        "util": "^0.12.5",
-        "winston": "^3.13.0",
-        "winston-transport": "^4.7.0"
+        "ts-retry": "^4.2.5"
     }
 }

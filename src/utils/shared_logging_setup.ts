@@ -1,3 +1,9 @@
+import log from "loglevel";
+
+const origLoggerFactory = log.methodFactory;
+log.methodFactory =
+
+/*
 import Transport from "winston-transport";
 
 export interface WinstonInfo {
@@ -19,6 +25,7 @@ export class BrowserBackgroundTransport extends Transport {
             };
         }
 
+//todo reuse part of this with loglevel library
         chrome.runtime.sendMessage({reqType: "log", payload: info})
             .then(
                 (resp) => {
@@ -35,4 +42,4 @@ export class BrowserBackgroundTransport extends Transport {
                 }
             );
     }
-}
+}*/

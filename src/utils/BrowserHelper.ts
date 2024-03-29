@@ -1,7 +1,7 @@
 import {DOMWindow} from "jsdom";
 import getXPath from "get-xpath";
 import {createLogger, format} from "winston";
-import {BrowserBackgroundTransport} from "./BrowserBackgroundTransport";
+import {BrowserBackgroundTransport} from "./shared_logging_setup";
 
 /**
  * @description class with thin wrappers around DOM interaction

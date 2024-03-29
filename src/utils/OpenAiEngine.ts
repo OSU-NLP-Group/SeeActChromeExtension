@@ -3,7 +3,7 @@ import OpenAI from "openai";
 import {APIConnectionError, APIConnectionTimeoutError, InternalServerError, RateLimitError} from "openai/error";
 import {retryAsync} from "ts-retry";
 import {createLogger, format, Logger} from "winston";
-import {BrowserBackgroundTransport} from "./BrowserBackgroundTransport";
+import {BrowserBackgroundTransport} from "./shared_logging_setup";
 import ChatCompletionMessageParam = OpenAI.ChatCompletionMessageParam;
 import ChatCompletionContentPart = OpenAI.ChatCompletionContentPart;
 

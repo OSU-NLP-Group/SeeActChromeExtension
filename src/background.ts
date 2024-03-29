@@ -1,6 +1,6 @@
 import winston, {createLogger} from "winston";
 import {format} from "logform"
-import {WinstonInfo} from "./utils/BrowserBackgroundTransport";
+import {WinstonInfo} from "./utils/shared_logging_setup";
 
 console.log("successfully loaded background script in browser");
 

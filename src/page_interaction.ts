@@ -4,7 +4,7 @@ import {OpenAiEngine} from "./utils/OpenAiEngine";
 import {getIndexFromOptionName} from "./utils/format_prompt_utils";
 import {sleep} from "openai/core";
 import {createLogger, format} from "winston";
-import {BrowserBackgroundTransport} from "./utils/BrowserBackgroundTransport";
+import {BrowserBackgroundTransport} from "./utils/shared_logging_setup";
 
 const logger = createLogger({
     transports: [new BrowserBackgroundTransport({})],
