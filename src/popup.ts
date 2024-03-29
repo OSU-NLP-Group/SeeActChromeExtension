@@ -1,3 +1,12 @@
+import {createLogger, format} from "winston";
+import {BrowserBackgroundTransport} from "./utils/BrowserBackgroundTransport";
+
+const logger = createLogger({
+    transports: [new BrowserBackgroundTransport({})],
+    defaultMeta: {service: 'main-popup'},
+    format: format.combine(format.timestamp(), format.json())
+});
+
 const startButton = document.getElementById('startAgent');
 if (!startButton) throw new Error('startAgent button not found');
 
@@ -15,7 +24,7 @@ export const getActiveTabId = async (): Promise<number | undefined> => {
     let id = tab.id;
     if (!id) throw new Error('Active tab id not found');
     if (tab.url && tab.url.startsWith('chrome://')) {
-        console.warn('Active tab is a chrome:// URL:', tab.url);
+        logger.warn('Active tab is a chrome:// URL: ' + tab.url);
         id = undefined;
     }
     return id;
@@ -25,10 +34,10 @@ export const getActiveTabId = async (): Promise<number | undefined> => {
 // with an injected mock of the chrome api helper object
 
 startButton.addEventListener('click', async () => {
-    console.log('startAgent button clicked');
+    logger.debug('startAgent button clicked');
     const tabId = await getActiveTabId();
     if (!tabId) {
-        console.warn("Can't inject agent script into chrome:// URLs for security reasons; " +
+        logger.warn("Can't inject agent script into chrome:// URLs for security reasons; " +
             "please only try to start the agent on a regular web page.");
         return;
     }
@@ -38,5 +47,5 @@ startButton.addEventListener('click', async () => {
             tabId: tabId
         }
     });
-    console.log('agent script injected into page:', result);
+    logger.debug('agent script injected into page: ' + result);
 });

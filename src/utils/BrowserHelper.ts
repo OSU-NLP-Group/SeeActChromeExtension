@@ -1,13 +1,13 @@
 import {DOMWindow} from "jsdom";
 import getXPath from "get-xpath";
+import {createLogger, format} from "winston";
+import {BrowserBackgroundTransport} from "./BrowserBackgroundTransport";
 
-//todo come up with better naming scheme to differentiate between actual/normal classes like BrowserHelper and
-// classes like DomHelper that are _mostly just a wrapper around hard-to-mock things like window/document or chrome apis
 /**
  * @description class with thin wrappers around DOM interaction
  * This is a class so that it can be mocked in unit tests
  */
-export class DomHelper {
+export class DomWrapper {
     //to avoid runtime errors during unit tests from jest/jsdom limitations
     static readonly XPATH_RESULT_1ST_ORDERED_NODE_TYPE = XPathResult ? XPathResult.FIRST_ORDERED_NODE_TYPE : 9;
 
@@ -38,7 +38,7 @@ export class DomHelper {
      */
     grabElementByXpath = (xpath: string, contextElement?: HTMLElement): HTMLElement | null => {
         return this.dom.evaluate(xpath, contextElement ?? this.dom, null,
-            DomHelper.XPATH_RESULT_1ST_ORDERED_NODE_TYPE, null)
+            DomWrapper.XPATH_RESULT_1ST_ORDERED_NODE_TYPE, null)
             .singleNodeValue as HTMLElement;
     }
 
@@ -104,10 +104,18 @@ export type ElementData = {
 export class BrowserHelper {
 
     //for dependency injection in unit tests
-    private domHelper: DomHelper;
+    private domHelper: DomWrapper;
 
-    constructor(domHelper?: DomHelper) {
-        this.domHelper = domHelper ?? new DomHelper(window);
+    readonly logger;
+
+    constructor(domHelper?: DomWrapper) {
+        this.domHelper = domHelper ?? new DomWrapper(window);
+
+        this.logger = createLogger({
+            transports: [new BrowserBackgroundTransport({})],
+            defaultMeta: {service: 'browser-helper'},
+            format: format.combine(format.timestamp(), format.json())
+        });
     }
 
     /**
@@ -185,7 +193,7 @@ export class BrowserHelper {
                 return parentValue + "Selected Options: " + this.removeEolAndCollapseWhitespace(selectedOptionText.trim())
                     + " - Options: " + optionsText;
             } else {
-                console.warn("No selected option found for select element (or selected option's text was empty string), processing it as a generic element");
+                this.logger.warn("No selected option found for select element (or selected option's text was empty string), processing it as a generic element");
             }
         }
 
@@ -207,7 +215,7 @@ export class BrowserHelper {
                     return inputValue + this.removeEolAndCollapseWhitespace(innerText);
                 } else {
                     //why are we completely skipping textContent if it's too long and innerText is empty? why not just truncate it?
-                    console.warn("Element text is too long and innerText is empty, processing it as a generic element");
+                    this.logger.warn("Element text is too long and innerText is empty, processing it as a generic element");
                 }
             } else {
                 //possible improvement by including parentValue, but that would by default lead to duplication
@@ -242,7 +250,7 @@ export class BrowserHelper {
             }
         }
 
-        console.warn("unable to create element description for element at xpath", getXPath(element));
+        this.logger.warn("unable to create element description for element at xpath " + getXPath(element));
         return null;
     }
 

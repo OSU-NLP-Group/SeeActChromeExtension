@@ -12,9 +12,22 @@ module.exports = {
     mode: "development",
     context: root,
     entry: {
-        background: path.resolve(root, "src", "background.ts"),
-        popup: path.resolve(root, "src", "popup.ts"),
-        page_interaction: path.resolve(root, "src", "page_interaction.ts"),
+        logging: {
+            import: path.resolve(root, "src", "utils", "BrowserBackgroundTransport.ts"),
+            filename: path.join("utils", "BrowserBackgroundTransport.js")
+        },
+        background: {
+            import: path.resolve(root, "src", "background.ts"),
+            dependOn: 'logging'
+        },
+        popup: {
+            import: path.resolve(root, "src", "popup.ts"),
+            dependOn: 'logging'
+        },
+        page_interaction: {
+            import: path.resolve(root, "src", "page_interaction.ts"),
+            dependOn: 'logging'
+        }
     },
     devtool: "source-map",
     output: {
@@ -24,6 +37,18 @@ module.exports = {
     },
     resolve: {
         extensions: [".ts", ".js"],
+        fallback: {
+            "os": require.resolve("os-browserify/browser"),
+            "fs": false,//require.resolve("browserify-fs"),
+            "buffer": require.resolve("buffer"),
+            "assert": require.resolve("assert/"),
+            "path": require.resolve("path-browserify"),
+            "url": require.resolve("url/"),
+            "stream": require.resolve("stream-browserify"),
+            "http": require.resolve("stream-http"),
+            "zlib": require.resolve("browserify-zlib"),
+            "https": require.resolve("https-browserify")
+        }
     },
     module: {
         rules: [

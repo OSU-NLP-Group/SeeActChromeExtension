@@ -2,7 +2,19 @@
  * @fileoverview This file contains utility functions for formatting prompts
  */
 
+//todo investigate narrowing down this import to just what I'm using- see if that makes the bundled js files smaller
 import _ from "lodash";
+/* can uncomment if this file ever needs logging
+import {createLogger, format} from "winston";
+import {SendToServiceWorkerTransport} from "./shared_logging_setup";
+import combine = format.combine;
+
+
+const logger = createLogger({
+    transports: [new SendToServiceWorkerTransport({})],
+    defaultMeta: {service: 'format-prompt-utils'},
+    format: combine(format.timestamp(), format.json())
+});*/
 
 export const basicPromptIntro: string = "You are asked to complete the following task: ";
 export const prevActionsIntro: string = "Previous Actions:\n";

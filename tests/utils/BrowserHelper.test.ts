@@ -1,10 +1,10 @@
-import {BrowserHelper, DomHelper} from "../../src/utils/BrowserHelper";
+import {BrowserHelper, DomWrapper} from "../../src/utils/BrowserHelper";
 import {JSDOM} from "jsdom";
 
 
 describe('BrowserHelper.removeAndCollapseEol', () => {
     const {window} = new JSDOM(`<!DOCTYPE html><body></body>`);
-    const domHelper = new DomHelper(window);
+    const domHelper = new DomWrapper(window);
     const browserHelper = new BrowserHelper(domHelper);
 
     it("shouldn't affect a string with no newlines and no consecutive whitespace chars", () => {
@@ -23,7 +23,7 @@ describe('BrowserHelper.removeAndCollapseEol', () => {
 
 describe('BrowserHelper.getFirstLine', () => {
     const {window} = (new JSDOM(`<!DOCTYPE html><body></body>`));
-    const domHelper = new DomHelper(window);
+    const domHelper = new DomWrapper(window);
     const browserHelper = new BrowserHelper(domHelper);
 
     it("should return a short single-line string unchanged", () => {
@@ -61,7 +61,7 @@ describe('BrowserHelper.getElementDescription', () => {
                 <option value="type:clinic" class="facets-dropdown"> Clinic (364)</option>
             </select>
         </div></body>`);
-        const domHelper = new DomHelper(window);
+        const domHelper = new DomWrapper(window);
         const browserHelper = new BrowserHelper(domHelper);
         domHelper.getInnerText = jest.fn().mockReturnValueOnce("TYPE \nSelect Type\nSchool (508)\nClinic (364)")
             .mockReturnValueOnce('Select Type\nSchool (508)\nClinic (364)');
@@ -87,7 +87,7 @@ describe('BrowserHelper.getElementDescription', () => {
                 <option value="type:clinic" class="facets-dropdown"> Clinic (364)</option>
             </select>
         </div></body>`);
-        const domHelper = new DomHelper(window);
+        const domHelper = new DomWrapper(window);
         const browserHelper = new BrowserHelper(domHelper);
         domHelper.getInnerText = jest.fn().mockReturnValueOnce('TYPE \nSchool (508)\nClinic (364)')
             .mockReturnValueOnce('School (508)\nClinic (364)');
@@ -117,7 +117,7 @@ describe('BrowserHelper.getElementDescription', () => {
         const {window} = new JSDOM(`<!DOCTYPE html><body>
             <textarea class="gLFyf" aria-controls="Alh6id" aria-owns="Alh6id" autofocus="" title="Search" value="" jsaction="paste:puy29d;" aria-label="Search" aria-autocomplete="both" aria-expanded="false" aria-haspopup="false" autocapitalize="off" autocomplete="off" autocorrect="off" id="APjFqb" maxlength="2048" name="q" role="combobox" rows="1" spellcheck="false" data-ved="0ahUKEwjE7tT35I-FAxU3HDQIHeaZBeQQ39UDCA4" style="" aria-activedescendant=""></textarea>
         </body>`);
-        const domHelper = new DomHelper(window);
+        const domHelper = new DomWrapper(window);
         const browserHelper = new BrowserHelper(domHelper);
         domHelper.getInnerText = jest.fn().mockReturnValueOnce("").mockReturnValueOnce("");
 
@@ -131,7 +131,7 @@ describe('BrowserHelper.getElementDescription', () => {
         const {window} = new JSDOM(`<!DOCTYPE html><body><div id="search_header">
         <a class="gb_H" aria-label="Gmail (opens a new tab)" data-pid="23" href="https://mail.google.com/mail/&amp;ogbl" target="_top">Gmail</a>
         </div></body>`);
-        const domHelper = new DomHelper(window);
+        const domHelper = new DomWrapper(window);
         const browserHelper = new BrowserHelper(domHelper);
         domHelper.getInnerText = jest.fn().mockReturnValueOnce("Gmail").mockReturnValueOnce('Gmail');
 
@@ -151,7 +151,7 @@ will learn how to make a website.
 </textarea>
             <button id="submit_review" type="submit">Submit</button>
         </div></body>`);
-        const domHelper = new DomHelper(window);
+        const domHelper = new DomWrapper(window);
         const browserHelper = new BrowserHelper(domHelper);
         domHelper.getInnerText = jest.fn().mockReturnValueOnce('Review of W3Schools:  Submit')
             .mockReturnValueOnce('');//grabbing innerText for a <textarea> element is weird and seems to always return empty string
@@ -177,7 +177,7 @@ will learn how to make a website.
             </textarea>
             <button id="submit_review" type="submit">Submit</button>
         </div></body>`));
-        const domHelper = new DomHelper(window);
+        const domHelper = new DomWrapper(window);
         const browserHelper = new BrowserHelper(domHelper);
         domHelper.getInnerText = jest.fn().mockReturnValueOnce('Review of W3Schools:  Submit')
             .mockReturnValueOnce('');//grabbing innerText for a <textarea> element is weird and seems to always return empty string
@@ -195,7 +195,7 @@ will learn how to make a website.
             <button id="clearSearchButtonId" aria-label="Clear" role="button" type="button" class="close btn btn-link">
                 <span aria-hidden="true">x</span></button>
         </div></body>`);
-        const domHelper = new DomHelper(window);
+        const domHelper = new DomWrapper(window);
         const browserHelper = new BrowserHelper(domHelper);
         domHelper.getInnerText = jest.fn().mockReturnValueOnce(" x").mockReturnValueOnce("");
 
@@ -212,7 +212,7 @@ will learn how to make a website.
             <input placeholder="Search (by City/Location, Zip Code or Name)" data-drupal-selector="edit-keyword" 
             type="text" id="edit-keyword" name="keyword" value="" size="30" maxlength="128" class="c-form-item__text">
         </div></body>`);
-        const domHelper = new DomHelper(window);
+        const domHelper = new DomWrapper(window);
         const browserHelper = new BrowserHelper(domHelper);
         domHelper.getInnerText = jest.fn().mockReturnValueOnce("Search ").mockReturnValueOnce("");
 
@@ -227,7 +227,7 @@ will learn how to make a website.
             <svg class="icon icon-download" aria-label="Download document">
             <use href="#icon-download"></use></svg>
         </div></div></body>`);
-        const domHelper = new DomHelper(window);
+        const domHelper = new DomWrapper(window);
         const browserHelper = new BrowserHelper(domHelper);
         domHelper.getInnerText = jest.fn().mockReturnValueOnce("").mockReturnValueOnce("");
 
@@ -243,7 +243,7 @@ describe('BrowserHelper.getElementData', () => {
         const {window} = new JSDOM(`<!DOCTYPE html><body><div id="search_header">
         <a class="gb_H" hidden="hidden" aria-label="Gmail (opens a new tab)" data-pid="23" href="https://mail.google.com/mail/&amp;ogbl" target="_top">Gmail</a>
         </div></body>`);
-        const domHelper = new DomHelper(window);
+        const domHelper = new DomWrapper(window);
         const browserHelper = new BrowserHelper(domHelper);
         window.getComputedStyle = jest.fn().mockReturnValueOnce({display: "none"});
         const linkElement = domHelper.grabElementByXpath("//a") as HTMLElement;
@@ -259,7 +259,7 @@ describe('BrowserHelper.getElementData', () => {
             </textarea>
             <button id="submit_review" type="submit" disabled="disabled">Submit</button>
         </div></body>`);
-        const domHelper = new DomHelper(window);
+        const domHelper = new DomWrapper(window);
         const browserHelper = new BrowserHelper(domHelper);
         window.getComputedStyle = jest.fn().mockReturnValueOnce({});
         const submitButton = domHelper.grabElementByXpath("//button") as HTMLElement;
@@ -282,7 +282,7 @@ describe('BrowserHelper.getElementData', () => {
     <button id="submit_review" type="submit">Submit</button>
 </div>
 </body>`);
-            const domHelper = new DomHelper(window);
+            const domHelper = new DomWrapper(window);
             const browserHelper = new BrowserHelper(domHelper);
             domHelper.getInnerText = jest.fn().mockReturnValueOnce('Review of W3Schools:  Submit')
                 .mockReturnValueOnce('');
@@ -312,7 +312,7 @@ describe('BrowserHelper.getElementData', () => {
             <svg class="icon icon-download">
             <use href="#icon-download"></use></svg>
         </div></div></body>`);
-        const domHelper = new DomHelper(window);
+        const domHelper = new DomWrapper(window);
         const browserHelper = new BrowserHelper(domHelper);
         domHelper.getInnerText = jest.fn().mockReturnValueOnce("").mockReturnValueOnce("");
         window.getComputedStyle = jest.fn().mockReturnValueOnce({});

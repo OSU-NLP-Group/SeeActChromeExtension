@@ -1,5 +1,17 @@
 import {generateNewQueryPrompt, generateNewReferringPrompt, StrPair} from "./format_prompt_utils";
 
+/* can uncomment this if logging ever needed in this file
+import {createLogger, format} from "winston";
+import {SendToServiceWorkerTransport} from "./shared_logging_setup";
+import combine = format.combine;
+
+const logger = createLogger({
+    transports: [new SendToServiceWorkerTransport({})],
+    defaultMeta: {service: 'format-prompts'},
+    format: combine(format.timestamp(), format.json())
+});
+*/
+
 /**
  * Only exported for use in whitebox-type unit tests. Do not reference in application code outside this module.
  * @description clean some prefixes/suffixes from a string

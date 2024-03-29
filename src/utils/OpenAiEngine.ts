@@ -2,11 +2,15 @@ import {StrTriple} from "./format_prompts";
 import OpenAI from "openai";
 import {APIConnectionError, APIConnectionTimeoutError, InternalServerError, RateLimitError} from "openai/error";
 import {retryAsync} from "ts-retry";
+import {createLogger, format, Logger} from "winston";
+import {BrowserBackgroundTransport} from "./BrowserBackgroundTransport";
 import ChatCompletionMessageParam = OpenAI.ChatCompletionMessageParam;
 import ChatCompletionContentPart = OpenAI.ChatCompletionContentPart;
 
 export class OpenAiEngine {
     static readonly NO_API_KEY_ERR = "must pass on the api_key or set OPENAI_API_KEY in the environment";
+
+    readonly logger: Logger;
 
     openAi: OpenAI;
     apiKeys: Array<string>;
@@ -59,6 +63,11 @@ export class OpenAiEngine {
 
         this.nextAvailTime = new Array<number>(this.apiKeys.length).fill(0);
         this.currKeyIdx = 0;
+        this.logger = createLogger({
+            transports: [new BrowserBackgroundTransport({})],
+            defaultMeta: {service: 'open-ai-engine'},
+            format: format.combine(format.timestamp(), format.json())
+        });
     }
 
     /**
@@ -171,10 +180,10 @@ export class OpenAiEngine {
             onError: (err: Error) => {
                 if (err instanceof APIConnectionError || err instanceof RateLimitError
                     || err instanceof APIConnectionTimeoutError || err instanceof InternalServerError) {
-                    console.warn(`problem (${err.message}) with OpenAI API, retrying at ${new Date().toISOString()}...`);
+                    this.logger.warn(`problem (${err.message}) with OpenAI API, retrying at ${new Date().toISOString()}...`);
                 } else {
-                    console.error(`problem (${err.message}) occurred at ${new Date().toISOString()} with OpenAI API that isn't likely to get better, not retrying`);
-                    throw err;//todo test whether this properly prevents retries after authentication issues/etc.
+                    this.logger.error(`problem (${err.message}) occurred at ${new Date().toISOString()} with OpenAI API that isn't likely to get better, not retrying`);
+                    throw err;
                 }
             }
         });
