@@ -1,6 +1,7 @@
-import {BrowserHelper} from "./utils/BrowserHelper.js";
-import {formatChoices, generatePrompt, StrTriple} from "./utils/format_prompts.js";
-import {OpenAiEngine} from "./utils/OpenAiEngine.js";
+import {BrowserHelper} from "./utils/BrowserHelper";
+import {formatChoices, generatePrompt, postProcessActionLlm, StrTriple} from "./utils/format_prompts";
+import {OpenAiEngine} from "./utils/OpenAiEngine";
+import {getIndexFromOptionName} from "./utils/format_prompt_utils";
 
 console.log("successfully injected page_interaction script in browser");
 
@@ -28,18 +29,34 @@ const apiKey: string = "PLACEHOLDER";
 
 const aiEngine = new OpenAiEngine(modelName, apiKey);
 
-const screenshotDataUrl = "";
-//todo grab screenshot!!
+(async () => {
 
-const planningOutput = await aiEngine.generate(prompts, 0, screenshotDataUrl);
+    console.log("about to request screenshot from service worker; time is", new Date().toISOString());
+    const screenshotResponse = await chrome.runtime.sendMessage({reqType: "takeScreenshot"});
+    console.log("response received back from service worker; time is", new Date().toISOString(), "; screenshot response:", screenshotResponse);
+    const screenshotDataUrl: string = screenshotResponse.screenshot;
+    console.assert(screenshotDataUrl !== undefined, "screenshot data url is undefined")
+    console.log("screenshot data url (truncated):", screenshotDataUrl.slice(0, 100));
 
-console.log("planning output:", planningOutput);
+    const planningOutput = await aiEngine.generate(prompts, 0, screenshotDataUrl);
 
-const groundingOutput = await aiEngine.generate(prompts, 1, screenshotDataUrl, planningOutput);
+    console.log("planning output:", planningOutput);
 
-console.log("grounding output:", groundingOutput);
+    const groundingOutput = await aiEngine.generate(prompts, 1, screenshotDataUrl, planningOutput);
 
-//todo add logic to click on the element that the model chose
+    console.log("grounding output:", groundingOutput);
+
+    const [elementName, actionName, value] = postProcessActionLlm(groundingOutput);
+    console.log("suggested action:", actionName, "; value:", value);
+    const chosenElementIndex = getIndexFromOptionName(elementName);
+    const chosenElement = currInteractiveElements[chosenElementIndex];
+    const elementToClick = chosenElement.element;
+
+    console.log("element to click:", chosenElement.tagHead, "; description:", chosenElement.description);
+
+    elementToClick.click();
+
+})();
 
 
 /*

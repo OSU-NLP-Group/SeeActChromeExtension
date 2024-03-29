@@ -97,7 +97,8 @@ export type ElementData = {
         bRx: number;
         bRy: number
     },
-    tagName: string
+    tagName: string,
+    element: HTMLElement
 }
 
 export class BrowserHelper {
@@ -276,7 +277,8 @@ export class BrowserHelper {
             description: description,
             tagHead: tagHead,
             boundingBox: mainDiagCorners,
-            tagName: tagName
+            tagName: tagName,
+            element: element
         };
     }
 
