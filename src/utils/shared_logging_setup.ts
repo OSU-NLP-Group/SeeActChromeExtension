@@ -21,7 +21,7 @@ log.methodFactory = function (methodName, logLevel, loggerName) {
         });
     };
 };
-//todo change this to info or warn before release, and ideally make it configurable from options menu
+//todo change this to info or warn before release, and ideally make it configurable from advanced part of options menu
 log.setLevel("trace");
 log.rebuild();
 
@@ -54,15 +54,18 @@ export function augmentLogMsg(timestampStr: string, loggerName: string | symbol,
         // could use this https://github.com/sevensc/typescript-string-operations#stringformat
         // Only need to support placeholders that console.log already supported:
         //  https://developer.mozilla.org/en-US/docs/Web/API/console#using_string_substitutions
+
+        //for now, just supporting the simple "one or more objects get concatenated together" approach
+        msg = [timestampStr, loggerName, levelName.toUpperCase(), ...args].join(" ");
     } else {
         //for now, just supporting the simple "one or more objects get concatenated together" approach
         msg = [timestampStr, loggerName, levelName.toUpperCase(), ...args].join(" ");
     }
     return msg;
-}//todo unit tests
+}
 
 /**
- * Assert that the given value is a valid log level name
+ * Assert that the given value is a valid log level name (i.e. one of the method names in loglevel's logger)
  * @param logLevelName the value to check
  */
 export function assertIsValidLogLevelName(logLevelName: unknown | undefined): asserts logLevelName is log.LogLevelNames {
@@ -74,5 +77,5 @@ export function assertIsValidLogLevelName(logLevelName: unknown | undefined): as
     if (!Object.prototype.hasOwnProperty.call(log.levels, capitalizedLevelName) || capitalizedLevelName === "SILENT"
         || logLevelName.toLowerCase() !== logLevelName) {
         throw badLevelErr;
-    }//todo ~5 unit tests
+    }
 }

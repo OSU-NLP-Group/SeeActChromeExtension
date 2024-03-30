@@ -25,8 +25,8 @@ export const getActiveTabId = async (): Promise<number | undefined> => {
     return id;
 }
 //todo unit test above helper? how hard is it to mock chrome api calls?
-// worst case, could make ChromeHelper in utils/ with thing like DomHelper for chrome api's, then unit test ChromeHelper
-// with an injected mock of the chrome api helper object
+// worst case, could make ChromeHelper in utils/ with thing like DomWrapper for chrome api's, then unit test ChromeHelper
+// with an injected mock of the chrome api wrapper object
 
 startButton.addEventListener('click', async () => {
     logger.trace('startAgent button clicked');

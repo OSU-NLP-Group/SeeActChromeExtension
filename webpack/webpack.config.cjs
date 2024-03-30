@@ -12,6 +12,8 @@ module.exports = {
     mode: "development",
     context: root,
     entry: {
+        //todo eventually revisit the idea of having a separate entry for shared_logging_setup and then
+        // having the other entry points depend on it. possibly a similar thing for any other multiply-used utils files
         background: path.resolve(root, "src", "background.ts"),
         popup: path.resolve(root, "src", "popup.ts"),
         page_interaction: path.resolve(root, "src", "page_interaction.ts"),
