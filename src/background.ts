@@ -1,10 +1,10 @@
 import log from "loglevel";
 import {assertIsValidLogLevelName, augmentLogMsg, origLoggerFactory} from "./utils/shared_logging_setup";
+import MessageSender = chrome.runtime.MessageSender;
 
 console.log("successfully loaded background script in browser");
 
-
-//initially, unified/relatively-persistent logging will be achieved simply by having content script and popup's js
+//initially, unified/relatively-persistent logging is achieved simply by having content script and popup's js
 // send messages to the background script, which will print to the console in the extension's devtools window
 const centralLogger = log.getLogger("service-worker");
 centralLogger.methodFactory = function (methodName, logLevel, loggerName) {
@@ -17,11 +17,10 @@ centralLogger.methodFactory = function (methodName, logLevel, loggerName) {
 centralLogger.setLevel("trace");
 centralLogger.rebuild();
 
-
 centralLogger.trace("central logger created in background script");
-//todo later add indexeddb logging via the background script
-// unclear whether that should be a winston custom transport attached to the above logger or if it should just be code
-// in the onMessage listener which directly writes to indexeddb (latter avoids infinite recursion possibility)
+
+//todo? later add indexeddb logging via the background script, i.e. the part of the message listener which handles
+// 'log'-type requests will write them to db rather than solely the extension's console
 /*const LOGS_OBJECT_STORE = "logs";
 
 chrome.runtime.onInstalled.addListener(function (details) {
@@ -56,37 +55,45 @@ chrome.runtime.onInstalled.addListener(function (details) {
 // if microsecond precision timestamps are needed for logging, can use this
 // https://developer.mozilla.org/en-US/docs/Web/API/Performance/now#performance.now_vs._date.now
 
-chrome.runtime.onMessage.addListener(
-    function (request, sender, sendResponse) {
-        centralLogger.trace("request received by service worker", sender.tab ?
-            "from a content script:" + sender.tab.url :
-            "from the extension");
-        if (request.reqType === "takeScreenshot") {
-            const screenshotPromise = chrome.tabs.captureVisibleTab();
+/**
+ * @description Handle messages sent from the content script or popup script
+ * @param request the message sent from the content script or popup script
+ * @param sender the sender of the message
+ * @param sendResponse the function to call to send a response back to the sender
+ * @return true to indicate to chrome that the requester's connection should be held open to wait for a response
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- chrome.runtime.onMessage.addListener requires any
+export function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (response?: any) => void) {
+    centralLogger.trace("request received by service worker", sender.tab ?
+        "from a content script:" + sender.tab.url :
+        "from the extension");
+    if (request.reqType === "takeScreenshot") {
+        const screenshotPromise = chrome.tabs.captureVisibleTab();
 
-            centralLogger.trace("screenshot promise created; time is", new Date().toISOString());
-            screenshotPromise.then((screenshotDataUrl) => {
-                centralLogger.debug("screenshot created; about to send screenshot back to content script at " +
-                    "time", new Date().toISOString(), "; length:", screenshotDataUrl.length,
-                    "truncated data url:", screenshotDataUrl.slice(0, 100));
-                sendResponse({screenshot: screenshotDataUrl});
-                centralLogger.trace("screen shot sent back to content script; time is", new Date().toISOString());
-            });
-        } else if (request.reqType === "log") {
-            const timestamp = String(request.timestamp);
-            const loggerName = String(request.loggerName);
-            const level = request.level;
-            const args = request.args as unknown[];
-            assertIsValidLogLevelName(level);
+        centralLogger.trace("screenshot promise created; time is", new Date().toISOString());
+        screenshotPromise.then((screenshotDataUrl) => {
+            centralLogger.debug("screenshot created; about to send screenshot back to content script at " +
+                "time", new Date().toISOString(), "; length:", screenshotDataUrl.length,
+                "truncated data url:", screenshotDataUrl.slice(0, 100));
+            sendResponse({screenshot: screenshotDataUrl});
+            centralLogger.trace("screen shot sent back to content script; time is", new Date().toISOString());
+        });
+    } else if (request.reqType === "log") {
+        const timestamp = String(request.timestamp);
+        const loggerName = String(request.loggerName);
+        const level = request.level;
+        const args = request.args as unknown[];
+        assertIsValidLogLevelName(level);
 
-            console[level](augmentLogMsg(timestamp, loggerName, level, args));
-            sendResponse({success: true});
-        } else {
-            centralLogger.error("unrecognized request type:", request.reqType);
-        }
-        return true;
+        console[level](augmentLogMsg(timestamp, loggerName, level, args));
+        sendResponse({success: true});
+    } else {
+        centralLogger.error("unrecognized request type:", request.reqType);
     }
-);
+    return true;
+}
+
+chrome.runtime.onMessage.addListener(handleMsgFromPage);
 
 
 //todo before official release, if indexeddb persistent logging was implemented, make mechanism to trigger

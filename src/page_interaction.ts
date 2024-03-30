@@ -6,6 +6,8 @@ import {createNamedLogger} from "./utils/shared_logging_setup";
 
 const logger = createNamedLogger('agent-page-interaction');
 
+//not unit testing the below code because it's prototype code that will be almost entirely superseded by
+// ported version of the seeact.py file
 
 logger.trace("successfully injected page_interaction script in browser");
 

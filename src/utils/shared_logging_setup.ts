@@ -52,6 +52,8 @@ export function augmentLogMsg(timestampStr: string, loggerName: string | symbol,
             "This is not supported by this logging feature yet; please use string concatenation instead.");
         //todo maybe add logic here to support an initial arg which contains substitution string(s)
         // could use this https://github.com/sevensc/typescript-string-operations#stringformat
+        // Only need to support placeholders that console.log already supported:
+        //  https://developer.mozilla.org/en-US/docs/Web/API/console#using_string_substitutions
     } else {
         //for now, just supporting the simple "one or more objects get concatenated together" approach
         msg = [timestampStr, loggerName, levelName.toUpperCase(), ...args].join(" ");
