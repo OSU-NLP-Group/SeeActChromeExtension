@@ -91,7 +91,7 @@ export function handleMsgFromPage(request: any, sender: MessageSender, sendRespo
         centralLogger.error("unrecognized request type:", request.reqType);
     }
     return true;
-}
+}//todo consider unit tests for the above
 
 chrome.runtime.onMessage.addListener(handleMsgFromPage);
 

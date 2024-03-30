@@ -37,8 +37,7 @@ export class DomWrapper {
      */
     grabElementByXpath = (xpath: string, contextElement?: HTMLElement): HTMLElement | null => {
         return this.dom.evaluate(xpath, contextElement ?? this.dom, null,
-            DomWrapper.XPATH_RESULT_1ST_ORDERED_NODE_TYPE, null)
-            .singleNodeValue as HTMLElement;
+            DomWrapper.XPATH_RESULT_1ST_ORDERED_NODE_TYPE, null).singleNodeValue as HTMLElement;
     }
 
     /**
@@ -75,7 +74,6 @@ export class DomWrapper {
             || elementComputedStyle.height === "0px" || elementComputedStyle.width === "0px";
         //maybe eventually update this once content-visibility is supported outside chromium (i.e. in firefox/safari)
         // https://developer.mozilla.org/en-US/docs/Web/CSS/content-visibility
-        //todo FULLY unit test this on apr6 by mocking window.getComputedStyle
     }
 
 }
@@ -298,7 +296,6 @@ export class BrowserHelper {
                     || element instanceof HTMLFieldSetElement)
                 && element.disabled)
             || element.getAttribute("disabled") != null;
-        //todo FULLY unit test this on apr6
     }
 
     /**

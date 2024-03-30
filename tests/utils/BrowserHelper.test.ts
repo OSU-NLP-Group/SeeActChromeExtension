@@ -2,6 +2,98 @@ import {BrowserHelper, DomWrapper} from "../../src/utils/BrowserHelper";
 import {JSDOM} from "jsdom";
 
 
+describe('DomWrapper.calcIsHidden', () => {
+    const {window} = (new JSDOM(`<!DOCTYPE html><body></body>`));
+    const domHelper = new DomWrapper(window);
+    const {document} = window;
+
+    beforeEach(() => {
+        jest.resetAllMocks();
+    });
+
+    it('returns true for element with display set to none', () => {
+        const element = document.createElement('div');
+        window.getComputedStyle = jest.fn().mockReturnValueOnce({display: "none"});
+        expect(domHelper.calcIsHidden(element)).toBe(true);
+    });
+
+    it('returns true for element with visibility set to hidden', () => {
+        const element = document.createElement('div');
+        window.getComputedStyle = jest.fn().mockReturnValueOnce({visibility: "hidden"});
+        expect(domHelper.calcIsHidden(element)).toBe(true);
+    });
+
+    it('returns true for element with hidden property true', () => {
+        const element = document.createElement('div');
+        element.hidden = true;
+        window.getComputedStyle = jest.fn().mockReturnValueOnce({});
+        expect(domHelper.calcIsHidden(element)).toBe(true);
+    });
+
+    it('returns true for element with overflow hidden and scrollHeight greater than clientHeight', () => {
+        const element = {
+            ...document.createElement('div'),
+            get scrollHeight() {return 101},
+            get clientHeight() {return 100},
+        };
+        window.getComputedStyle = jest.fn().mockReturnValueOnce({overflow: "hidden"});
+        expect(domHelper.calcIsHidden(element)).toBe(true);
+    });
+
+    it('returns true for element with overflow hidden and scrollWidth greater than clientWidth', () => {
+        const element = {
+            ...document.createElement('div'),
+            get scrollWidth() { return 101; },
+            get clientWidth() { return 100; },
+        };
+        window.getComputedStyle = jest.fn().mockReturnValueOnce({overflow: "hidden"});
+        expect(domHelper.calcIsHidden(element)).toBe(true);
+    });
+
+    it('returns false for element with overflow hidden and scrollWidth less than clientWidth and scrollHeight equal to clientHeight', () => {
+        const element = {
+            ...document.createElement('div'),
+            get scrollWidth() { return 100; },
+            get clientWidth() { return 101; },
+            get scrollHeight() { return 100; },
+            get clientHeight() { return 100; },
+        };
+        window.getComputedStyle = jest.fn().mockReturnValueOnce({overflow: "hidden"});
+        expect(domHelper.calcIsHidden(element)).toBe(false);
+    });
+
+    it('returns false for visible element', () => {
+        const element = document.createElement('div');
+        window.getComputedStyle = jest.fn().mockReturnValueOnce({});
+        expect(domHelper.calcIsHidden(element)).toBe(false);
+    });
+
+
+    it('returns true for element with opacity set to 0', () => {
+        const element = document.createElement('div');
+        window.getComputedStyle = jest.fn().mockReturnValueOnce({opacity: "0"});
+        expect(domHelper.calcIsHidden(element)).toBe(true);
+    });
+
+    it('returns true for element with height and width set to 0px', () => {
+        const element = document.createElement('div');
+        window.getComputedStyle = jest.fn().mockReturnValueOnce({height: "0px", width: "0px"});
+        expect(domHelper.calcIsHidden(element)).toBe(true);
+    });
+
+    it('returns true for element with height set to 50px and width set to 0px', () => {
+        const element = document.createElement('div');
+        window.getComputedStyle = jest.fn().mockReturnValueOnce({height: "50px", width: "0px"});
+        expect(domHelper.calcIsHidden(element)).toBe(true);
+    });
+
+    it('returns false for element with height set to 15px and width set to 20px', () => {
+        const element = document.createElement('div');
+        window.getComputedStyle = jest.fn().mockReturnValueOnce({height: "15px", width: "20px"});
+        expect(domHelper.calcIsHidden(element)).toBe(false);
+    });
+});
+
 describe('BrowserHelper.removeAndCollapseEol', () => {
     const {window} = new JSDOM(`<!DOCTYPE html><body></body>`);
     const domHelper = new DomWrapper(window);
@@ -16,7 +108,8 @@ describe('BrowserHelper.removeAndCollapseEol', () => {
     });
 
     it("should replace multiple consecutive whitespace chars with a single space", () => {
-        expect(browserHelper.removeEolAndCollapseWhitespace("hello\n\n\nworld, I'm \tZoe")).toBe("hello world, I'm Zoe");
+        expect(browserHelper.removeEolAndCollapseWhitespace("hello\n\n\nworld, I'm \tZoe"))
+            .toBe("hello world, I'm Zoe");
     });
 
 });
@@ -34,8 +127,7 @@ describe('BrowserHelper.getFirstLine', () => {
             .toBe("hello world, I'm Zoe and I'm a software...");
     });
     it('should return the first line of a multi-line string', () => {
-        expect(browserHelper.getFirstLine("hello world\nI'm Zoe\nI'm a software engineer"))
-            .toBe("hello world");
+        expect(browserHelper.getFirstLine("hello world\nI'm Zoe\nI'm a software engineer")).toBe("hello world");
     });
     it('should truncate a long first line of a multi-line string to 8 segments', () => {
         expect(browserHelper.getFirstLine("Once upon a midnight dreary, while I pondered, weak and weary,\n" +
@@ -153,8 +245,7 @@ will learn how to make a website.
         </div></body>`);
         const domHelper = new DomWrapper(window);
         const browserHelper = new BrowserHelper(domHelper);
-        domHelper.getInnerText = jest.fn().mockReturnValueOnce('Review of W3Schools:  Submit')
-            .mockReturnValueOnce('');//grabbing innerText for a <textarea> element is weird and seems to always return empty string
+        domHelper.getInnerText = jest.fn().mockReturnValueOnce('Review of W3Schools:  Submit').mockReturnValueOnce('');//grabbing innerText for a <textarea> element is weird and seems to always return empty string
 
         const textareaElement = domHelper.grabElementByXpath("//textarea") as HTMLElement;
         expect(browserHelper.getElementDescription(textareaElement))
@@ -179,8 +270,7 @@ will learn how to make a website.
         </div></body>`));
         const domHelper = new DomWrapper(window);
         const browserHelper = new BrowserHelper(domHelper);
-        domHelper.getInnerText = jest.fn().mockReturnValueOnce('Review of W3Schools:  Submit')
-            .mockReturnValueOnce('');//grabbing innerText for a <textarea> element is weird and seems to always return empty string
+        domHelper.getInnerText = jest.fn().mockReturnValueOnce('Review of W3Schools:  Submit').mockReturnValueOnce('');//grabbing innerText for a <textarea> element is weird and seems to always return empty string
 
         const textareaElement = domHelper.grabElementByXpath("//textarea") as HTMLInputElement;
         textareaElement.value = "";//mimicking the user wiping the contents of the textarea
@@ -232,8 +322,7 @@ will learn how to make a website.
         domHelper.getInnerText = jest.fn().mockReturnValueOnce("").mockReturnValueOnce("");
 
         const divElementWithChild = domHelper.grabElementByXpath(`//*[@id="download_button"]`) as HTMLElement;
-        expect(browserHelper.getElementDescription(divElementWithChild))
-            .toEqual(`aria-label="Download document"`);
+        expect(browserHelper.getElementDescription(divElementWithChild)).toEqual(`aria-label="Download document"`);
     });
 });
 
@@ -298,7 +387,8 @@ describe('BrowserHelper.getElementData', () => {
             expect(elementData).not.toBeNull();
             expect(elementData?.centerCoords).toEqual([boundingBox.x + boundingBox.width / 2,
                 boundingBox.y + boundingBox.height / 2]);
-            expect(elementData?.description).toEqual(`INPUT_VALUE="At w3schools.com you    will learn how to make a website.    :)" parent_node: Review of W3Schools: Submit name="w3review" value="At w3schools.com you will learn how to make a website. :)"`)
+            expect(elementData?.description)
+                .toEqual(`INPUT_VALUE="At w3schools.com you    will learn how to make a website.    :)" parent_node: Review of W3Schools: Submit name="w3review" value="At w3schools.com you will learn how to make a website. :)"`)
             expect(elementData?.tagHead).toEqual("input" + roleSpecInTag + typeSpecInTag);
             expect(elementData?.boundingBox).toEqual({
                 tLx: boundingBox.x, tLy: boundingBox.y,
@@ -317,9 +407,52 @@ describe('BrowserHelper.getElementData', () => {
         domHelper.getInnerText = jest.fn().mockReturnValueOnce("").mockReturnValueOnce("");
         window.getComputedStyle = jest.fn().mockReturnValueOnce({});
 
-        expect(browserHelper.getElementData(domHelper.grabElementByXpath(`//*[@id="download_button"]`) as HTMLElement)).toBeNull();
+        expect(browserHelper.getElementData(domHelper.grabElementByXpath(`//*[@id="download_button"]`) as HTMLElement))
+            .toBeNull();
     });
 
+});
+
+describe('BrowserHelper.calcIsDisabled', () => {
+    const {window} = (new JSDOM(`<!DOCTYPE html><body></body>`));
+    const domHelper = new DomWrapper(window);
+    const {document} = window;
+    const browserHelper = new BrowserHelper(domHelper);
+
+    it('returns true for element with ariaDisabled set to true', () => {
+        const element = document.createElement('div');
+        element.ariaDisabled = 'true';
+        expect(browserHelper.calcIsDisabled(element)).toBe(true);
+    });
+
+    it('returns true for disabled HTMLButtonElement', () => {
+        const element = document.createElement('button');
+        element.disabled = true;
+        expect(browserHelper.calcIsDisabled(element)).toBe(true);
+    });
+
+    it('returns true for disabled HTMLInputElement', () => {
+        const element = document.createElement('input');
+        element.disabled = true;
+        expect(browserHelper.calcIsDisabled(element)).toBe(true);
+    });
+
+    it('returns true for element with disabled attribute', () => {
+        const element = document.createElement('div');
+        element.setAttribute('disabled', '');
+        expect(browserHelper.calcIsDisabled(element)).toBe(true);
+    });
+
+    it('returns false for enabled HTMLButtonElement', () => {
+        const element = document.createElement('button');
+        element.disabled = false;
+        expect(browserHelper.calcIsDisabled(element)).toBe(false);
+    });
+
+    it('returns false for element without disabled attribute', () => {
+        const element = document.createElement('div');
+        expect(browserHelper.calcIsDisabled(element)).toBe(false);
+    });
 });
 
 describe('BrowserHelper.getInteractiveElements', () => {
