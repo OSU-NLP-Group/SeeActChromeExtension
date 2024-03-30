@@ -2,8 +2,8 @@ import {StrTriple} from "./format_prompts";
 import OpenAI from "openai";
 import {APIConnectionError, APIConnectionTimeoutError, InternalServerError, RateLimitError} from "openai/error";
 import {retryAsync} from "ts-retry";
-import {createLogger, format, Logger} from "winston";
-import {BrowserBackgroundTransport} from "./shared_logging_setup";
+import {Logger} from "loglevel";
+import {createNamedLogger} from "./shared_logging_setup";
 import ChatCompletionMessageParam = OpenAI.ChatCompletionMessageParam;
 import ChatCompletionContentPart = OpenAI.ChatCompletionContentPart;
 
@@ -63,11 +63,7 @@ export class OpenAiEngine {
 
         this.nextAvailTime = new Array<number>(this.apiKeys.length).fill(0);
         this.currKeyIdx = 0;
-        this.logger = createLogger({
-            transports: [new BrowserBackgroundTransport({})],
-            defaultMeta: {service: 'open-ai-engine'},
-            format: format.combine(format.timestamp(), format.json())
-        });
+        this.logger = createNamedLogger('open-ai-engine');
     }
 
     /**

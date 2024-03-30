@@ -2,18 +2,12 @@ import {BrowserHelper} from "./utils/BrowserHelper";
 import {formatChoices, generatePrompt, postProcessActionLlm, StrTriple} from "./utils/format_prompts";
 import {OpenAiEngine} from "./utils/OpenAiEngine";
 import {getIndexFromOptionName} from "./utils/format_prompt_utils";
-import {sleep} from "openai/core";
-import {createLogger, format} from "winston";
-import {BrowserBackgroundTransport} from "./utils/shared_logging_setup";
+import {createNamedLogger} from "./utils/shared_logging_setup";
 
-const logger = createLogger({
-    transports: [new BrowserBackgroundTransport({})],
-    defaultMeta: {service: 'agent-page-interaction'},
-    format: format.combine(format.timestamp(), format.json())
-});
+const logger = createNamedLogger('agent-page-interaction');
 
 
-logger.debug("successfully injected page_interaction script in browser");
+logger.trace("successfully injected page_interaction script in browser");
 
 const browserHelper = new BrowserHelper();
 const currInteractiveElements = browserHelper.getInteractiveElements();
@@ -34,7 +28,7 @@ const interactiveChoices = formatChoices(interactiveChoiceDetails, candidateIds)
 
 const prompts = generatePrompt("Pick a random interactive element in the current page which seems even a bit interesting and click on it", [], interactiveChoices);
 
-logger.verbose("prompts: " + prompts);
+logger.debug("prompts: " + prompts);
 
 const modelName: string = "gpt-4-vision-preview";
 //REMINDER- DO NOT COMMIT ANY NONTRIVIAL EDITS OF THE FOLLOWING LINE
@@ -44,9 +38,9 @@ const aiEngine = new OpenAiEngine(modelName, apiKey);
 
 (async () => {
 
-    logger.debug("about to request screenshot from service worker; time is " + new Date().toISOString());
+    logger.trace("about to request screenshot from service worker; time is " + new Date().toISOString());
     const screenshotResponse = await chrome.runtime.sendMessage({reqType: "takeScreenshot"});
-    logger.debug(`response received back from service worker; time is ${new Date().toISOString()}; screenshot response: ${screenshotResponse}`);
+    logger.trace(`response received back from service worker; time is ${new Date().toISOString()}; screenshot response: ${screenshotResponse}`);
     const screenshotDataUrl: string = screenshotResponse.screenshot;
     console.assert(screenshotDataUrl !== undefined, "screenshot data url is undefined")
     logger.debug("screenshot data url (truncated): " + screenshotDataUrl.slice(0, 100));
@@ -60,16 +54,13 @@ const aiEngine = new OpenAiEngine(modelName, apiKey);
     logger.info("grounding output: " + groundingOutput);
 
     const [elementName, actionName, value] = postProcessActionLlm(groundingOutput);
-    logger.info(`suggested action: ${actionName}; value: ${value}`);
+    logger.debug(`suggested action: ${actionName}; value: ${value}`);
     const chosenElementIndex = getIndexFromOptionName(elementName);
-    logger.verbose(`clicking on the ${chosenElementIndex} entry from the candidates list; which is the ${candidateIds[chosenElementIndex]} element of the original interactiveElements list`);
+    logger.debug(`clicking on the ${chosenElementIndex} entry from the candidates list; which is the ${candidateIds[chosenElementIndex]} element of the original interactiveElements list`);
     const chosenElement = currInteractiveElements[candidateIds[chosenElementIndex]];
     const elementToClick = chosenElement.element;
 
-    logger.verbose(`element to click: ${chosenElement.tagHead}; description: ${chosenElement.description}`);
-
-
-    await sleep(5000);//to allow copying the logging from chrome dev console before the click happens and the new page loads
+    logger.debug(`element to click: ${chosenElement.tagHead}; description: ${chosenElement.description}`);
 
     elementToClick.click();
 

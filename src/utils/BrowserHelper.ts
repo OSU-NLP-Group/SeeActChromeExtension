@@ -1,7 +1,6 @@
 import {DOMWindow} from "jsdom";
 import getXPath from "get-xpath";
-import {createLogger, format} from "winston";
-import {BrowserBackgroundTransport} from "./shared_logging_setup";
+import {createNamedLogger} from "./shared_logging_setup";
 
 /**
  * @description class with thin wrappers around DOM interaction
@@ -111,11 +110,7 @@ export class BrowserHelper {
     constructor(domHelper?: DomWrapper) {
         this.domHelper = domHelper ?? new DomWrapper(window);
 
-        this.logger = createLogger({
-            transports: [new BrowserBackgroundTransport({})],
-            defaultMeta: {service: 'browser-helper'},
-            format: format.combine(format.timestamp(), format.json())
-        });
+        this.logger = createNamedLogger('browser-helper');
     }
 
     /**

@@ -1,27 +1,24 @@
-import winston, {createLogger} from "winston";
-import {format} from "logform"
-import {WinstonInfo} from "./utils/shared_logging_setup";
+import log from "loglevel";
+import {assertIsValidLogLevelName, augmentLogMsg, origLoggerFactory} from "./utils/shared_logging_setup";
 
 console.log("successfully loaded background script in browser");
 
 
 //initially, unified/relatively-persistent logging will be achieved simply by having content script and popup's js
 // send messages to the background script, which will print to the console in the extension's devtools window
-const centralLogger = createLogger({
-    //todo before release, if this is still here, change level to info,
-    // preferably with a way for the user to control this via advanced section of options menu
-    level: 'debug',
-    transports: [new winston.transports.Console()],
-    format: winston.format.combine(
-        format((info) => {
-            info.service ??= "background";
-            return info;
-        })(),
-        winston.format.json(),
-        winston.format.colorize({all: true})
-    )
-});
-centralLogger.verbose("central logger created in background script");
+const centralLogger = log.getLogger("service-worker");
+centralLogger.methodFactory = function (methodName, logLevel, loggerName) {
+    const rawMethod = origLoggerFactory(methodName, logLevel, loggerName);
+    return function (...args: unknown[]) {
+        rawMethod(augmentLogMsg(new Date().toISOString(), loggerName, methodName, args));
+    };
+};
+//todo change this to info or warn before release, and ideally make it configurable from options menu
+centralLogger.setLevel("trace");
+centralLogger.rebuild();
+
+
+centralLogger.trace("central logger created in background script");
 //todo later add indexeddb logging via the background script
 // unclear whether that should be a winston custom transport attached to the above logger or if it should just be code
 // in the onMessage listener which directly writes to indexeddb (latter avoids infinite recursion possibility)
@@ -61,23 +58,29 @@ chrome.runtime.onInstalled.addListener(function (details) {
 
 chrome.runtime.onMessage.addListener(
     function (request, sender, sendResponse) {
-        centralLogger.verbose("request received by service worker", sender.tab ?
+        centralLogger.trace("request received by service worker", sender.tab ?
             "from a content script:" + sender.tab.url :
             "from the extension");
         if (request.reqType === "takeScreenshot") {
             const screenshotPromise = chrome.tabs.captureVisibleTab();
 
-            centralLogger.verbose("screenshot promise created; time is", new Date().toISOString());
+            centralLogger.trace("screenshot promise created; time is", new Date().toISOString());
             screenshotPromise.then((screenshotDataUrl) => {
                 centralLogger.debug("screenshot created; about to send screenshot back to content script at " +
                     "time", new Date().toISOString(), "; length:", screenshotDataUrl.length,
                     "truncated data url:", screenshotDataUrl.slice(0, 100));
                 sendResponse({screenshot: screenshotDataUrl});
-                centralLogger.verbose("screen shot sent back to content script; time is", new Date().toISOString());
+                centralLogger.trace("screen shot sent back to content script; time is", new Date().toISOString());
             });
         } else if (request.reqType === "log") {
-            const {level, message, ...meta} = request.payload as WinstonInfo;
-            centralLogger.log(level, message, meta);
+            const timestamp = String(request.timestamp);
+            const loggerName = String(request.loggerName);
+            const level = request.level;
+            const args = request.args as unknown[];
+            assertIsValidLogLevelName(level);
+
+            console[level](augmentLogMsg(timestamp, loggerName, level, args));
+            sendResponse({success: true});
         } else {
             centralLogger.error("unrecognized request type:", request.reqType);
         }

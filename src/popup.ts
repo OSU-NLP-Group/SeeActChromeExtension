@@ -1,11 +1,6 @@
-import {createLogger, format} from "winston";
-import {BrowserBackgroundTransport} from "./utils/shared_logging_setup";
+import {createNamedLogger} from "./utils/shared_logging_setup";
 
-const logger = createLogger({
-    transports: [new BrowserBackgroundTransport({})],
-    defaultMeta: {service: 'main-popup'},
-    format: format.combine(format.timestamp(), format.json())
-});
+const logger = createNamedLogger('main-popup');
 
 const startButton = document.getElementById('startAgent');
 if (!startButton) throw new Error('startAgent button not found');
@@ -34,7 +29,7 @@ export const getActiveTabId = async (): Promise<number | undefined> => {
 // with an injected mock of the chrome api helper object
 
 startButton.addEventListener('click', async () => {
-    logger.debug('startAgent button clicked');
+    logger.trace('startAgent button clicked');
     const tabId = await getActiveTabId();
     if (!tabId) {
         logger.warn("Can't inject agent script into chrome:// URLs for security reasons; " +
@@ -47,5 +42,5 @@ startButton.addEventListener('click', async () => {
             tabId: tabId
         }
     });
-    logger.debug('agent script injected into page: ' + result);
+    logger.trace('agent script injected into page: ' + result);
 });
