@@ -1,10 +1,17 @@
-import {BrowserHelper, DomWrapper} from "../../src/utils/BrowserHelper";
-import {JSDOM} from "jsdom";
+import {BrowserHelper} from "../../src/utils/BrowserHelper";
+import {DOMWindow, JSDOM} from "jsdom";
+import {DomWrapper} from "../../src/utils/mockable_wrappers";
+import log from "loglevel";
+import {origLoggerFactory} from "../../src/utils/shared_logging_setup";
 
+const testLogger = log.getLogger("browser-test");
+testLogger.methodFactory = origLoggerFactory;
+testLogger.setLevel("warn");
 
-describe('DomWrapper.calcIsHidden', () => {
+describe('BrowserHelper.calcIsHidden', () => {
     const {window} = (new JSDOM(`<!DOCTYPE html><body></body>`));
-    const domHelper = new DomWrapper(window);
+    const domWrapper = new DomWrapper(window);
+    const browserHelper = new BrowserHelper(domWrapper, testLogger);
     const {document} = window;
 
     beforeEach(() => {
@@ -13,21 +20,21 @@ describe('DomWrapper.calcIsHidden', () => {
 
     it('returns true for element with display set to none', () => {
         const element = document.createElement('div');
-        window.getComputedStyle = jest.fn().mockReturnValueOnce({display: "none"});
-        expect(domHelper.calcIsHidden(element)).toBe(true);
+        domWrapper.getComputedStyle = jest.fn().mockReturnValueOnce({display: "none"});
+        expect(browserHelper.calcIsHidden(element)).toBe(true);
     });
 
     it('returns true for element with visibility set to hidden', () => {
         const element = document.createElement('div');
-        window.getComputedStyle = jest.fn().mockReturnValueOnce({visibility: "hidden"});
-        expect(domHelper.calcIsHidden(element)).toBe(true);
+        domWrapper.getComputedStyle = jest.fn().mockReturnValueOnce({visibility: "hidden"});
+        expect(browserHelper.calcIsHidden(element)).toBe(true);
     });
 
     it('returns true for element with hidden property true', () => {
         const element = document.createElement('div');
         element.hidden = true;
-        window.getComputedStyle = jest.fn().mockReturnValueOnce({});
-        expect(domHelper.calcIsHidden(element)).toBe(true);
+        domWrapper.getComputedStyle = jest.fn().mockReturnValueOnce({});
+        expect(browserHelper.calcIsHidden(element)).toBe(true);
     });
 
     it('returns true for element with overflow hidden and scrollHeight greater than clientHeight', () => {
@@ -36,8 +43,8 @@ describe('DomWrapper.calcIsHidden', () => {
             get scrollHeight() {return 101},
             get clientHeight() {return 100},
         };
-        window.getComputedStyle = jest.fn().mockReturnValueOnce({overflow: "hidden"});
-        expect(domHelper.calcIsHidden(element)).toBe(true);
+        domWrapper.getComputedStyle = jest.fn().mockReturnValueOnce({overflow: "hidden"});
+        expect(browserHelper.calcIsHidden(element)).toBe(true);
     });
 
     it('returns true for element with overflow hidden and scrollWidth greater than clientWidth', () => {
@@ -46,8 +53,8 @@ describe('DomWrapper.calcIsHidden', () => {
             get scrollWidth() { return 101; },
             get clientWidth() { return 100; },
         };
-        window.getComputedStyle = jest.fn().mockReturnValueOnce({overflow: "hidden"});
-        expect(domHelper.calcIsHidden(element)).toBe(true);
+        domWrapper.getComputedStyle = jest.fn().mockReturnValueOnce({overflow: "hidden"});
+        expect(browserHelper.calcIsHidden(element)).toBe(true);
     });
 
     it('returns false for element with overflow hidden and scrollWidth less than clientWidth and scrollHeight equal to clientHeight', () => {
@@ -58,39 +65,39 @@ describe('DomWrapper.calcIsHidden', () => {
             get scrollHeight() { return 100; },
             get clientHeight() { return 100; },
         };
-        window.getComputedStyle = jest.fn().mockReturnValueOnce({overflow: "hidden"});
-        expect(domHelper.calcIsHidden(element)).toBe(false);
+        domWrapper.getComputedStyle = jest.fn().mockReturnValueOnce({overflow: "hidden"});
+        expect(browserHelper.calcIsHidden(element)).toBe(false);
     });
 
     it('returns false for visible element', () => {
         const element = document.createElement('div');
-        window.getComputedStyle = jest.fn().mockReturnValueOnce({});
-        expect(domHelper.calcIsHidden(element)).toBe(false);
+        domWrapper.getComputedStyle = jest.fn().mockReturnValueOnce({});
+        expect(browserHelper.calcIsHidden(element)).toBe(false);
     });
 
 
     it('returns true for element with opacity set to 0', () => {
         const element = document.createElement('div');
-        window.getComputedStyle = jest.fn().mockReturnValueOnce({opacity: "0"});
-        expect(domHelper.calcIsHidden(element)).toBe(true);
+        domWrapper.getComputedStyle = jest.fn().mockReturnValueOnce({opacity: "0"});
+        expect(browserHelper.calcIsHidden(element)).toBe(true);
     });
 
     it('returns true for element with height and width set to 0px', () => {
         const element = document.createElement('div');
-        window.getComputedStyle = jest.fn().mockReturnValueOnce({height: "0px", width: "0px"});
-        expect(domHelper.calcIsHidden(element)).toBe(true);
+        domWrapper.getComputedStyle = jest.fn().mockReturnValueOnce({height: "0px", width: "0px"});
+        expect(browserHelper.calcIsHidden(element)).toBe(true);
     });
 
     it('returns true for element with height set to 50px and width set to 0px', () => {
         const element = document.createElement('div');
-        window.getComputedStyle = jest.fn().mockReturnValueOnce({height: "50px", width: "0px"});
-        expect(domHelper.calcIsHidden(element)).toBe(true);
+        domWrapper.getComputedStyle = jest.fn().mockReturnValueOnce({height: "50px", width: "0px"});
+        expect(browserHelper.calcIsHidden(element)).toBe(true);
     });
 
     it('returns false for element with height set to 15px and width set to 20px', () => {
         const element = document.createElement('div');
-        window.getComputedStyle = jest.fn().mockReturnValueOnce({height: "15px", width: "20px"});
-        expect(domHelper.calcIsHidden(element)).toBe(false);
+        domWrapper.getComputedStyle = jest.fn().mockReturnValueOnce({height: "15px", width: "20px"});
+        expect(browserHelper.calcIsHidden(element)).toBe(false);
     });
 });
 
@@ -180,7 +187,7 @@ describe('BrowserHelper.getElementDescription', () => {
             </select>
         </div></body>`);
         const domHelper = new DomWrapper(window);
-        const browserHelper = new BrowserHelper(domHelper);
+        const browserHelper = new BrowserHelper(domHelper, testLogger);
         domHelper.getInnerText = jest.fn().mockReturnValueOnce('TYPE \nSchool (508)\nClinic (364)')
             .mockReturnValueOnce('School (508)\nClinic (364)');
         //2nd mocking above is just in case something weird happens and the code tries to get innerText of <select>
@@ -269,7 +276,7 @@ will learn how to make a website.
             <button id="submit_review" type="submit">Submit</button>
         </div></body>`));
         const domHelper = new DomWrapper(window);
-        const browserHelper = new BrowserHelper(domHelper);
+        const browserHelper = new BrowserHelper(domHelper, testLogger);
         domHelper.getInnerText = jest.fn().mockReturnValueOnce('Review of W3Schools:  Submit').mockReturnValueOnce('');//grabbing innerText for a <textarea> element is weird and seems to always return empty string
 
         const textareaElement = domHelper.grabElementByXpath("//textarea") as HTMLInputElement;
@@ -332,10 +339,10 @@ describe('BrowserHelper.getElementData', () => {
         const {window} = new JSDOM(`<!DOCTYPE html><body><div id="search_header">
         <a class="gb_H" hidden="hidden" aria-label="Gmail (opens a new tab)" data-pid="23" href="https://mail.google.com/mail/&amp;ogbl" target="_top">Gmail</a>
         </div></body>`);
-        const domHelper = new DomWrapper(window);
-        const browserHelper = new BrowserHelper(domHelper);
-        window.getComputedStyle = jest.fn().mockReturnValueOnce({display: "none"});
-        const linkElement = domHelper.grabElementByXpath("//a") as HTMLElement;
+        const domWrapper = new DomWrapper(window);
+        const browserHelper = new BrowserHelper(domWrapper, testLogger);
+        domWrapper.getComputedStyle = jest.fn().mockReturnValueOnce({display: "none"});
+        const linkElement = domWrapper.grabElementByXpath("//a") as HTMLElement;
         expect(browserHelper.getElementData(linkElement)).toBeNull();
     });
 
@@ -348,10 +355,10 @@ describe('BrowserHelper.getElementData', () => {
             </textarea>
             <button id="submit_review" type="submit" disabled="disabled">Submit</button>
         </div></body>`);
-        const domHelper = new DomWrapper(window);
-        const browserHelper = new BrowserHelper(domHelper);
-        window.getComputedStyle = jest.fn().mockReturnValueOnce({});
-        const submitButton = domHelper.grabElementByXpath("//button") as HTMLElement;
+        const domWrapper = new DomWrapper(window);
+        const browserHelper = new BrowserHelper(domWrapper, testLogger);
+        domWrapper.getComputedStyle = jest.fn().mockReturnValueOnce({});
+        const submitButton = domWrapper.grabElementByXpath("//button") as HTMLElement;
         expect(browserHelper.getElementData(submitButton)).toBeNull();
     });
 
@@ -371,18 +378,18 @@ describe('BrowserHelper.getElementData', () => {
     <button id="submit_review" type="submit">Submit</button>
 </div>
 </body>`);
-            const domHelper = new DomWrapper(window);
-            const browserHelper = new BrowserHelper(domHelper);
-            domHelper.getInnerText = jest.fn().mockReturnValueOnce('Review of W3Schools:  Submit')
+            const domWrapper = new DomWrapper(window);
+            const browserHelper = new BrowserHelper(domWrapper, testLogger);
+            domWrapper.getInnerText = jest.fn().mockReturnValueOnce('Review of W3Schools:  Submit')
                 .mockReturnValueOnce('');
-            window.getComputedStyle = jest.fn().mockReturnValueOnce({});
+            domWrapper.getComputedStyle = jest.fn().mockReturnValueOnce({});
             const boundingBox = {
                 height: 21.200000762939453, width: 169.6000061035, x: 160.1374969482422, y: 8
             };//based on actually putting this html in a file, opening in browser, and inspecting the element with dev console
             // as with other mock return value in this file, aside from the window.getComputedStyle() calls
-            domHelper.grabClientBoundingRect = jest.fn().mockReturnValueOnce(boundingBox);
+            domWrapper.grabClientBoundingRect = jest.fn().mockReturnValueOnce(boundingBox);
 
-            const textareaElement = domHelper.grabElementByXpath("//input") as HTMLElement;
+            const textareaElement = domWrapper.grabElementByXpath("//input") as HTMLElement;
             const elementData = browserHelper.getElementData(textareaElement);
             expect(elementData).not.toBeNull();
             expect(elementData?.centerCoords).toEqual([boundingBox.x + boundingBox.width / 2,
@@ -402,12 +409,12 @@ describe('BrowserHelper.getElementData', () => {
             <svg class="icon icon-download">
             <use href="#icon-download"></use></svg>
         </div></div></body>`);
-        const domHelper = new DomWrapper(window);
-        const browserHelper = new BrowserHelper(domHelper);
-        domHelper.getInnerText = jest.fn().mockReturnValueOnce("").mockReturnValueOnce("");
-        window.getComputedStyle = jest.fn().mockReturnValueOnce({});
+        const domWrapper = new DomWrapper(window);
+        const browserHelper = new BrowserHelper(domWrapper, testLogger);
+        domWrapper.getInnerText = jest.fn().mockReturnValueOnce("").mockReturnValueOnce("");
+        domWrapper.getComputedStyle = jest.fn().mockReturnValueOnce({});
 
-        expect(browserHelper.getElementData(domHelper.grabElementByXpath(`//*[@id="download_button"]`) as HTMLElement))
+        expect(browserHelper.getElementData(domWrapper.grabElementByXpath(`//*[@id="download_button"]`) as HTMLElement))
             .toBeNull();
     });
 
@@ -455,11 +462,155 @@ describe('BrowserHelper.calcIsDisabled', () => {
     });
 });
 
+
 describe('BrowserHelper.getInteractiveElements', () => {
-    //todo test where no elements are interactive
+    let testWindow: DOMWindow;
+    let testDom: Document;
+    let domWrapper: DomWrapper;
+    let browserHelper: BrowserHelper;
+    let bodyElem: HTMLElement;
 
-    //todo test where all interactive elements can't be described or else are hidden/disabled
+    beforeEach(() => {
+        const {window} = (new JSDOM(`<!DOCTYPE html><body></body>`));
+        testWindow = window;
+        testDom = testWindow.document;
+        domWrapper = new DomWrapper(window);
+        browserHelper = new BrowserHelper(domWrapper, testLogger);
+        bodyElem = testDom.body;
 
-    //todo test where only some interactive elements can't be described or else are hidden/disabled
-    // some element should be picked up by multiple selectors- confirm that it isn't duplicated in return array
+        domWrapper.getInnerText = jest.fn().mockReturnValue("");
+    });
+
+    it('returns empty array when no interactive elements exist', () => {
+        expect(browserHelper.getInteractiveElements()).toEqual([]);
+    });
+
+    it('returns data for single interactive element', () => {
+        const button = testDom.createElement('button');
+        button.setAttribute("name", "someButton");
+        bodyElem.appendChild(button);
+        domWrapper.fetchElementsByCss = jest.fn().mockImplementation((selector: string) => {
+            switch (selector) {
+                case 'button':
+                    return [button];
+                default:
+                    return [];
+            }
+        });
+        const result = browserHelper.getInteractiveElements();
+        expect(result.length).toBe(1);
+        expect(result[0].tagName).toEqual('button');
+    });
+
+    it('returns data for multiple interactive elements', () => {
+        const button = testDom.createElement('button');
+        button.setAttribute("name", "someButton");
+        const input = testDom.createElement('input');
+        input.setAttribute("placeholder", "some placeholder value");
+        bodyElem.appendChild(button);
+        bodyElem.appendChild(input);
+        domWrapper.fetchElementsByCss = jest.fn().mockImplementation((selector: string) => {
+            switch (selector) {
+                case 'button':
+                    return [button];
+                case 'input':
+                    return [input];
+                default:
+                    return [];
+            }
+        });
+        const result = browserHelper.getInteractiveElements();
+        expect(result.length).toBe(2);
+        expect(result.map(data => data.tagName)).toEqual(expect.arrayContaining(['button', 'input']));
+    });
+
+    it('ignores hidden interactive elements', () => {
+        const button = testDom.createElement('button');
+        button.setAttribute("name", "someButton");
+        button.style.display = 'none';
+        const input = testDom.createElement('input');
+        input.setAttribute("placeholder", "some placeholder value");
+        bodyElem.appendChild(button);
+        bodyElem.appendChild(input);
+        domWrapper.fetchElementsByCss = jest.fn().mockImplementation((selector: string) => {
+            switch (selector) {
+                case 'button':
+                    return [button];
+                case 'input':
+                    return [input];
+                default:
+                    return [];
+            }
+        });
+        const result = browserHelper.getInteractiveElements();
+        expect(result.length).toEqual(1);
+        expect(result[0].tagName).toEqual('input');
+    });
+
+    it('ignores disabled interactive elements', () => {
+        const button = testDom.createElement('button');
+        button.setAttribute("name", "someButton");
+        button.disabled = true;
+        bodyElem.appendChild(button);
+        domWrapper.fetchElementsByCss = jest.fn().mockImplementation((selector: string) => {
+            switch (selector) {
+                case 'button':
+                    return [button];
+                default:
+                    return [];
+            }
+        });
+        expect(browserHelper.getInteractiveElements()).toEqual([]);
+    });
+
+    it('returns data for interactive elements with specific roles', () => {
+        const div = testDom.createElement('div');
+        div.setAttribute('role', 'button');
+        div.setAttribute("name", "some Button-Like Div");
+        bodyElem.appendChild(div);
+        domWrapper.fetchElementsByCss = jest.fn().mockImplementation((selector: string) => {
+            switch (selector) {
+                case '[role="button"]':
+                    return [div];
+                default:
+                    return [];
+            }
+        });
+        const result = browserHelper.getInteractiveElements();
+        expect(result.length).toBe(1);
+        expect(result[0].tagName).toBe('div');
+    });
+
+    it('returns unique elements even if they match multiple selectors', () => {
+        const button = testDom.createElement('button');
+        button.setAttribute("name", "someButton");
+        const input = testDom.createElement('input');
+        input.setAttribute("placeholder", "some placeholder value");
+        input.type = 'button';
+        input.setAttribute('onclick', '');
+        const div = testDom.createElement('div');
+        div.setAttribute('role', 'button');
+        div.setAttribute("name", "some Button-Like Div");
+        bodyElem.appendChild(button);
+        bodyElem.appendChild(input);
+        bodyElem.appendChild(div);
+        domWrapper.fetchElementsByCss = jest.fn().mockImplementation((selector: string) => {
+            switch (selector) {
+                case 'button':
+                    return [button];
+                case 'input':
+                    return [input];
+                case '[type="button"]':
+                    return [input];
+                case '[onclick]':
+                    return [input];
+                case '[role="button"]':
+                    return [div];
+                default:
+                    return [];
+            }
+        });
+        const result = browserHelper.getInteractiveElements();
+        expect(result.length).toBe(3);
+    });
 });

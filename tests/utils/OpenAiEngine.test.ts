@@ -5,15 +5,20 @@ import {Mock, mock} from "ts-jest-mocker";
 import {ChatCompletion} from "openai/resources";
 import {StrTriple} from "../../src/utils/format_prompts";
 import {APIConnectionError, InternalServerError, RateLimitError} from "openai/error";
+import log from "loglevel";
+import {origLoggerFactory} from "../../src/utils/shared_logging_setup";
 
 const exampleModel = "gpt-4-vision-preview";
 
+const testLogger = log.getLogger("openai-test");
+testLogger.methodFactory = origLoggerFactory;
+testLogger.setLevel("warn");
 
 describe('OpenAiEngine', () => {
 
     it('should create an OpenAiEngine with a single api key', () => {
         const fakeApiKey = "some api key";
-        const engine = new OpenAiEngine(exampleModel, fakeApiKey);
+        const engine = new OpenAiEngine(exampleModel, fakeApiKey, undefined, undefined, undefined, undefined, testLogger);
         expect(engine.apiKeys).toEqual([fakeApiKey]);
         expect(engine.model).toEqual(exampleModel);
         expect(engine.stop).toEqual("\n\n");
@@ -26,7 +31,7 @@ describe('OpenAiEngine', () => {
     it('should create an OpenAiEngine when api key only in environment variable', () => {
         process.env.OPENAI_API_KEY = "some api key";
         const customStopSeq = "---STOP---";
-        const engine = new OpenAiEngine(exampleModel, undefined, undefined, customStopSeq, 0);
+        const engine = new OpenAiEngine(exampleModel, undefined, undefined, customStopSeq, 0, undefined, testLogger);
         expect(engine.apiKeys).toEqual([process.env.OPENAI_API_KEY]);
         expect(engine.stop).toEqual(customStopSeq);
         expect(engine.requestInterval).toEqual(0);
@@ -40,7 +45,7 @@ describe('OpenAiEngine', () => {
 
     it('should create an OpenAiEngine with multiple api keys', () => {
         const fakeApiKeys = ["key1", "key2"];
-        const engine = new OpenAiEngine(exampleModel, fakeApiKeys, undefined, "\n\n", 10, 0.7);
+        const engine = new OpenAiEngine(exampleModel, fakeApiKeys, undefined, "\n\n", 10, 0.7, testLogger);
         expect(engine.apiKeys).toEqual(fakeApiKeys);
         expect(engine.requestInterval).toEqual(6);
         expect(engine.nextAvailTime).toEqual([0, 0]);
@@ -62,7 +67,6 @@ describe('OpenAiEngine.generate', () => {
         mockOpenAi.chat = mock(OpenAI.Chat);
         mockCompletions = mock(OpenAI.Chat.Completions);
         mockOpenAi.chat.completions = mockCompletions;
-
     });
 
 
@@ -71,7 +75,7 @@ describe('OpenAiEngine.generate', () => {
         const prompts: StrTriple = ["some sys prompt", "some query prompt", "some referring prompt"];
 
         const baseTemp = 0.7;
-        const engine = new OpenAiEngine(exampleModel, dummyApiKeys, mockOpenAi, "\n\n", -1, baseTemp);
+        const engine = new OpenAiEngine(exampleModel, dummyApiKeys, mockOpenAi, "\n\n", -1, baseTemp, testLogger);
 
         const t0RespTxt = "turn 0 completion";
         mockCompletions.create.mockResolvedValueOnce({
@@ -159,7 +163,7 @@ describe('OpenAiEngine.generateWithRetry', () => {
     it('should succeed immediately if no api problems', async () => {
         const apiKeys = ["key1", "key2"];
 
-        const engine = new OpenAiEngine(exampleModel, apiKeys, mockOpenAi, undefined, -1, undefined);
+        const engine = new OpenAiEngine(exampleModel, apiKeys, mockOpenAi, undefined, -1, undefined, testLogger);
 
         const t0RespTxt = "turn 0 completion";
         mockCompletions.create.mockResolvedValueOnce({
@@ -198,7 +202,7 @@ describe('OpenAiEngine.generateWithRetry', () => {
     //this is also serving as a basic test of the single key scenario in generate()
     it('should do exponential backoff and succeed despite 3 or 5 failures', async () => {
         const soleApiKey = "key1";
-        const engine = new OpenAiEngine(exampleModel, soleApiKey, mockOpenAi);
+        const engine = new OpenAiEngine(exampleModel, soleApiKey, mockOpenAi, undefined, undefined, undefined, testLogger);
 
         const t0RespTxt = "turn 0 completion";
         mockCompletions.create.mockImplementationOnce(() => {
@@ -261,7 +265,7 @@ describe('OpenAiEngine.generateWithRetry', () => {
 
     it('should fail if maxTries exceeded', async () => {
         const soleApiKey = "key1";
-        const engine = new OpenAiEngine(exampleModel, soleApiKey, mockOpenAi);
+        const engine = new OpenAiEngine(exampleModel, soleApiKey, mockOpenAi, undefined, undefined, undefined, testLogger);
 
         const finalError = new InternalServerError(500, undefined, "some error message3", undefined);
         mockCompletions.create.mockImplementationOnce(() => {
@@ -280,7 +284,7 @@ describe('OpenAiEngine.generateWithRetry', () => {
 
     it('should fail if non-backoff-able error', async () => {
         const soleApiKey = "key1";
-        const engine = new OpenAiEngine(exampleModel, soleApiKey, mockOpenAi);
+        const engine = new OpenAiEngine(exampleModel, soleApiKey, mockOpenAi, undefined, undefined, undefined, testLogger);
 
         const authenticationError = new AuthenticationError(401, undefined, "some error message", undefined);
         mockCompletions.create.mockImplementationOnce(() => {

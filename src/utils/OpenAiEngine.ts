@@ -2,7 +2,7 @@ import {StrTriple} from "./format_prompts";
 import OpenAI from "openai";
 import {APIConnectionError, APIConnectionTimeoutError, InternalServerError, RateLimitError} from "openai/error";
 import {retryAsync} from "ts-retry";
-import {Logger} from "loglevel";
+import log, {Logger} from "loglevel";
 import {createNamedLogger} from "./shared_logging_setup";
 import ChatCompletionMessageParam = OpenAI.ChatCompletionMessageParam;
 import ChatCompletionContentPart = OpenAI.ChatCompletionContentPart;
@@ -30,9 +30,11 @@ export class OpenAiEngine {
      * @param stop Tokens indicate stop of sequence
      * @param rateLimit Max number of requests per minute
      * @param temperature what temperature to use when sampling from the model
+     * @param loggerToUse the logger to use for logging, defaults to a logger named 'open-ai-engine'
      */
     constructor(model: string, apiKey?: string | Array<string>, openAi?: OpenAI, stop: string = "\n\n", rateLimit: number = -1,
-                temperature: number = 0) {
+                temperature: number = 0, loggerToUse?: log.Logger) {
+        //todo consider the automatic unpacking trick for effectively having named arguments in the constructor, b/c this is absurd
         let apiKeys: Array<string> = [];
         const apiKeyInputUseless = apiKey == undefined ||
             (Array.isArray(apiKey) && apiKey.length == 0);
@@ -63,7 +65,7 @@ export class OpenAiEngine {
 
         this.nextAvailTime = new Array<number>(this.apiKeys.length).fill(0);
         this.currKeyIdx = 0;
-        this.logger = createNamedLogger('open-ai-engine');
+        this.logger = loggerToUse ?? createNamedLogger('open-ai-engine');
     }
 
     /**

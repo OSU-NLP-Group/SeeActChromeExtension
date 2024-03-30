@@ -44,3 +44,4 @@ startButton.addEventListener('click', async () => {
     });
     logger.trace('agent script injected into page: ' + result);
 });
+//todo is it worth unit testing the above handler?

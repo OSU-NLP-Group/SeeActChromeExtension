@@ -1,87 +1,9 @@
-import {DOMWindow} from "jsdom";
 import getXPath from "get-xpath";
 import {createNamedLogger} from "./shared_logging_setup";
-
-/**
- * @description class with thin wrappers around DOM interaction
- * This is a class so that it can be mocked in unit tests
- */
-export class DomWrapper {
-    //to avoid runtime errors during unit tests from jest/jsdom limitations
-    static readonly XPATH_RESULT_1ST_ORDERED_NODE_TYPE = XPathResult ? XPathResult.FIRST_ORDERED_NODE_TYPE : 9;
-
-    private dom: Document;
-    private window: Window | DOMWindow;
-
-    constructor(windowToUse: Window | DOMWindow) {
-        const {document} = windowToUse;
-        this.dom = document;
-        this.window = windowToUse;
-    }
-
-    /**
-     * uses querySelectorAll to find elements in the DOM
-     * @param cssSelector The CSS selector to use to find elements
-     * @returns array of elements that match the CSS selector;
-     *           this is a static view of the elements (not live access that would allow modification)
-     */
-    fetchElementsByCss = (cssSelector: string): NodeListOf<HTMLElement> => {
-        return this.dom.querySelectorAll(cssSelector);
-    }
-
-    /**
-     * grabs a single element from the html document by xpath, potentially relative to a context element
-     * @param xpath the xpath to use to find the element
-     * @param contextElement the element to use as the context/starting-point for the xpath search
-     * @returns the first element found by the xpath, or null if no element is found
-     */
-    grabElementByXpath = (xpath: string, contextElement?: HTMLElement): HTMLElement | null => {
-        return this.dom.evaluate(xpath, contextElement ?? this.dom, null,
-            DomWrapper.XPATH_RESULT_1ST_ORDERED_NODE_TYPE, null).singleNodeValue as HTMLElement;
-    }
-
-    /**
-     * trivial wrapper around element.innerText because jsdom doesn't support innerText (https://github.com/jsdom/jsdom/issues/1245)
-     * and so it has to be mocked in unit tests
-     * @param element the element to extract the inner text from
-     * @returns the inner text of the element
-     */
-    getInnerText = (element: HTMLElement): string => {
-        return element.innerText;
-    }
-
-    /**
-     * trivial wrapper around element.getBoundingClientRect() because jsdom doesn't properly support that element (all numbers are 0's)
-     * and so it has to be mocked in unit tests
-     * @param element the element to grab the bounding rect of
-     * @returns the bounding rect of the element
-     */
-    grabClientBoundingRect = (element: HTMLElement): DOMRect => {
-        return element.getBoundingClientRect();
-    }
-
-    /**
-     * @description Determine whether an element is hidden, based on its CSS properties and the hidden attribute
-     * @param element the element which might be hidden
-     * @return true if the element is hidden, false if it is visible
-     */
-    calcIsHidden = (element: HTMLElement): boolean => {
-        const elementComputedStyle = this.window.getComputedStyle(element);
-        const isElementHiddenForOverflow = elementComputedStyle.overflow === "hidden" &&
-            (element.scrollHeight > element.clientHeight || element.scrollWidth > element.clientWidth);//thanks to https://stackoverflow.com/a/9541579/10808625
-        return elementComputedStyle.display === "none" || elementComputedStyle.visibility === "hidden"
-            || element.hidden || isElementHiddenForOverflow || elementComputedStyle.opacity === "0"
-            || elementComputedStyle.height === "0px" || elementComputedStyle.width === "0px";
-        //maybe eventually update this once content-visibility is supported outside chromium (i.e. in firefox/safari)
-        // https://developer.mozilla.org/en-US/docs/Web/CSS/content-visibility
-    }
-
-}
+import {DomWrapper} from "./mockable_wrappers";
+import log from "loglevel";
 
 export type ElementData = {
-    /**
-     * used as pseudo-unique identifier by python code, but might no longer be relevant
-     */
     centerCoords: readonly [number, number],
     description: string,
     tagHead: string,
@@ -98,6 +20,9 @@ export type ElementData = {
     element: HTMLElement
 }
 
+
+//todo consider renaming this to HtmlHelper or HtmlElementHelper if I create a ChromeHelper class for accessing
+// browser api's
 export class BrowserHelper {
 
     //for dependency injection in unit tests
@@ -105,10 +30,10 @@ export class BrowserHelper {
 
     readonly logger;
 
-    constructor(domHelper?: DomWrapper) {
+    constructor(domHelper?: DomWrapper, loggerToUse?: log.Logger) {
         this.domHelper = domHelper ?? new DomWrapper(window);
 
-        this.logger = createNamedLogger('browser-helper');
+        this.logger = loggerToUse ?? createNamedLogger('browser-helper');
     }
 
     /**
@@ -254,7 +179,7 @@ export class BrowserHelper {
      * @return data about the element
      */
     getElementData = (element: HTMLElement): ElementData | null => {
-        if (this.domHelper.calcIsHidden(element) || this.calcIsDisabled(element)) return null;
+        if (this.calcIsHidden(element) || this.calcIsDisabled(element)) return null;
 
         const description = this.getElementDescription(element);
         if (!description) return null;
@@ -281,6 +206,23 @@ export class BrowserHelper {
             tagName: tagName,
             element: element
         };
+    }
+
+
+    /**
+     * @description Determine whether an element is hidden, based on its CSS properties and the hidden attribute
+     * @param element the element which might be hidden
+     * @return true if the element is hidden, false if it is visible
+     */
+    calcIsHidden = (element: HTMLElement): boolean => {
+        const elementComputedStyle = this.domHelper.getComputedStyle(element);
+        const isElementHiddenForOverflow = elementComputedStyle.overflow === "hidden" &&
+            (element.scrollHeight > element.clientHeight || element.scrollWidth > element.clientWidth);//thanks to https://stackoverflow.com/a/9541579/10808625
+        return elementComputedStyle.display === "none" || elementComputedStyle.visibility === "hidden"
+            || element.hidden || isElementHiddenForOverflow || elementComputedStyle.opacity === "0"
+            || elementComputedStyle.height === "0px" || elementComputedStyle.width === "0px";
+        //maybe eventually update this once content-visibility is supported outside chromium (i.e. in firefox/safari)
+        // https://developer.mozilla.org/en-US/docs/Web/CSS/content-visibility
     }
 
     /**
@@ -322,9 +264,9 @@ export class BrowserHelper {
         //todo once MVP delivered, ask Boyuan about filtering out elements whose client bounding rect is 0x0
         // (at least on github there are a lot of those)
 
-        return Array.from(uniqueInteractiveElements).map(element => this.getElementData(element)).filter(Boolean) as ElementData[];
+        return Array.from(uniqueInteractiveElements).map(element => this.getElementData(element))
+            .filter(Boolean) as ElementData[];
         //dummy impl for confirming that unit tests initially fail
         // return [{centerCoords: [-1, -1], description: "test", tagHead: "test", boundingBox: {tLx: -1, tLy: -1, bRx: -1, bRy: -1}, tagName: "test"}];
     }
-    //todo fully unit test above on apr6
 }
