@@ -238,6 +238,7 @@ export class BrowserHelper {
                     || element instanceof HTMLFieldSetElement)
                 && element.disabled)
             || element.getAttribute("disabled") != null;
+        //todo ask Boyuan about also checking for readonly attribute if element is input or textarea (or select? or others??)
     }
 
     /**
@@ -269,4 +270,6 @@ export class BrowserHelper {
         //dummy impl for confirming that unit tests initially fail
         // return [{centerCoords: [-1, -1], description: "test", tagHead: "test", boundingBox: {tLx: -1, tLy: -1, bRx: -1, bRy: -1}, tagName: "test"}];
     }
+
+    //TODO port and unit test the select_option() method
 }

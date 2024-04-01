@@ -63,8 +63,10 @@ const aiEngine = new OpenAiEngine(modelName, apiKey);
     const elementToClick = chosenElement.element;
 
     logger.debug(`element to click: ${chosenElement.tagHead}; description: ${chosenElement.description}`);
-
     elementToClick.click();
+    
+    //TODO test a 2 step trajectory- does that invalidate the whole idea of having the
+    // agent's control loop in the content script?
 
 })();
 

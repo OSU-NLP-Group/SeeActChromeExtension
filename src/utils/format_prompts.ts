@@ -43,6 +43,7 @@ export const formatChoices = (elements: Array<StrTriple>, candidateIds: Array<nu
 
     //todo idea- get viewport dimensions here; meanwhile, modify formatChoices' elements argument
     // to include element's centercoords and then here we can normalize that to be fractions of viewport dimensions
+    // Boyu feedback - might be worthwhile
 
     //todo can we maybe also filter out elements which aren't in viewport? or mark them as not being visible?
 
@@ -144,7 +145,8 @@ export const postProcessActionLlm = (llmText: string): [string, string, string] 
 }
 
 
-// todo ask Boyuan about changing system prompt to stop referring to playwright
+//todo ask Boyuan about changing system prompt to stop referring to playwright
+// Boyu feedback - still need to include up-to-date information explaining exactly what the different action names mean
 export const onlineSystemPrompt = "Imagine that you are imitating humans doing web navigation for a task step by step. At each stage, you can see the webpage like humans by a screenshot and know the previous actions before the current step decided by yourself through recorded history. You need to decide on the first following action to take. You can click on an element with the mouse, select an option, type text or press Enter with the keyboard. (For your understanding, they are like the click(), select_option() type() and keyboard.press('Enter') functions in playwright respectively) One next step means one operation within the four. Unlike humans, for typing (e.g., in text areas, text boxes) and selecting (e.g., from dropdown menus or <select> elements), you should try directly typing the input or selecting the choice, bypassing the need for an initial click. You should not attempt to create accounts, log in or do the final submission. Terminate when you deem the task complete or if it requires potentially harmful actions.";
 export const onlineQuestionDesc = `The screenshot below shows the webpage you see. Follow the following guidance to think step by step before outlining the next action step at the current stage:
 
