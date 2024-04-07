@@ -20,6 +20,8 @@ export type ElementData = {
     element: HTMLElement
 }
 
+export type SerializableElementData = Omit<ElementData, 'element'>;
+
 
 //todo consider renaming this to HtmlHelper or HtmlElementHelper if I create a ChromeHelper class for accessing
 // browser api's

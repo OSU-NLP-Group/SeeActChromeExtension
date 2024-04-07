@@ -6,7 +6,7 @@ log.methodFactory = function (methodName, logLevel, loggerName) {
     const rawMethod = origLoggerFactory(methodName, logLevel, loggerName);
     return function (...args: unknown[]) {
         const timestampStr = new Date().toISOString();
-        const msg = augmentLogMsg(timestampStr, loggerName, methodName, args);
+        const msg = augmentLogMsg(timestampStr, loggerName, methodName, undefined, args);
         rawMethod(msg);
 
         chrome.runtime.sendMessage({
@@ -39,14 +39,17 @@ export const createNamedLogger = (loggerName: string): log.Logger => {
  * @param timestampStr the timestamp string to use
  * @param loggerName the name of the logger (usually a module or class name)
  * @param levelName the log level name
+ * @param taskId the uuid of the task that's currently being performed, or undefined if no task is defined
  * @param args the arguments to the logger call
  *              this might just be 0 or more objects/strings/other-primitives to concatenate together with spaces
  *              in between, or it might be a format string containing placeholder patterns followed by some number of
  *              substitution strings; latter scenario is not yet supported
  * @return a single augmented log message
  */
-export function augmentLogMsg(timestampStr: string, loggerName: string | symbol, levelName: LogLevelNames, ...args: unknown[]) {
+export function augmentLogMsg(timestampStr: string, loggerName: string | symbol, levelName: LogLevelNames,
+                              taskId?: string, ...args: unknown[]) {
     let msg: string = "";
+    const normalizedTaskId = taskId ?? "noTaskDefined";
     if (typeof args[0] === "string" && args[0].includes("%s")) {
         console.warn("log message contains %s, which is a placeholder for substitution strings. " +
             "This is not supported by this logging feature yet; please use string concatenation instead.");
@@ -56,10 +59,10 @@ export function augmentLogMsg(timestampStr: string, loggerName: string | symbol,
         //  https://developer.mozilla.org/en-US/docs/Web/API/console#using_string_substitutions
 
         //for now, just supporting the simple "one or more objects get concatenated together" approach
-        msg = [timestampStr, loggerName, levelName.toUpperCase(), ...args].join(" ");
+        msg = [timestampStr, loggerName, levelName.toUpperCase(), normalizedTaskId, ...args].join(" ");
     } else {
         //for now, just supporting the simple "one or more objects get concatenated together" approach
-        msg = [timestampStr, loggerName, levelName.toUpperCase(), ...args].join(" ");
+        msg = [timestampStr, loggerName, levelName.toUpperCase(), normalizedTaskId, ...args].join(" ");
     }
     return msg;
 }
@@ -79,3 +82,4 @@ export function assertIsValidLogLevelName(logLevelName: unknown | undefined): as
         throw badLevelErr;
     }
 }
+

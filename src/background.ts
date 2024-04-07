@@ -1,6 +1,12 @@
 import log from "loglevel";
 import {assertIsValidLogLevelName, augmentLogMsg, origLoggerFactory} from "./utils/shared_logging_setup";
+import {v4 as uuidV4} from 'uuid';
+import {OpenAiEngine} from "./utils/OpenAiEngine";
+import {SerializableElementData} from "./utils/BrowserHelper";
+import {formatChoices, generatePrompt, postProcessActionLlm, StrTriple} from "./utils/format_prompts";
+import {getIndexFromOptionName} from "./utils/format_prompt_utils";
 import MessageSender = chrome.runtime.MessageSender;
+import Port = chrome.runtime.Port;
 
 console.log("successfully loaded background script in browser");
 
@@ -10,10 +16,10 @@ const centralLogger = log.getLogger("service-worker");
 centralLogger.methodFactory = function (methodName, logLevel, loggerName) {
     const rawMethod = origLoggerFactory(methodName, logLevel, loggerName);
     return function (...args: unknown[]) {
-        rawMethod(augmentLogMsg(new Date().toISOString(), loggerName, methodName, args));
+        rawMethod(augmentLogMsg(new Date().toISOString(), loggerName, methodName, taskId, args));
     };
 };
-//todo change this to info or warn before release, and ideally make it configurable from options menu
+//todo before release, change this to info or warn, and ideally make it configurable from options menu
 centralLogger.setLevel("trace");
 centralLogger.rebuild();
 
@@ -50,10 +56,90 @@ chrome.runtime.onInstalled.addListener(function (details) {
         };
     }
 });*/
+//todo before official release, if indexeddb persistent logging was implemented, make mechanism to trigger
+// once every 14 days and purge logs older than 14 days from the extension's indexeddb
 
 
-// if microsecond precision timestamps are needed for logging, can use this
+// if microsecond precision timestamps are needed for logging, can use this (only ~5usec precision, but still better than 1msec precision)
 // https://developer.mozilla.org/en-US/docs/Web/API/Performance/now#performance.now_vs._date.now
+
+enum AgentControllerState {
+    IDLE,//i.e. no active task
+    WAITING_FOR_CONTENT_SCRIPT_INIT,//there's an active task, but injection of content script hasn't completed yet
+    ACTIVE,//partway through an event handler function
+    WAITING_FOR_ELEMENTS,// waiting for content script to retrieve interactive elements from page
+    WAITING_FOR_ACTION//waiting for content script to perform an action on an element
+}
+
+//todo once this is working, move all of these globals and the functions that rely on them into an AgentController class,
+// otherwise almost all of this code will be impossible to unit test
+//GLOBALS FOR TASK
+let taskId: string | undefined;
+let taskSpecification: string = "";
+let currTaskTabId: number | undefined;
+
+type ActionInfo = { elementIndex?: number, elementData?: SerializableElementData, action: string, value?: string };
+let tentativeActionInfo: ActionInfo | undefined;
+
+let actionsSoFar: {actionDesc: string, success: boolean}[] = [];
+
+let state: AgentControllerState = AgentControllerState.IDLE;
+
+let currPortToContentScript: Port | undefined;
+
+const modelName: string = "gpt-4-vision-preview";
+//REMINDER- DO NOT COMMIT ANY NONTRIVIAL EDITS OF THE FOLLOWING LINE
+const apiKey: string = "PLACEHOLDER";
+
+const aiEngine = new OpenAiEngine(modelName, apiKey);
+
+//todo jsdoc
+//eslint-disable-next-line @typescript-eslint/no-explicit-any -- chrome.runtime.onMessage.addListener requires any as part of the sendResponse parameter's signature
+async function injectContentScript(isStartOfTask: boolean, sendResponse?: (response?: any) => void) {
+    let tabId: number | undefined;
+    try {
+        tabId = await getActiveTabId();
+    } catch (error) {
+        centralLogger.error("error getting active tab id, cannot inject content script:", JSON.stringify(error));
+        if (!isStartOfTask) {
+            terminateTask();
+        }
+        sendResponse?.({success: false, message: "Can't get tab id because of error: " + JSON.stringify(error)});
+    }
+    if (!tabId) {
+        centralLogger.error("Can't inject agent script into chrome:// URLs for security reasons; " + isStartOfTask ? "please only try to start the agent on a regular web page." : "please don't switch to a chrome:// URL while the agent is running");
+        if (!isStartOfTask) {
+            terminateTask();
+        }
+        sendResponse?.({success: false, message: "Can't inject script in a chrome:// URL"});
+    } else {
+        const toStartTaskStr = isStartOfTask ? " to start a task" : "";
+
+        if (isStartOfTask) {
+            currTaskTabId = tabId;
+        } else if(currTaskTabId !== tabId) {
+            centralLogger.error("Can't inject agent script into a different tab than the one the task was started in");
+            terminateTask();
+            sendResponse?.({success: false, message: "Can't inject script in a different tab than the one the task was started in"});
+            return;
+        }
+
+        state = AgentControllerState.WAITING_FOR_CONTENT_SCRIPT_INIT;
+        try {
+            await chrome.scripting.executeScript({
+                files: ['./src/content_script.js'],
+                target: {tabId: tabId}
+            });
+            centralLogger.trace('agent script injected into page' + toStartTaskStr);
+            sendResponse?.({success: true, taskId: taskId, message: "Started content script in current tab"});
+        } catch (error) {
+            centralLogger.error("error injecting agent script into page" + toStartTaskStr + ":", JSON.stringify(error));
+            if (isStartOfTask) {state = AgentControllerState.IDLE;} else {terminateTask();}
+            sendResponse?.({success: false, message: "Error injecting agent script into page" + toStartTaskStr});
+        }
+    }
+}
+
 
 /**
  * @description Handle messages sent from the content script or popup script
@@ -63,30 +149,33 @@ chrome.runtime.onInstalled.addListener(function (details) {
  * @return true to indicate to chrome that the requester's connection should be held open to wait for a response
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- chrome.runtime.onMessage.addListener requires any
-export function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (response?: any) => void) {
+function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (response?: any) => void) {
     centralLogger.trace("request received by service worker", sender.tab ?
         "from a content script:" + sender.tab.url :
         "from the extension");
-    if (request.reqType === "takeScreenshot") {
-        const screenshotPromise = chrome.tabs.captureVisibleTab();
-
-        centralLogger.trace("screenshot promise created; time is", new Date().toISOString());
-        screenshotPromise.then((screenshotDataUrl) => {
-            centralLogger.debug("screenshot created; about to send screenshot back to content script at " +
-                "time", new Date().toISOString(), "; length:", screenshotDataUrl.length,
-                "truncated data url:", screenshotDataUrl.slice(0, 100));
-            sendResponse({screenshot: screenshotDataUrl});
-            centralLogger.trace("screen shot sent back to content script; time is", new Date().toISOString());
-        });
-    } else if (request.reqType === "log") {
+    if (request.reqType === "log") {
         const timestamp = String(request.timestamp);
         const loggerName = String(request.loggerName);
         const level = request.level;
         const args = request.args as unknown[];
         assertIsValidLogLevelName(level);
 
-        console[level](augmentLogMsg(timestamp, loggerName, level, args));
+        console[level](augmentLogMsg(timestamp, loggerName, level, taskId, args));
         sendResponse({success: true});
+    } else if (request.reqType === "startTask") {
+        if (taskId !== undefined) {
+            const taskRejectMsg = `Task ${taskId} already in progress; not starting new task`;
+            centralLogger.warn(taskRejectMsg);
+            sendResponse({success: false, message: taskRejectMsg});
+        } else {
+            taskId = uuidV4();
+            taskSpecification = request.taskSpecification;
+            injectContentScript(true, sendResponse).catch((error) => {
+                centralLogger.error("error injecting content script to start task:", JSON.stringify(error));
+                state = AgentControllerState.IDLE;
+                sendResponse({success: false, message: "Error injecting content script to start task"});
+            });
+        }
     } else {
         centralLogger.error("unrecognized request type:", request.reqType);
     }
@@ -95,6 +184,187 @@ export function handleMsgFromPage(request: any, sender: MessageSender, sendRespo
 
 chrome.runtime.onMessage.addListener(handleMsgFromPage);
 
+//todo jsdoc, and preferably also break this up into sub-methods
+//eslint-disable-next-line @typescript-eslint/no-explicit-any -- chrome.runtime.Port.onMessage.addListener requires any
+async function handlePageMsgToAgentController(message: any, port: Port): Promise<void> {
+    if (message.msg === "content script initialized and ready") {
+        if (state !== AgentControllerState.WAITING_FOR_CONTENT_SCRIPT_INIT) {
+            centralLogger.error("received 'content script initialized and ready' message from content script while not waiting for content script initialization, but rather in state " + AgentControllerState[state]);
+            terminateTask();
+            return;
+        }
+        state = AgentControllerState.WAITING_FOR_ELEMENTS
+        port.postMessage({msg: "get interactive elements"});
+    } else if (message.msg === "sending interactive elements") {
+        if (state !== AgentControllerState.WAITING_FOR_ELEMENTS) {
+            centralLogger.error("received 'sending interactive elements' message from content script while not waiting for elements, but rather in state " + AgentControllerState[state]);
+            terminateTask();
+            return;
+        }
 
-//todo before official release, if indexeddb persistent logging was implemented, make mechanism to trigger
-// once every 14 days and purge logs older than 14 days from the extension's indexeddb
+        state = AgentControllerState.ACTIVE;
+        const interactiveElements = message.interactiveElements as SerializableElementData[];
+
+        const interactiveChoiceDetails = interactiveElements.map<StrTriple>((element) => {
+            return [element.description, element.tagHead, element.tagName];
+        });
+        const candidateIds = interactiveElements.map((element, index) => {
+            return (element.centerCoords[0] != 0 && element.centerCoords[1] != 0) ? index : undefined;
+        }).filter(Boolean) as number[];//ts somehow too dumb to realize that filter(Boolean) removes undefined elements
+        const interactiveChoices = formatChoices(interactiveChoiceDetails, candidateIds);
+        //todo maybe also include the prior actions' success/failure in the prompt
+        const prompts = generatePrompt(taskSpecification, actionsSoFar.map(entry => entry.actionDesc), interactiveChoices);
+        centralLogger.debug("prompts:", prompts);
+        const screenshotDataUrl: string = await chrome.tabs.captureVisibleTab();
+        centralLogger.debug("screenshot data url (truncated): " + screenshotDataUrl.slice(0, 100));
+        const planningOutput = await aiEngine.generateWithRetry(prompts, 0, screenshotDataUrl);
+        centralLogger.info("planning output: " + planningOutput);
+        const groundingOutput = await aiEngine.generateWithRetry(prompts, 1, screenshotDataUrl, planningOutput);
+        centralLogger.info("grounding output: " + groundingOutput);
+        const [elementName, actionName, value] = postProcessActionLlm(groundingOutput);
+        centralLogger.debug(`suggested action: ${actionName}; value: ${value}`);
+
+        if (actionName === "TERMINATE") {
+            centralLogger.info("Task completed!");
+            terminateTask();
+            return;
+        }
+
+        const chosenCandidateIndex = getIndexFromOptionName(elementName);
+        const chosenElementIndex = candidateIds[chosenCandidateIndex];
+        centralLogger.debug(`acting on the ${chosenCandidateIndex} entry from the candidates list; which is the ${chosenElementIndex} element of the original interactiveElements list`);
+        tentativeActionInfo = {elementIndex: chosenElementIndex, elementData: interactiveElements[chosenElementIndex], action: actionName, value: value};
+
+        state = AgentControllerState.WAITING_FOR_ACTION;
+        port.postMessage({msg: "perform action", elementIndex: chosenElementIndex, action: actionName, value: value});
+    } else if (message.msg === "action performed") {
+        if (state !== AgentControllerState.WAITING_FOR_ACTION) {
+            centralLogger.error("received 'action performed' message from content script while not waiting for action, but rather in state " + AgentControllerState[state]);
+            terminateTask();
+            return;
+        }
+        state = AgentControllerState.ACTIVE;
+
+        const wasSuccessful: boolean = message.success;
+        const actionDesc: string = message.result ? message.result : buildGenericActionDesc(tentativeActionInfo);
+
+        actionsSoFar.push({actionDesc: actionDesc, success: wasSuccessful});
+        tentativeActionInfo = undefined;
+
+        state = AgentControllerState.WAITING_FOR_ELEMENTS
+        port.postMessage({msg: "get interactive elements"});
+    } else if (message.msg === "terminal page-side error") {
+        centralLogger.error("something went horribly wrong in the content script, so terminating the task; details: ", message.error);
+        terminateTask();
+    } else {
+        centralLogger.warn("unknown message from content script:", message);
+    }
+}
+
+//todo jsdoc
+function buildGenericActionDesc(actionInfo?: ActionInfo): string {
+    if(!actionInfo) {
+        return "no information stored about the action";
+    }
+    const valueDesc = actionInfo.value ? ` with value: ${(actionInfo.value)}` : "";
+    return `[${actionInfo.elementData?.tagHead}] ${actionInfo.elementData?.description} -> ${actionInfo.action}${valueDesc}`;
+}
+
+
+//todo jsdoc
+async function handlePageDisconnectFromAgentController(port: Port) {
+    centralLogger.debug("content script disconnected from service worker; port name:", port.name);
+    if (state === AgentControllerState.WAITING_FOR_ACTION) {
+        if (!tentativeActionInfo) {
+            centralLogger.error("content script's connection to service worker was lost while performing an action, " +
+                "but no tentative action was stored; terminating current task");
+            terminateTask();
+            return;
+        }
+        state = AgentControllerState.ACTIVE;
+        centralLogger.info("content script's connection to service worker was lost while performing an action, " +
+            "which most likely means that the action has caused page navigation");
+
+        const actionDesc = "Page navigation occurred from: " + buildGenericActionDesc(tentativeActionInfo);
+
+        actionsSoFar.push({actionDesc: actionDesc, success: true});
+        tentativeActionInfo = undefined;
+
+        await injectContentScript(false);
+    } else {
+        centralLogger.error("content script's connection to service worker was lost while not waiting for action, " +
+            "but rather in state " + AgentControllerState[state] + "; terminating current task " + taskSpecification);
+        terminateTask();
+        //todo Boyuan may eventually want recovery logic here for the user accidentally closing the tab or for the tab/page crashing
+    }
+}
+
+//todo jsdoc; this is for persistent connection that allows interaction between agent control loop in service worker
+// and dom data-collection/actions in content script
+function handleConnectionFromPage(port: Port) {
+    if (port.name === "content-script-2-agent-controller") {
+        if (state !== AgentControllerState.WAITING_FOR_CONTENT_SCRIPT_INIT) {
+            centralLogger.error("received connection from content script while not waiting for content script initialization, but rather in state " + AgentControllerState[state]);
+            terminateTask();
+            return;
+        }
+        centralLogger.trace("content script connected to agent controller in service worker");
+        port.onMessage.addListener(handlePageMsgToAgentController);
+        port.onDisconnect.addListener(handlePageDisconnectFromAgentController);
+        currPortToContentScript = port;
+    } else {
+        centralLogger.warn("unrecognized port name:", port.name);
+    }
+}
+
+chrome.runtime.onConnect.addListener(handleConnectionFromPage);
+
+
+function terminateTask() {
+    centralLogger.info(`terminating task which had specification: ${taskSpecification}; final state was ${AgentControllerState[state]}`);
+    taskId = undefined;
+    taskSpecification = "";
+    currTaskTabId = undefined;
+    state = AgentControllerState.IDLE;
+    tentativeActionInfo = undefined;
+    actionsSoFar = [];
+    if (currPortToContentScript) {
+        currPortToContentScript.postMessage({msg: "terminate"});
+        currPortToContentScript.disconnect();
+        currPortToContentScript = undefined;
+    }
+}
+
+/**
+ * @description Get the id of the active tab in the current window
+ * @returns {Promise<number|undefined>} The id of the active tab, or undefined if the active tab is a chrome:// URL
+ *                                          (which scripts can't be injected into for safety reasons)
+ * @throws {Error} If the active tab is not found or doesn't have an id
+ */
+const getActiveTabId = async (): Promise<number | undefined> => {
+    const tabs = await chrome.tabs.query({active: true, currentWindow: true});
+    const tab: chrome.tabs.Tab | undefined = tabs[0];
+    if (!tab) throw new Error('Active tab not found');
+    let id = tab.id;
+    if (!id) throw new Error('Active tab id not found');
+    if (tab.url?.startsWith('chrome://')) {
+        centralLogger.warn('Active tab is a chrome:// URL: ' + tab.url);
+        id = undefined;
+    }
+    return id;
+}
+//todo unit test above helper? how hard is it to mock chrome api calls?
+// worst case, could make ChromeHelper in utils/ with thing like DomWrapper for chrome api's, then unit test ChromeHelper
+// with an injected mock of the chrome api wrapper object
+
+
+//todo once basic prototype is fully working (i.e. can complete a full multi-step task),
+// need to do negative e2e tests of user screwing with the system
+// to ensure that the system can recover from such situations and then be useful again for future tasks
+// without the user having to restart chrome or uninstall/reinstall the extension
+// (e.g. user closes tab while agent is running, user navigates away from page while agent is running, etc.)
+// or user inputs a new task and clicks the start button while the agent is still running the previous task
+
+
+
+

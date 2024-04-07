@@ -34,12 +34,14 @@
         "webpack-cli": "^5.1.4"
     },
     "dependencies": {
+        "@types/uuid": "^9.0.8",
         "chrome-types": "^0.1.273",
         "get-xpath": "^3.1.0",
         "lodash": "4.17.21",
         "loglevel": "^1.9.1",
         "openai": "^4.29.2",
         "ts-retry": "^4.2.5",
-        "typescript-string-operations": "^1.5.1"
+        "typescript-string-operations": "^1.5.1",
+        "uuid": "^9.0.1"
     }
 }

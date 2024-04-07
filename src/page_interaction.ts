@@ -1,79 +1,169 @@
-import {BrowserHelper} from "./utils/BrowserHelper";
-import {formatChoices, generatePrompt, postProcessActionLlm, StrTriple} from "./utils/format_prompts";
-import {OpenAiEngine} from "./utils/OpenAiEngine";
-import {getIndexFromOptionName} from "./utils/format_prompt_utils";
+import {BrowserHelper, ElementData, SerializableElementData} from "./utils/BrowserHelper";
 import {createNamedLogger} from "./utils/shared_logging_setup";
 
 const logger = createNamedLogger('agent-page-interaction');
-
-//not unit testing the below code because it's prototype code that will be almost entirely superseded by
-// ported version of the seeact.py file
-
 logger.trace("successfully injected page_interaction script in browser");
 
 const browserHelper = new BrowserHelper();
-const currInteractiveElements = browserHelper.getInteractiveElements();
 
-const interactiveChoiceDetails = currInteractiveElements.map<StrTriple>((element) => {
-    return [element.description, element.tagHead, element.tagName];
-});
+let currInteractiveElements: ElementData[] | undefined;
 
-const candidateIds = currInteractiveElements.map((element, index) => {
-    if (element.centerCoords[0] != 0 && element.centerCoords[1] != 0) {
-        return index;
-    } else {
-        return undefined;
+const portToBackground = chrome.runtime.connect({name: "content-script-2-agent-controller"});
+
+//todo jsdoc
+function getElementText(elementToActOn: HTMLElement) {
+    let priorElementText = elementToActOn.textContent;
+    if (elementToActOn instanceof HTMLInputElement || elementToActOn instanceof HTMLTextAreaElement) {
+        priorElementText = elementToActOn.value;
     }
-}).filter(Boolean) as number[];//ts somehow too dumb to realize that filter(Boolean) removes undefined elements
+    return priorElementText;
+}
 
-const interactiveChoices = formatChoices(interactiveChoiceDetails, candidateIds);
+//todo jsdoc and break up body into multiple methods
+//eslint-disable-next-line @typescript-eslint/no-explicit-any -- chrome.runtime.Port.onMessage.addListener requires any
+function handleRequestFromAgentControlLoop(message: any) {
+    logger.debug("message received from background script: " + JSON.stringify(message));
+    if (message.msg === "get interactive elements") {
+        if (currInteractiveElements) {
+            logger.error("interactive elements already exist; background script might've asked for interactive elements twice in a row without in between instructing that an action be performed or without waiting for the action to be finished")
+            portToBackground.postMessage({msg: "terminal page-side error", error: "interactive elements already exist"});
+            return;
+        }
 
-const prompts = generatePrompt("Pick a random interactive element in the current page which seems even a bit interesting and click on it", [], interactiveChoices);
+        currInteractiveElements = browserHelper.getInteractiveElements();
+        const elementsInSerializableForm = currInteractiveElements.map((elementData) => {
+            const serializableElementData: SerializableElementData = {...elementData};
+            if ('element' in serializableElementData) {
+                delete serializableElementData['element'];
+            }
+            return serializableElementData;
+        });
 
-logger.debug("prompts: " + prompts);
+        //todo also retrieve current viewport position and provide that to controller logic in background script
+        portToBackground.postMessage({
+            msg: "sending interactive elements", interactiveElements: elementsInSerializableForm
+        });
+    } else if (message.msg === "perform action") {
+        if (!currInteractiveElements) {
+            logger.error("perform action message received from background script but no interactive elements are currently stored");
+            portToBackground.postMessage({msg: "terminal page-side error", error: "no interactive elements stored to be acted on"});
+            return;
+        }
+        const actionToPerform: string = message.action;//maybe make interface or enum for this
+        let valueForAction: string | undefined = message.value;
 
-const modelName: string = "gpt-4-vision-preview";
-//REMINDER- DO NOT COMMIT ANY NONTRIVIAL EDITS OF THE FOLLOWING LINE
-const apiKey: string = "PLACEHOLDER";
+        let actionSuccessful: boolean = false;
+        let actionResult: string | undefined = undefined;
 
-const aiEngine = new OpenAiEngine(modelName, apiKey);
+        if (message.elementIndex) {
+            const elementToActOnData = currInteractiveElements[message.elementIndex];
+            const tagName = elementToActOnData.tagName;
+            const elementToActOn = elementToActOnData.element;
 
-(async () => {
+            //try reusing buildGenericActionDesc() once it's in a class file and not in background.ts
+            const valueDesc = valueForAction ? ` with value ]${valueForAction}[` : "";
+            actionResult = `[${elementToActOnData.tagHead}] ${elementToActOnData.description} -> ${actionToPerform}${valueDesc}`;
 
-    logger.trace("about to request screenshot from service worker; time is " + new Date().toISOString());
-    const screenshotResponse = await chrome.runtime.sendMessage({reqType: "takeScreenshot"});
-    logger.trace(`response received back from service worker; time is ${new Date().toISOString()}; screenshot response: ${screenshotResponse}`);
-    const screenshotDataUrl: string = screenshotResponse.screenshot;
-    console.assert(screenshotDataUrl !== undefined, "screenshot data url is undefined")
-    logger.debug("screenshot data url (truncated): " + screenshotDataUrl.slice(0, 100));
+            /*
+            todo consider implementing in js a conditional polling/wait for 'stability'
+             https://playwright.dev/docs/actionability#stable
+            todo might also need to implement a 'receives events' polling check
+             https://playwright.dev/docs/actionability#receives-events
+            todo note that a given action type would only need some of the actionability checks
+             https://playwright.dev/docs/actionability#introduction
+            todo above goals for conditional polling/waiting could be one (or a few) helper methods
+             */
 
-    const planningOutput = await aiEngine.generateWithRetry(prompts, 0, screenshotDataUrl);
+            //todo use actionResult to mimic the seeact.py code's use of new_action variable to build a more description of the action that was taken by adding a record of fall-back behavior
 
-    logger.info("planning output: " + planningOutput);
+            logger.trace("performing action <" + actionToPerform + "> on element <" + elementToActOnData.tagHead + "> " + elementToActOnData.description);
 
-    const groundingOutput = await aiEngine.generateWithRetry(prompts, 1, screenshotDataUrl, planningOutput);
+            //todo perform action on an interactable element
+            if (actionToPerform === "CLICK") {
+                logger.trace("clicking element");
+                elementToActOn.click();
+                //todo since this doesn't throw error, need to figure out how to decide when to fall back on some alternative method of clicking
+                // maybe can have 2 types of clicking, in the action space, and the prompt be conditionally augmented
+                // to nudge the model to consider whether previous round's click attempt did anything, and if not to try the alternative click method
+                actionSuccessful = true;
+            } else if (actionToPerform === "TYPE") {
+                const priorElementText = getElementText(elementToActOn);
 
-    logger.info("grounding output: " + groundingOutput);
+                logger.trace("typing value ]" + valueForAction + "[ into element with prior text ]" + priorElementText + "[");
+                if (valueForAction === undefined) {
+                    logger.warn("no value provided for TYPE action; using empty string as value")
+                    valueForAction = "";
+                }
 
-    const [elementName, actionName, value] = postProcessActionLlm(groundingOutput);
-    logger.debug(`suggested action: ${actionName}; value: ${value}`);
-    const chosenElementIndex = getIndexFromOptionName(elementName);
-    logger.debug(`clicking on the ${chosenElementIndex} entry from the candidates list; which is the ${candidateIds[chosenElementIndex]} element of the original interactiveElements list`);
-    const chosenElement = currInteractiveElements[candidateIds[chosenElementIndex]];
-    const elementToClick = chosenElement.element;
+                if (priorElementText === valueForAction) {
+                    logger.warn("element already has the desired text");
+                }
 
-    logger.debug(`element to click: ${chosenElement.tagHead}; description: ${chosenElement.description}`);
-    elementToClick.click();
-    
-    //TODO test a 2 step trajectory- does that invalidate the whole idea of having the
-    // agent's control loop in the content script?
+                //if encounter problems with this (e.g. from placeholder text not going away unless you start
+                // by clearing the field), try setting value or textContent to empty string first
+                // (that might only be necessary when doing a 'press sequentially' approach)
+                if (tagName === "input") {
+                    const inputElem = elementToActOn as HTMLInputElement;
+                    inputElem.value = valueForAction;
+                    actionSuccessful = true;
+                } else if (tagName === "textarea") {
+                    const textareaElem = elementToActOn as HTMLTextAreaElement;
+                    textareaElem.value = valueForAction;
+                    actionSuccessful = true;
+                } else if (elementToActOn.isContentEditable) {
+                    elementToActOn.textContent = valueForAction;
+                    actionSuccessful = true;
+                } else {
+                    logger.error("element is not an input, textarea, or contenteditable element; can't type in it");
+                    actionResult = "element is not an input, textarea, or contenteditable element; can't type in it";
+                }
+                if (actionSuccessful) {
+                    const postTypeElementText = getElementText(elementToActOn);
+                    if (postTypeElementText !== valueForAction) {
+                        if (priorElementText === postTypeElementText) {
+                            logger.warn("text of element after typing is the same as the prior text; typing might not have worked");
+                            actionResult += `element text ]${postTypeElementText}[ not changed by typing`;
+                            actionSuccessful = false;
+                        } else {
+                            logger.warn("text of element after typing doesn't match the desired value");
+                            actionResult += `element text after typing: ]${postTypeElementText}[ doesn't match desired value`;
+                            actionSuccessful = false;
+                        }
+                        //todo add fall-back options here like trying to clear the field and then type again, possibly
+                        // using newly-written code for turning a string into a sequence of key press events and sending those to the element
+                    }
+                }
+            } else if (actionToPerform === "PRESS ENTER") {
+                logger.trace("pressing enter on element");
+                const event = new KeyboardEvent('keydown', {key: 'Enter', code: 'Enter'});
+                elementToActOn.dispatchEvent(event);
+                actionSuccessful = true;
+            } else {
+                logger.warn("unknown action type: " + actionToPerform);
+                actionResult = "unknown action type: " + actionToPerform;
+            }
+            //todo HOVER, SELECT, SCROLL
 
-})();
 
+        } else {
+            logger.warn("no element index provided in message from background script; can't perform action");
+            //todo maybe later add support for the "press enter without a specific element" action scenario,
+            // but I'm not at all sure how that would work in js
+            //The TERMINATE action is handled in the background script
+            actionResult = "no element index provided in message from background script; can't perform action";
+        }
 
-/*
-currInteractiveElements.forEach((element) => {
-    console.log("element tag head", element.tagHead, "; description:", element.description,
-        "; coordinates:", element.centerCoords, "; box:", element.boundingBox, "; tag:", element.tagName);
-});
-*/
+        currInteractiveElements = undefined;
+        //this part would only be reached if the action didn't cause page navigation
+        portToBackground.postMessage({msg: "action performed", success: actionSuccessful, result: actionResult});
+    } else if (message.msg === "terminate") {
+        logger.info("terminating content script");
+        portToBackground.onMessage.removeListener(handleRequestFromAgentControlLoop);
+        portToBackground.disconnect();
+    } else {
+        logger.warn("unknown message from background script: " + JSON.stringify(message));
+    }
+}
+
+portToBackground.onMessage.addListener(handleRequestFromAgentControlLoop);
+portToBackground.postMessage({msg: "content script initialized and ready"});

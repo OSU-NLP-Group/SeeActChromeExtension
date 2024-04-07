@@ -5,43 +5,38 @@ const logger = createNamedLogger('main-popup');
 const startButton = document.getElementById('startAgent');
 if (!startButton) throw new Error('startAgent button not found');
 
+const taskSpecField = document.getElementById('task-spec') as HTMLInputElement;
+if (!taskSpecField) throw new Error('task-spec field not found');
 
-/**
- * @description Get the id of the active tab in the current window
- * @returns {Promise<number|undefined>} The id of the active tab, or undefined if the active tab is a chrome:// URL
- *                                          (which scripts can't be injected into for safety reasons)
- * @throws {Error} If the active tab is not found or doesn't have an id
- */
-export const getActiveTabId = async (): Promise<number | undefined> => {
-    const tabs = await chrome.tabs.query({active: true, currentWindow: true});
-    const tab: chrome.tabs.Tab | undefined = tabs[0];
-    if (!tab) throw new Error('Active tab not found');
-    let id = tab.id;
-    if (!id) throw new Error('Active tab id not found');
-    if (tab.url && tab.url.startsWith('chrome://')) {
-        logger.warn('Active tab is a chrome:// URL: ' + tab.url);
-        id = undefined;
-    }
-    return id;
-}
-//todo unit test above helper? how hard is it to mock chrome api calls?
-// worst case, could make ChromeHelper in utils/ with thing like DomWrapper for chrome api's, then unit test ChromeHelper
-// with an injected mock of the chrome api wrapper object
+const statusDiv = document.getElementById('status');
+if (!statusDiv) throw new Error('status div not found');
 
 startButton.addEventListener('click', async () => {
     logger.trace('startAgent button clicked');
-    const tabId = await getActiveTabId();
-    if (!tabId) {
-        logger.warn("Can't inject agent script into chrome:// URLs for security reasons; " +
-            "please only try to start the agent on a regular web page.");
+    if (!taskSpecField.value) {
+        logger.warn("task spec field is empty, can't start agent");
         return;
     }
-    const result = await chrome.scripting.executeScript({
-        files: ['./src/page_interaction.js'],
-        target: {
-            tabId: tabId
-        }
+    const taskSpec = taskSpecField.value;
+    const taskStartResponse = await chrome.runtime.sendMessage({
+        reqType: "startTask",
+        taskSpecification: taskSpec
     });
-    logger.trace('agent script injected into page: ' + result);
+
+    if (taskStartResponse.success) {
+        statusDiv.textContent = `Task ${taskStartResponse.taskId} started successfully`;
+    } else {
+        //todo e2e test this
+        statusDiv.textContent = 'Task start failed: ' + taskStartResponse.message;
+    }
+    statusDiv.style.display = 'block';
+
+    // Hide the status div after 10 seconds
+    setTimeout(() => {
+        statusDiv.style.display = 'none';
+        statusDiv.textContent = '';
+    }, 10000);
+
+
 });
 //todo is it worth unit testing the above handler?
