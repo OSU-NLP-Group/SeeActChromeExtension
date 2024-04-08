@@ -54,7 +54,7 @@ export class OpenAiEngine {
         }
         this.apiKeys = apiKeys;
         //only a person's own api key will be used, within their own browser instance, so it isn't dangerous
-        // for this chrome extension to use an api key in the browser
+        // for this Chrome extension to use an api key in the browser
         this.openAi = openAi ?? new OpenAI({dangerouslyAllowBrowser: true, apiKey: apiKeys[0]});
 
         this.stop = stop;
@@ -65,7 +65,7 @@ export class OpenAiEngine {
 
         this.nextAvailTime = new Array<number>(this.apiKeys.length).fill(0);
         this.currKeyIdx = 0;
-        this.logger = loggerToUse ?? createNamedLogger('open-ai-engine');
+        this.logger = loggerToUse ?? createNamedLogger('open-ai-engine', true);
     }
 
     /**

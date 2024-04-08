@@ -1,6 +1,6 @@
 import {createNamedLogger} from "./utils/shared_logging_setup";
 
-const logger = createNamedLogger('main-popup');
+const logger = createNamedLogger('main-popup', false);
 
 const startButton = document.getElementById('startAgent');
 if (!startButton) throw new Error('startAgent button not found');
@@ -10,6 +10,10 @@ if (!taskSpecField) throw new Error('task-spec field not found');
 
 const statusDiv = document.getElementById('status');
 if (!statusDiv) throw new Error('status div not found');
+
+const killButton = document.getElementById('endTask');
+if (!killButton) throw new Error('endTask button not found');
+
 
 startButton.addEventListener('click', async () => {
     logger.trace('startAgent button clicked');
@@ -26,7 +30,6 @@ startButton.addEventListener('click', async () => {
     if (taskStartResponse.success) {
         statusDiv.textContent = `Task ${taskStartResponse.taskId} started successfully`;
     } else {
-        //todo e2e test this
         statusDiv.textContent = 'Task start failed: ' + taskStartResponse.message;
     }
     statusDiv.style.display = 'block';
@@ -40,3 +43,23 @@ startButton.addEventListener('click', async () => {
 
 });
 //todo is it worth unit testing the above handler?
+
+killButton.addEventListener('click', async () => {
+    logger.trace('endTask button clicked');
+    const taskEndResponse = await chrome.runtime.sendMessage({
+        reqType: "endTask"
+    });
+
+    if (taskEndResponse.success) {
+        statusDiv.textContent = `Task ${taskEndResponse.taskId} ended successfully`;
+    } else {
+        statusDiv.textContent = 'Task end failed: ' + taskEndResponse.message;
+    }
+    statusDiv.style.display = 'block';
+
+    // Hide the status div after 10 seconds
+    setTimeout(() => {
+        statusDiv.style.display = 'none';
+        statusDiv.textContent = '';
+    }, 10000);
+});

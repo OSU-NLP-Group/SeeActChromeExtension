@@ -2,36 +2,51 @@ import log, {LogLevelNames} from "loglevel";
 
 export const origLoggerFactory = log.methodFactory;
 
-log.methodFactory = function (methodName, logLevel, loggerName) {
-    const rawMethod = origLoggerFactory(methodName, logLevel, loggerName);
-    return function (...args: unknown[]) {
-        const timestampStr = new Date().toISOString();
-        const msg = augmentLogMsg(timestampStr, loggerName, methodName, undefined, args);
-        rawMethod(msg);
-
-        chrome.runtime.sendMessage({
-            reqType: 'log',
-            timestamp: timestampStr,
-            loggerName: loggerName,
-            level: methodName,
-            args: args
-        }).catch((err) => {
-            console.error("error ]|", err, "|[ while sending log message ]|", msg,
-                "|[ to background script for persistence");
-        });
-    };
-};
-//todo change this to info or warn before release, and ideally make it configurable from advanced part of options menu
-log.setLevel("trace");
-log.rebuild();
-
 /**
  * Create a logger with the given name, using the 'plugin' functionality which was added to loglevel in
- * shared_logging_setup.ts to centralize the extension's logging in the background script's console
+ * shared_logging_setup.ts to centralize the extension's logging in the background script's console and add more detail
  * @param loggerName the name of the logger (a class or module name)
+ * @param inServiceWorker whether the logger is being created in a service worker; if not, it needs to send log
+ *                         messages to the service worker for persistence in a unified location
  */
-export const createNamedLogger = (loggerName: string): log.Logger => {
-    return log.getLogger(loggerName);
+export const createNamedLogger = (loggerName: string, inServiceWorker: boolean): log.Logger => {
+    const newLogger = log.getLogger(loggerName);
+
+    if (inServiceWorker) {
+        newLogger.methodFactory = function (methodName, logLevel, loggerName) {
+            const rawMethod = origLoggerFactory(methodName, logLevel, loggerName);
+            return function (...args: unknown[]) {
+                rawMethod(augmentLogMsg(new Date().toISOString(), loggerName, methodName, args));
+            };
+        };
+    } else {
+        newLogger.methodFactory = function (methodName, logLevel, loggerName) {
+            const rawMethod = origLoggerFactory(methodName, logLevel, loggerName);
+            return function (...args: unknown[]) {
+                const timestampStr = new Date().toISOString();
+                const msg = augmentLogMsg(timestampStr, loggerName, methodName, undefined, args);
+                rawMethod(msg);
+
+                chrome.runtime.sendMessage({
+                    reqType: 'log',
+                    timestamp: timestampStr,
+                    loggerName: loggerName,
+                    level: methodName,
+                    args: args
+                }).catch((err) => {
+                    console.error("error ]|", err, "|[ while sending log message ]|", msg,
+                        "|[ to background script for persistence");
+                });
+            };
+        };
+    }
+
+    //todo change this to info or warn before release, and ideally make it configurable from advanced part of options menu
+    newLogger.setLevel("trace");
+    newLogger.rebuild();
+
+
+    return newLogger;
 }
 
 /**
@@ -39,7 +54,6 @@ export const createNamedLogger = (loggerName: string): log.Logger => {
  * @param timestampStr the timestamp string to use
  * @param loggerName the name of the logger (usually a module or class name)
  * @param levelName the log level name
- * @param taskId the uuid of the task that's currently being performed, or undefined if no task is defined
  * @param args the arguments to the logger call
  *              this might just be 0 or more objects/strings/other-primitives to concatenate together with spaces
  *              in between, or it might be a format string containing placeholder patterns followed by some number of
@@ -47,9 +61,8 @@ export const createNamedLogger = (loggerName: string): log.Logger => {
  * @return a single augmented log message
  */
 export function augmentLogMsg(timestampStr: string, loggerName: string | symbol, levelName: LogLevelNames,
-                              taskId?: string, ...args: unknown[]) {
+                              ...args: unknown[]) {
     let msg: string = "";
-    const normalizedTaskId = taskId ?? "noTaskDefined";
     if (typeof args[0] === "string" && args[0].includes("%s")) {
         console.warn("log message contains %s, which is a placeholder for substitution strings. " +
             "This is not supported by this logging feature yet; please use string concatenation instead.");
@@ -59,10 +72,10 @@ export function augmentLogMsg(timestampStr: string, loggerName: string | symbol,
         //  https://developer.mozilla.org/en-US/docs/Web/API/console#using_string_substitutions
 
         //for now, just supporting the simple "one or more objects get concatenated together" approach
-        msg = [timestampStr, loggerName, levelName.toUpperCase(), normalizedTaskId, ...args].join(" ");
+        msg = [timestampStr, loggerName, levelName.toUpperCase(), ...args].join(" ");
     } else {
         //for now, just supporting the simple "one or more objects get concatenated together" approach
-        msg = [timestampStr, loggerName, levelName.toUpperCase(), normalizedTaskId, ...args].join(" ");
+        msg = [timestampStr, loggerName, levelName.toUpperCase(), ...args].join(" ");
     }
     return msg;
 }

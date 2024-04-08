@@ -35,7 +35,7 @@ export class BrowserHelper {
     constructor(domHelper?: DomWrapper, loggerToUse?: log.Logger) {
         this.domHelper = domHelper ?? new DomWrapper(window);
 
-        this.logger = loggerToUse ?? createNamedLogger('browser-helper');
+        this.logger = loggerToUse ?? createNamedLogger('browser-helper', false);
     }
 
     /**

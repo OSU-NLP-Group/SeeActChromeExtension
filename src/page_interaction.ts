@@ -1,9 +1,11 @@
 import {BrowserHelper, ElementData, SerializableElementData} from "./utils/BrowserHelper";
 import {createNamedLogger} from "./utils/shared_logging_setup";
 
-const logger = createNamedLogger('agent-page-interaction');
+const logger = createNamedLogger('agent-page-interaction', false);
 logger.trace("successfully injected page_interaction script in browser");
 
+//todo to make this testable, need to have a class which has instance variables for
+// browserHelper, currInteractiveElements, and portToBackground
 const browserHelper = new BrowserHelper();
 
 let currInteractiveElements: ElementData[] | undefined;
@@ -20,9 +22,8 @@ function getElementText(elementToActOn: HTMLElement) {
 }
 
 //todo jsdoc and break up body into multiple methods
-//eslint-disable-next-line @typescript-eslint/no-explicit-any -- chrome.runtime.Port.onMessage.addListener requires any
-function handleRequestFromAgentControlLoop(message: any) {
-    logger.debug("message received from background script: " + JSON.stringify(message));
+async function handleRequestFromAgentControlLoop(message: any) {
+    logger.trace("message received from background script: " + JSON.stringify(message));
     if (message.msg === "get interactive elements") {
         if (currInteractiveElements) {
             logger.error("interactive elements already exist; background script might've asked for interactive elements twice in a row without in between instructing that an action be performed or without waiting for the action to be finished")
@@ -114,8 +115,9 @@ function handleRequestFromAgentControlLoop(message: any) {
                     elementToActOn.textContent = valueForAction;
                     actionSuccessful = true;
                 } else {
-                    logger.error("element is not an input, textarea, or contenteditable element; can't type in it");
-                    actionResult = "element is not an input, textarea, or contenteditable element; can't type in it";
+                    logger.error("element is not an input, textarea, or contenteditable element; can't type in it. Trying to click it instead");
+                    elementToActOn.click();
+                    actionResult = "element is not an input, textarea, or contenteditable element; can't type in it. Tried clicking instead";
                 }
                 if (actionSuccessful) {
                     const postTypeElementText = getElementText(elementToActOn);
@@ -153,13 +155,13 @@ function handleRequestFromAgentControlLoop(message: any) {
             actionResult = "no element index provided in message from background script; can't perform action";
         }
 
+        //todo find better way to wait for action to finish than just waiting a fixed amount of time
+        // maybe inspired by playwright's page stability checks?
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
         currInteractiveElements = undefined;
         //this part would only be reached if the action didn't cause page navigation
         portToBackground.postMessage({msg: "action performed", success: actionSuccessful, result: actionResult});
-    } else if (message.msg === "terminate") {
-        logger.info("terminating content script");
-        portToBackground.onMessage.removeListener(handleRequestFromAgentControlLoop);
-        portToBackground.disconnect();
     } else {
         logger.warn("unknown message from background script: " + JSON.stringify(message));
     }
