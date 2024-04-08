@@ -12,6 +12,8 @@ let currInteractiveElements: ElementData[] | undefined;
 
 const portToBackground = chrome.runtime.connect({name: "content-script-2-agent-controller"});
 
+let hasControllerEverResponded: boolean = false;
+
 //todo jsdoc
 function getElementText(elementToActOn: HTMLElement) {
     let priorElementText = elementToActOn.textContent;
@@ -24,6 +26,7 @@ function getElementText(elementToActOn: HTMLElement) {
 //todo jsdoc and break up body into multiple methods
 async function handleRequestFromAgentControlLoop(message: any) {
     logger.trace("message received from background script: " + JSON.stringify(message));
+    hasControllerEverResponded = true;
     if (message.msg === "get interactive elements") {
         if (currInteractiveElements) {
             logger.error("interactive elements already exist; background script might've asked for interactive elements twice in a row without in between instructing that an action be performed or without waiting for the action to be finished")
@@ -169,3 +172,9 @@ async function handleRequestFromAgentControlLoop(message: any) {
 
 portToBackground.onMessage.addListener(handleRequestFromAgentControlLoop);
 portToBackground.postMessage({msg: "content script initialized and ready"});
+(async () => {
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    if (!hasControllerEverResponded) {
+        portToBackground.postMessage({msg: "content script initialized and ready"});
+    }
+})();

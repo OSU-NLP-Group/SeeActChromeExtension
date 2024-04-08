@@ -102,18 +102,14 @@ async function injectContentScript(isStartOfTask: boolean, sendResponse?: (respo
         tabId = await getActiveTabId();
     } catch (error) {
         centralLogger.error(`error ${error} getting active tab id, cannot inject content script; full error object:`, JSON.stringify(error));
-        if (!isStartOfTask) {
-            terminateTask();
-        }
+        terminateTask();
         sendResponse?.({
             success: false, message: `Can't get tab id because of error: ${error}, jsonified: ${JSON.stringify(error)}`
         });
     }
     if (!tabId) {
         centralLogger.error("Can't inject agent script into chrome:// URLs for security reasons; " + isStartOfTask ? "please only try to start the agent on a regular web page." : "please don't switch to a chrome:// URL while the agent is running");
-        if (!isStartOfTask) {
-            terminateTask();
-        }
+        terminateTask();
         sendResponse?.({success: false, message: "Can't inject script in a chrome:// URL"});
     } else {
         const toStartTaskStr = isStartOfTask ? " to start a task" : "";
@@ -140,7 +136,7 @@ async function injectContentScript(isStartOfTask: boolean, sendResponse?: (respo
             sendResponse?.({success: true, taskId: taskId, message: "Started content script in current tab"});
         } catch (error) {
             centralLogger.error(`error injecting agent script into page${toStartTaskStr}; error: ${error}; jsonified error: ${JSON.stringify(error)}`);
-            if (isStartOfTask) {state = AgentControllerState.IDLE;} else {terminateTask();}
+            terminateTask();
             sendResponse?.({success: false, message: "Error injecting agent script into page" + toStartTaskStr});
         }
     }
@@ -180,9 +176,7 @@ function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (r
                 centralLogger.info(`STARTING TASK ${taskId} with specification: ${taskSpecification}`);
                 injectContentScript(true, sendResponse).catch((error) => {
                     centralLogger.error(`error injecting content script to start task; error: ${error}, jsonified: ${JSON.stringify(error)}`);
-                    state = AgentControllerState.IDLE;
-                    taskId = undefined;
-                    taskSpecification = "";
+                    terminateTask();
                     sendResponse({success: false, message: "Error injecting content script to start task"});
                 });
             }
@@ -193,8 +187,9 @@ function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (r
                 centralLogger.warn("No task in progress to end");
                 sendResponse({success: false, message: "No task in progress to end"});
             } else {
+                const terminatedTaskId = taskId;
                 terminateTask();
-                sendResponse({success: true, taskId: taskId});
+                sendResponse({success: true, taskId: terminatedTaskId});
             }
         });
     } else {
@@ -265,6 +260,8 @@ async function handlePageMsgToAgentController(message: any, port: Port): Promise
                 terminateTask();
                 return;
             }
+            //todo need to handle NONE actionName (which means the AI couldn't come up with a valid action)
+            // and not just pass that on to the page script
 
             const chosenCandidateIndex = getIndexFromOptionName(elementName);
             const chosenElementIndex = candidateIds[chosenCandidateIndex];
