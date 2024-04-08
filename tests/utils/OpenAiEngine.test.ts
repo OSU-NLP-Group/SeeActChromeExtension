@@ -252,15 +252,13 @@ describe('OpenAiEngine.generateWithRetry', () => {
             } as ChatCompletion);
 
         const req1Start = Date.now();
-        const result1 = await engine.generateWithRetry(prompts, 1, dummyImgDataUrl, t0RespTxt, undefined, undefined, undefined, undefined, 10);
+        const result1 = await engine.generateWithRetry(prompts, 1, dummyImgDataUrl, t0RespTxt, undefined, undefined, undefined, 10);
         const req1Time = Date.now() - req1Start;
-        expect(req1Time).toBeGreaterThan(10 + 30 + 90 + 810 + 2430);
-        expect(req1Time).toBeLessThan(10 + 30 + 90 + 810 + 2430 + 7290);
+        expect(req1Time).toBeGreaterThan(10 + 30 + 90 + 270 + 810);
+        expect(req1Time).toBeLessThan(10 + 30 + 90 + 270+ 810 + 2430);
         expect(result1).toEqual(t1RespTxt);
         expect(mockOpenAi.apiKey).toEqual(soleApiKey);
         expect(engine.currKeyIdx).toEqual(0);
-
-
     }, 60_000);
 
     it('should fail if maxTries exceeded', async () => {
