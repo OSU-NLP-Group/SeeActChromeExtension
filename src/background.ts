@@ -246,11 +246,21 @@ async function handlePageMsgToAgentController(message: any, port: Port): Promise
             //todo maybe also include the prior actions' success/failure in the prompt
             const prompts = generatePrompt(taskSpecification, actionsSoFar.map(entry => entry.actionDesc), interactiveChoices);
             centralLogger.debug("prompts:", prompts);
+            //todo? try catch for error when trying to get screenshot, if that fails, then terminate task
             const screenshotDataUrl: string = await chrome.tabs.captureVisibleTab();
             centralLogger.debug("screenshot data url (truncated): " + screenshotDataUrl.slice(0, 100));
-            const planningOutput = await aiEngine.generateWithRetry(prompts, 0, screenshotDataUrl);
-            centralLogger.info("planning output: " + planningOutput);
-            const groundingOutput = await aiEngine.generateWithRetry(prompts, 1, screenshotDataUrl, planningOutput);
+            let planningOutput: string;
+            let groundingOutput: string;
+            const aiApiBaseDelay = 5000;//todo eventually make this configurable (needs to be increased a lot for people with new/untested api keys)
+            try {
+                planningOutput = await aiEngine.generateWithRetry(prompts, 0, screenshotDataUrl, undefined, undefined, undefined, undefined, aiApiBaseDelay);
+                centralLogger.info("planning output: " + planningOutput);
+                groundingOutput = await aiEngine.generateWithRetry(prompts, 1, screenshotDataUrl, planningOutput, undefined, undefined, undefined, aiApiBaseDelay);
+            } catch (error) {
+                centralLogger.error(`error getting next step from ai; terminating task; error: ${error}, jsonified: ${JSON.stringify(error)}`);
+                terminateTask();
+                return;
+            }
             centralLogger.info("grounding output: " + groundingOutput);
             const [elementName, actionName, value] = postProcessActionLlm(groundingOutput);
             centralLogger.debug(`suggested action: ${actionName}; value: ${value}`);
@@ -259,11 +269,34 @@ async function handlePageMsgToAgentController(message: any, port: Port): Promise
                 centralLogger.info("Task completed!");
                 terminateTask();
                 return;
+            } else if (actionName === "NONE") {
+                //todo remove this temp hacky patch
+                centralLogger.warn("ai selected NONE action, terminating task as dead-ended");
+                terminateTask();
+                return;
+                //todo need to properly handle NONE actionName (which means the AI couldn't come up with a valid action)
+                // not simply kill the task
             }
-            //todo need to handle NONE actionName (which means the AI couldn't come up with a valid action)
-            // and not just pass that on to the page script
 
             const chosenCandidateIndex = getIndexFromOptionName(elementName);
+            if (chosenCandidateIndex === candidateIds.length) {
+                //todo remove this temp hacky patch
+                centralLogger.warn("ai selected 'none of the above' option, terminating task as dead-ended");
+                terminateTask();
+                return;
+
+                //todo increment noop counter
+                //todo how to handle this?
+            } else if (chosenCandidateIndex > candidateIds.length) {
+                //todo remove this temp hacky patch
+                centralLogger.warn(`ai selected invalid option ${elementName} (corresponds to candidate index ${chosenCandidateIndex}, but the candidates list only had ${candidateIds.length} entries), terminating task as dead-ended`);
+                terminateTask();
+                return;
+
+                //todo increment noop counter
+                //todo reprompt the ai??
+            }
+
             const chosenElementIndex = candidateIds[chosenCandidateIndex];
             centralLogger.debug(`acting on the ${chosenCandidateIndex} entry from the candidates list; which is the ${chosenElementIndex} element of the original interactiveElements list`);
 
@@ -367,7 +400,7 @@ async function handlePageDisconnectFromAgentController(port: Port) {
                 "but rather in state " + AgentControllerState[state] + "; terminating current task " + taskSpecification);
             terminateTask();
             //todo Boyuan may eventually want recovery logic here for the user accidentally closing the tab or for the tab/page crashing
-            //otoh that should be at least partly (perhaps fully) covered by the pending reconnect logic
+            //reloading or reopening the tab might require adding more permissions to the manifest.json
         }
     });
 }
@@ -418,6 +451,8 @@ function terminateTask() {
         }
         currPortToContentScript = undefined;
     }
+    //todo before release, the end of this method should create an alert popup so user is informed about task failure
+    // even if they don't have extension's dev console open
 }
 
 /**

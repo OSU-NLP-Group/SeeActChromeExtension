@@ -4,8 +4,10 @@ import {createNamedLogger} from "./utils/shared_logging_setup";
 const logger = createNamedLogger('agent-page-interaction', false);
 logger.trace("successfully injected page_interaction script in browser");
 
+const expectedMsgForPortDisconnection = "Attempting to use a disconnected port object";
+
 //todo to make this testable, need to have a class which has instance variables for
-// browserHelper, currInteractiveElements, and portToBackground
+// browserHelper, currInteractiveElements, portToBackground, and hasControllerEverResponded
 const browserHelper = new BrowserHelper();
 
 let currInteractiveElements: ElementData[] | undefined;
@@ -30,7 +32,9 @@ async function handleRequestFromAgentControlLoop(message: any) {
     if (message.msg === "get interactive elements") {
         if (currInteractiveElements) {
             logger.error("interactive elements already exist; background script might've asked for interactive elements twice in a row without in between instructing that an action be performed or without waiting for the action to be finished")
-            portToBackground.postMessage({msg: "terminal page-side error", error: "interactive elements already exist"});
+            portToBackground.postMessage({
+                msg: "terminal page-side error", error: "interactive elements already exist"
+            });
             return;
         }
 
@@ -44,13 +48,24 @@ async function handleRequestFromAgentControlLoop(message: any) {
         });
 
         //todo also retrieve current viewport position and provide that to controller logic in background script
-        portToBackground.postMessage({
-            msg: "sending interactive elements", interactiveElements: elementsInSerializableForm
-        });
+        try {
+            portToBackground.postMessage({
+                msg: "sending interactive elements", interactiveElements: elementsInSerializableForm
+            });
+        } catch (error: any) {
+            if ('message' in error && error.message === expectedMsgForPortDisconnection) {
+                logger.info("service worker disconnected from content script while content script was gathering interactive elements (task was probably terminated by user)");
+            } else {
+                logger.error(`unexpected error in content script while sending interactive elements to service worker; error: ${error}, jsonified: ${JSON.stringify(error)}`);
+            }
+        }
+
     } else if (message.msg === "perform action") {
         if (!currInteractiveElements) {
             logger.error("perform action message received from background script but no interactive elements are currently stored");
-            portToBackground.postMessage({msg: "terminal page-side error", error: "no interactive elements stored to be acted on"});
+            portToBackground.postMessage({
+                msg: "terminal page-side error", error: "no interactive elements stored to be acted on"
+            });
             return;
         }
         const actionToPerform: string = message.action;//maybe make interface or enum for this
@@ -138,24 +153,51 @@ async function handleRequestFromAgentControlLoop(message: any) {
                         // using newly-written code for turning a string into a sequence of key press events and sending those to the element
                     }
                 }
-            } else if (actionToPerform === "PRESS ENTER") {
+            } else if (actionToPerform === "PRESS_ENTER") {
                 logger.trace("pressing enter on element");
-                const event = new KeyboardEvent('keydown', {key: 'Enter', code: 'Enter'});
-                elementToActOn.dispatchEvent(event);
+                const event1 = new KeyboardEvent('keydown', {
+                    key: 'Enter',
+                    code: 'Enter',
+                    bubbles: true,
+                    cancelable: true
+                });
+                // const event2 = new InputEvent('input', {data: '\n', bubbles: true, cancelable: true});
+                // const event3 = new KeyboardEvent('keyup', {key: 'Enter', code: 'Enter', bubbles: true, cancelable: true});
+                elementToActOn.dispatchEvent(event1);
+                // elementToActOn.dispatchEvent(event2);
+                // elementToActOn.dispatchEvent(event3);
+                //todo none of these things seem to work, at least on github.com or registrar.osu.edu
+                // this https://stackoverflow.com/a/44190874/10808625 suggests that it might be impossible in most
+                // (or all?) websites to programmatically send individual keystrokes to input elements and have them
+                // treated like real keystrokes from a user
+
+                //todo try shenanigans with finding a form element and submitting it, which does seem to work in chrome dev console in cases tried so far, unlike sending keyboard events
                 actionSuccessful = true;
             } else {
                 logger.warn("unknown action type: " + actionToPerform);
                 actionResult = "unknown action type: " + actionToPerform;
             }
-            //todo HOVER, SELECT, SCROLL
-
+            //todo HOVER, SELECT
 
         } else {
-            logger.warn("no element index provided in message from background script; can't perform action");
-            //todo maybe later add support for the "press enter without a specific element" action scenario,
-            // but I'm not at all sure how that would work in js
-            //The TERMINATE action is handled in the background script
-            actionResult = "no element index provided in message from background script; can't perform action";
+            if (actionToPerform === "SCROLL_UP" || actionToPerform === "SCROLL_DOWN") {
+                const docElement = document.documentElement;
+                const pageHeight = docElement.scrollHeight;
+                const viewportHeight = docElement.clientHeight;
+                //todo make scroll increment fraction configurable in options menu? if so, that config option would
+                // also need to affect the relevant sentence of the system prompt (about magnitude of scrolling actions)
+                const scrollAmount = viewportHeight * 0.75;
+                const scrollVertOffset = actionToPerform === "SCROLL_UP" ? -scrollAmount : scrollAmount;
+                window.scrollBy(0, scrollVertOffset);
+            } else {
+                logger.warn("no element index provided in message from background script; can't perform action "
+                    + actionToPerform);
+                //todo maybe later add support for the "press enter without a specific element" action scenario,
+                // but I'm not at all sure how that would work in js
+                //The TERMINATE action is handled in the background script
+                actionResult = "no element index provided in message from background script; can't perform action "
+                    + actionToPerform;
+            }
         }
 
         //todo find better way to wait for action to finish than just waiting a fixed amount of time
@@ -164,7 +206,16 @@ async function handleRequestFromAgentControlLoop(message: any) {
 
         currInteractiveElements = undefined;
         //this part would only be reached if the action didn't cause page navigation
-        portToBackground.postMessage({msg: "action performed", success: actionSuccessful, result: actionResult});
+
+        try {
+            portToBackground.postMessage({msg: "action performed", success: actionSuccessful, result: actionResult});
+        } catch (error: any) {
+            if ('message' in error && error.message === expectedMsgForPortDisconnection) {
+                logger.info("service worker disconnected from content script while content script was performing action (task was probably terminated by user)");
+            } else {
+                logger.error(`unexpected error in content script while notifying service worker about performed action; error: ${error}, jsonified: ${JSON.stringify(error)}`);
+            }
+        }
     } else {
         logger.warn("unknown message from background script: " + JSON.stringify(message));
     }

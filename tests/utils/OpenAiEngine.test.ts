@@ -221,10 +221,10 @@ describe('OpenAiEngine.generateWithRetry', () => {
             } as ChatCompletion);
 
         const req0Start = Date.now();
-        const result0 = await engine.generateWithRetry(prompts, 0, dummyImgDataUrl, undefined);
+        const result0 = await engine.generateWithRetry(prompts, 0, dummyImgDataUrl, undefined, undefined, undefined, undefined, 100);
         const req0Time = Date.now() - req0Start;
-        expect(req0Time).toBeGreaterThan(100 + 200 + 400);
-        expect(req0Time).toBeLessThan(100 + 200 + 400 + 800);
+        expect(req0Time).toBeGreaterThan(100 + 300 + 900);
+        expect(req0Time).toBeLessThan(100 + 300 + 900 + 2700);
         expect(result0).toEqual(t0RespTxt);
         expect(mockOpenAi.apiKey).toEqual(soleApiKey);
         expect(engine.currKeyIdx).toEqual(0);
@@ -252,16 +252,16 @@ describe('OpenAiEngine.generateWithRetry', () => {
             } as ChatCompletion);
 
         const req1Start = Date.now();
-        const result1 = await engine.generateWithRetry(prompts, 1, dummyImgDataUrl, t0RespTxt);
+        const result1 = await engine.generateWithRetry(prompts, 1, dummyImgDataUrl, t0RespTxt, undefined, undefined, undefined, undefined, 10);
         const req1Time = Date.now() - req1Start;
-        expect(req1Time).toBeGreaterThan(100 + 200 + 400 + 800 + 1600);
-        expect(req1Time).toBeLessThan(100 + 200 + 400 + 800 + 1600 + 3200);
+        expect(req1Time).toBeGreaterThan(10 + 30 + 90 + 810 + 2430);
+        expect(req1Time).toBeLessThan(10 + 30 + 90 + 810 + 2430 + 7290);
         expect(result1).toEqual(t1RespTxt);
         expect(mockOpenAi.apiKey).toEqual(soleApiKey);
         expect(engine.currKeyIdx).toEqual(0);
 
 
-    }, 30_000);
+    }, 60_000);
 
     it('should fail if maxTries exceeded', async () => {
         const soleApiKey = "key1";

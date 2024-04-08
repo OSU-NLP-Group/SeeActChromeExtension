@@ -146,9 +146,9 @@ describe('postProcessActionLlm', () => {
             .toEqual(["Invalid", "TERMINATE", "None"]);
     });
 
-    it('should extract element name, PRESS ENTER action, and no value even when LLM adds junk', () => {
+    it('should extract element name, PRESS_ENTER action, and no value even when LLM adds junk', () => {
         expect(postProcessActionLlm("The uppercase letter of your choice based on your analysis is:\n\n"
-            + "ELEMENT: BL\nACTION: PRESS ENTER")).toEqual(["BL", "PRESS ENTER", ""]);
+            + "ELEMENT: BL\nACTION: PRESS_ENTER")).toEqual(["BL", "PRESS_ENTER", ""]);
     });
     it('should extract element name, CLICK action, and no value even when LLM adds junk', () => {
         expect(postProcessActionLlm("The uppercase letter of my choice is:\n"

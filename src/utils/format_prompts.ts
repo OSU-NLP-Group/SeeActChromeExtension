@@ -130,7 +130,7 @@ export const postProcessActionLlm = (llmText: string): [string, string, string] 
     }
 
     let actionChoice = "None";
-    const actionMatch: RegExpMatchArray | null = llmText.match(/ACTION: (CLICK|SELECT|TYPE|HOVER|PRESS ENTER|TERMINATE|NONE)/);
+    const actionMatch: RegExpMatchArray | null = llmText.match(/ACTION: (CLICK|SELECT|TYPE|HOVER|PRESS_ENTER|SCROLL_UP|SCROLL_DOWN|TERMINATE|NONE)/);
     if (actionMatch) {
         actionChoice = actionMatch[1];
     }
@@ -147,7 +147,8 @@ export const postProcessActionLlm = (llmText: string): [string, string, string] 
 
 //todo ask Boyuan about changing system prompt to stop referring to playwright
 // Boyu feedback - still need to include up-to-date information explaining exactly what the different action names mean
-export const onlineSystemPrompt = "Imagine that you are imitating humans doing web navigation for a task step by step. At each stage, you can see the webpage like humans by a screenshot and know the previous actions before the current step decided by yourself through recorded history. You need to decide on the first following action to take. You can click on an element with the mouse, select an option, type text or press Enter with the keyboard. (For your understanding, they are like the click(), select_option() type() and keyboard.press('Enter') functions in playwright respectively) One next step means one operation within the four. Unlike humans, for typing (e.g., in text areas, text boxes) and selecting (e.g., from dropdown menus or <select> elements), you should try directly typing the input or selecting the choice, bypassing the need for an initial click. You should not attempt to create accounts, log in or do the final submission. Terminate when you deem the task complete or if it requires potentially harmful actions.";
+//todo figure out how to write appropriate new detailed explanation for click/type/select/press-enter options
+export const onlineSystemPrompt = "Imagine that you are imitating humans doing web navigation for a task step by step. At each stage, you can see the webpage like humans by a screenshot and know the previous actions before the current step decided by yourself through recorded history. You need to decide on the first following action to take. You can click on an element with the mouse, select an option, type text, press Enter with the keyboard, scroll up by 3/4 of the current viewport height, or scroll down by 3/4 of the current viewport height. One next step means one operation within the 6. Unlike humans, for typing (e.g., in text areas, text boxes) and selecting (e.g., from dropdown menus or <select> elements), you should try directly typing the input or selecting the choice, bypassing the need for an initial click. You should not attempt to create accounts, log in or do the final submission. Terminate when you deem the task complete or if it requires potentially harmful actions.";
 export const onlineQuestionDesc = `The screenshot below shows the webpage you see. Follow the following guidance to think step by step before outlining the next action step at the current stage:
 
 (Current Webpage Identification)
@@ -170,15 +171,15 @@ export const onlineReferringPromptDesc = `(Reiteration)
 First, reiterate your next target element, its detailed location, and the corresponding operation.
 
 (Multichoice Question)
-Below is a multi-choice question, where the choices are elements in the webpage. All elements are arranged in the order based on their height on the webpage, from top to bottom (and from left to right). This arrangement can be used to locate them. From the screenshot, find out where and what each one is on the webpage, taking into account both their text content and HTML details. Then, determine whether one matches your target element. Please examine the choices one by one. Choose the matching one. If multiple options match your answer, choose the most likely one by re-examining the screenshot, the choices, and your further reasoning.`;
+Below is a multi-choice question, where the choices are elements in the webpage. All elements are arranged in the order based on their height on the webpage, from top to bottom (and from left to right). This arrangement can be used to locate them. From the screenshot, find out where and what each one is on the webpage, taking into account both their text content and HTML details. Then, determine whether one matches your target element. Please examine the choices one by one. Choose the matching one. If multiple options match your answer, choose the most likely one by re-examining the screenshot, the choices, and your further reasoning. Note that a search bar might initially show up in html as a button which must be clicked to make the actual search bar available`;//todo confirm with Boyuan about whether this addition at the end is worth keeping or too specific to github.com
 export const onlineElementFormat = `(Final Answer)
 Finally, conclude your answer using the format below. Ensure your answer is strictly adhering to the format provided below. Please do not leave any explanation in your answers of the final standardized format part, and this final part should be clear and certain. The element choice, action, and value should be in three separate lines.
 
 Format:
 
-ELEMENT: The uppercase letter of your choice. (No need for PRESS ENTER)`;
-export const onlineActionFormat = "ACTION: Choose an action from {CLICK, SELECT, TYPE, PRESS ENTER, TERMINATE, NONE}.";
-export const onlineValueFormat = "VALUE: Provide additional input based on ACTION.\n\nThe VALUE means:\nIf ACTION == TYPE, specify the text to be typed.\nIf ACTION == SELECT, indicate the option to be chosen. Revise the selection value to align with the available options within the element.\nIf ACTION == CLICK, PRESS ENTER, TERMINATE or NONE, write \"None\".";
+ELEMENT: The uppercase letter of your choice. (No need for PRESS_ENTER, SCROLL_UP, or SCROLL_DOWN)`;
+export const onlineActionFormat = "ACTION: Choose an action from {CLICK, SELECT, TYPE, PRESS_ENTER, SCROLL_UP, SCROLL_DOWN, TERMINATE, NONE}.";
+export const onlineValueFormat = "VALUE: Provide additional input based on ACTION.\n\nThe VALUE means:\nIf ACTION == TYPE, specify the text to be typed.\nIf ACTION == SELECT, indicate the option to be chosen. Revise the selection value to align with the available options within the element.\nIf ACTION == CLICK, PRESS_ENTER, SCROLL_UP, SCROLL_DOWN, TERMINATE or NONE, write \"None\".";
 
 /**
  * @description generate the prompts for the web agent for the current step of the task

@@ -86,6 +86,9 @@ export class OpenAiEngine {
      */
     generate = async (prompts: StrTriple, turnInStep: 0 | 1, imgDataUrl?: string, priorTurnOutput?: string,
                       maxNewTokens: number = 4096, temp?: number, model?: string): Promise<string> => {
+        //todo eventually create options object/type for all optional parameters of generate(), currently hard to read or use
+        // then reuse that as part of the params of generateWithRetry()
+
         this.currKeyIdx = (this.currKeyIdx + 1) % this.apiKeys.length;
         //todo unit test and implement rate-limit-respecting sleep code if Boyuan confirms it's still desired
         // feedback- low priority for now
@@ -172,13 +175,22 @@ export class OpenAiEngine {
 
         return await retryAsync(generateCall, {
             delay: (parameter: { currentTry: number, maxTry: number, lastDelay?: number, lastResult?: string }) => {
-                return backoffBaseDelay * Math.pow(2, parameter.currentTry - 1);
+                return backoffBaseDelay * Math.pow(3, parameter.currentTry - 1);
             },
             maxTry: backoffMaxTries,
             onError: (err: Error) => {
-                if (err instanceof APIConnectionError || err instanceof RateLimitError
-                    || err instanceof APIConnectionTimeoutError || err instanceof InternalServerError) {
-                    this.logger.warn(`problem (${err.message}) with OpenAI API, retrying at ${new Date().toISOString()}...`);
+                if (err instanceof RateLimitError) {
+                    let rateLimitIssueDetails = "unavailable";
+                    //sorry this is so hacky, but I want to keep some info without the retry log messages being massive
+                    const indexOfPrefix = err.message.indexOf(" on ");
+                    const indexOfSuffix = err.message.indexOf(". Visit");
+                    if (indexOfPrefix > 0 && indexOfSuffix > 0 && indexOfPrefix+4 < indexOfSuffix) {
+                        rateLimitIssueDetails = err.message.substring(indexOfPrefix + 4, indexOfSuffix);
+                    }
+                    this.logger.warn(`hit OpenAI rate limit, details: ${rateLimitIssueDetails}, will retry`);
+                } else if (err instanceof APIConnectionError || err instanceof APIConnectionTimeoutError
+                    || err instanceof InternalServerError) {
+                    this.logger.warn(`non-fatal problem with OpenAI API at ${new Date().toISOString()}, will retry; problem: ${err.message}`);
                 } else {
                     this.logger.error(`problem (${err.message}) occurred at ${new Date().toISOString()} with OpenAI API that isn't likely to get better, not retrying`);
                     throw err;
