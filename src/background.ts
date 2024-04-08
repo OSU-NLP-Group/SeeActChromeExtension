@@ -279,7 +279,8 @@ async function handlePageMsgToAgentController(message: any, port: Port): Promise
             }
 
             const chosenCandidateIndex = getIndexFromOptionName(elementName);
-            if (chosenCandidateIndex === candidateIds.length) {
+            if (chosenCandidateIndex === candidateIds.length && actionName !== "SCROLL_UP"
+                && actionName !== "SCROLL_DOWN") {
                 //todo remove this temp hacky patch
                 centralLogger.warn("ai selected 'none of the above' option, terminating task as dead-ended");
                 terminateTask();

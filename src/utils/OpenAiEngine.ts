@@ -180,14 +180,16 @@ export class OpenAiEngine {
             maxTry: backoffMaxTries,
             onError: (err: Error) => {
                 if (err instanceof RateLimitError) {
-                    let rateLimitIssueDetails = "unavailable";
+                    let rateLimitIssueDetails = "details couldn't be parsed";
                     //sorry this is so hacky, but I want to keep some info without the retry log messages being massive
+                    // worst case, if/when the api rate limit message is restructured, all that will happen is that
+                    // these retry log messages become less detailed
                     const indexOfPrefix = err.message.indexOf(" on ");
                     const indexOfSuffix = err.message.indexOf(". Visit");
                     if (indexOfPrefix > 0 && indexOfSuffix > 0 && indexOfPrefix+4 < indexOfSuffix) {
                         rateLimitIssueDetails = err.message.substring(indexOfPrefix + 4, indexOfSuffix);
                     }
-                    this.logger.warn(`hit OpenAI rate limit, details: ${rateLimitIssueDetails}, will retry`);
+                    this.logger.info(`hit OpenAI rate limit but will retry: ${rateLimitIssueDetails}`);
                 } else if (err instanceof APIConnectionError || err instanceof APIConnectionTimeoutError
                     || err instanceof InternalServerError) {
                     this.logger.warn(`non-fatal problem with OpenAI API at ${new Date().toISOString()}, will retry; problem: ${err.message}`);
