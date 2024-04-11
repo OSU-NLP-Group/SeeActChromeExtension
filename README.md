@@ -22,7 +22,6 @@ wherever possible (to leave room for maneuver in later updates)
 
 ```json
 {
-    "comment_on_permissions": "might want to revisit webNavigation, desktopCapture, tabs, sidePanel, ; also, remove debugger permission before release",
-    "comment_on_host_permissions": "maybe give <all_urls> if/when we want SeeAct agent to be able to move off the current website and/or look things up in a separate tab partway through a process; would also need to do that and nix activeTab if activeTab doesn't cover navigation within the current website"
+    "comment_on_permissions": "might want to revisit webNavigation, desktopCapture, sidePanel, storage (e.g. will need storage if given requirement for actual persistence of logs, but that might possibly open a whole can of worms in terms of user data/PII/privacy)"
 }
 ```

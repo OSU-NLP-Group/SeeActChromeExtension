@@ -104,6 +104,9 @@ async function handleRequestFromAgentControlLoop(message: any) {
                 //todo since this doesn't throw error, need to figure out how to decide when to fall back on some alternative method of clicking
                 // maybe can have 2 types of clicking, in the action space, and the prompt be conditionally augmented
                 // to nudge the model to consider whether previous round's click attempt did anything, and if not to try the alternative click method
+                // how to implement alternative click method: use chrome.debugger api:  https://stackoverflow.com/a/76816427/10808625
+                //  https://developer.chrome.com/docs/extensions/reference/api/debugger#method-sendCommand
+                //  https://chromedevtools.github.io/devtools-protocol/1-2/Input/
                 actionSuccessful = true;
             } else if (actionToPerform === "TYPE") {
                 const priorElementText = getElementText(elementToActOn);
@@ -137,6 +140,10 @@ async function handleRequestFromAgentControlLoop(message: any) {
                     elementToActOn.click();
                     actionResult = "element is not an input, textarea, or contenteditable element; can't type in it. Tried clicking instead";
                 }
+                //possibly relevant thing for getting page to notice that you changed an element's text:
+                // https://stackoverflow.com/questions/61190078/simulating-keypress-into-an-input-field-javascript#comment134037565_61192160
+                // also possibly https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/change_event
+
                 if (actionSuccessful) {
                     const postTypeElementText = getElementText(elementToActOn);
                     if (postTypeElementText !== valueForAction) {
@@ -154,24 +161,14 @@ async function handleRequestFromAgentControlLoop(message: any) {
                     }
                 }
             } else if (actionToPerform === "PRESS_ENTER") {
-                logger.trace("pressing enter on element");
-                const event1 = new KeyboardEvent('keydown', {
-                    key: 'Enter',
-                    code: 'Enter',
-                    bubbles: true,
-                    cancelable: true
-                });
-                // const event2 = new InputEvent('input', {data: '\n', bubbles: true, cancelable: true});
-                // const event3 = new KeyboardEvent('keyup', {key: 'Enter', code: 'Enter', bubbles: true, cancelable: true});
-                elementToActOn.dispatchEvent(event1);
-                // elementToActOn.dispatchEvent(event2);
-                // elementToActOn.dispatchEvent(event3);
-                //todo none of these things seem to work, at least on github.com or registrar.osu.edu
-                // this https://stackoverflow.com/a/44190874/10808625 suggests that it might be impossible in most
-                // (or all?) websites to programmatically send individual keystrokes to input elements and have them
-                // treated like real keystrokes from a user
 
-                //todo try shenanigans with finding a form element and submitting it, which does seem to work in chrome dev console in cases tried so far, unlike sending keyboard events
+
+                //todo use chrome.debugger api:  https://stackoverflow.com/a/76816427/10808625
+                // https://developer.chrome.com/docs/extensions/reference/api/debugger#method-sendCommand
+                // https://chromedevtools.github.io/devtools-protocol/1-2/Input/
+                // for keyboard events, may want to call element.focus() first, so hopefully the browser tab
+                //  directs the key press to that element
+
                 actionSuccessful = true;
             } else {
                 logger.warn("unknown action type: " + actionToPerform);
@@ -182,18 +179,24 @@ async function handleRequestFromAgentControlLoop(message: any) {
         } else {
             if (actionToPerform === "SCROLL_UP" || actionToPerform === "SCROLL_DOWN") {
                 const docElement = document.documentElement;
-                const pageHeight = docElement.scrollHeight;
+                // const pageHeight = docElement.scrollHeight; //can uncomment if there's a need
                 const viewportHeight = docElement.clientHeight;
                 //todo make scroll increment fraction configurable in options menu? if so, that config option would
                 // also need to affect the relevant sentence of the system prompt (about magnitude of scrolling actions)
                 const scrollAmount = viewportHeight * 0.75;
                 const scrollVertOffset = actionToPerform === "SCROLL_UP" ? -scrollAmount : scrollAmount;
                 window.scrollBy(0, scrollVertOffset);
+            } else if (actionToPerform === "PRESS_ENTER") {
+                //todo use chrome.debugger api:  https://stackoverflow.com/a/76816427/10808625
+                // https://developer.chrome.com/docs/extensions/reference/api/debugger#method-sendCommand
+                // https://chromedevtools.github.io/devtools-protocol/1-2/Input/
+                // for keyboard event
+
+
+
             } else {
                 logger.warn("no element index provided in message from background script; can't perform action "
                     + actionToPerform);
-                //todo maybe later add support for the "press enter without a specific element" action scenario,
-                // but I'm not at all sure how that would work in js
                 //The TERMINATE action is handled in the background script
                 actionResult = "no element index provided in message from background script; can't perform action "
                     + actionToPerform;

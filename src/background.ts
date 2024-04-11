@@ -251,10 +251,13 @@ async function handlePageMsgToAgentController(message: any, port: Port): Promise
             centralLogger.debug("screenshot data url (truncated): " + screenshotDataUrl.slice(0, 100));
             let planningOutput: string;
             let groundingOutput: string;
-            const aiApiBaseDelay = 5000;//todo eventually make this configurable (needs to be increased a lot for people with new/untested api keys)
+            const aiApiBaseDelay = 75_000;//todo eventually make this configurable (needs to be increased a lot for people with new/untested api keys)
             try {
                 planningOutput = await aiEngine.generateWithRetry(prompts, 0, screenshotDataUrl, undefined, undefined, undefined, undefined, aiApiBaseDelay);
                 centralLogger.info("planning output: " + planningOutput);
+                //todo add prompt details and logic here to skip element selection part of grounding step if the ai suggests a scroll, terminate, or press-enter-without-specific-element action
+
+                await new Promise(resolve => setTimeout(resolve, aiApiBaseDelay));//todo remove this temp hacky patch once my api key is no longer quite so acutely limited
                 groundingOutput = await aiEngine.generateWithRetry(prompts, 1, screenshotDataUrl, planningOutput, undefined, undefined, undefined, aiApiBaseDelay);
             } catch (error) {
                 centralLogger.error(`error getting next step from ai; terminating task; error: ${error}, jsonified: ${JSON.stringify(error)}`);
