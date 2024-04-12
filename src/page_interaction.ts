@@ -1,6 +1,7 @@
 import {BrowserHelper, ElementData, SerializableElementData} from "./utils/BrowserHelper";
 import {createNamedLogger} from "./utils/shared_logging_setup";
 
+
 const logger = createNamedLogger('agent-page-interaction', false);
 logger.trace("successfully injected page_interaction script in browser");
 
@@ -16,6 +17,7 @@ const portToBackground = chrome.runtime.connect({name: "content-script-2-agent-c
 
 let hasControllerEverResponded: boolean = false;
 
+
 //todo jsdoc
 function getElementText(elementToActOn: HTMLElement) {
     let priorElementText = elementToActOn.textContent;
@@ -24,6 +26,8 @@ function getElementText(elementToActOn: HTMLElement) {
     }
     return priorElementText;
 }
+
+
 
 //todo jsdoc and break up body into multiple methods
 async function handleRequestFromAgentControlLoop(message: any) {
@@ -93,6 +97,9 @@ async function handleRequestFromAgentControlLoop(message: any) {
             todo above goals for conditional polling/waiting could be one (or a few) helper methods
              */
 
+            //good modern-approach starting point for conditional polling/waiting:
+            // https://stackoverflow.com/a/56399194/10808625 (it only checks for existence, but shouldn't be too hard to extend the logic
+
             //todo use actionResult to mimic the seeact.py code's use of new_action variable to build a more description of the action that was taken by adding a record of fall-back behavior
 
             logger.trace("performing action <" + actionToPerform + "> on element <" + elementToActOnData.tagHead + "> " + elementToActOnData.description);
@@ -109,6 +116,7 @@ async function handleRequestFromAgentControlLoop(message: any) {
                 //  https://chromedevtools.github.io/devtools-protocol/1-2/Input/
                 actionSuccessful = true;
             } else if (actionToPerform === "TYPE") {
+                logger.debug("element focused status before typing: " + (document.activeElement === elementToActOn));
                 const priorElementText = getElementText(elementToActOn);
 
                 logger.trace("typing value ]" + valueForAction + "[ into element with prior text ]" + priorElementText + "[");
@@ -145,6 +153,9 @@ async function handleRequestFromAgentControlLoop(message: any) {
                 // also possibly https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/change_event
 
                 if (actionSuccessful) {
+                    logger.debug("element focused status after typing: " + (document.activeElement === elementToActOn));
+                    elementToActOn.focus();//todo remove this if logging reveals that it's unnecessary
+
                     const postTypeElementText = getElementText(elementToActOn);
                     if (postTypeElementText !== valueForAction) {
                         if (priorElementText === postTypeElementText) {
@@ -162,19 +173,25 @@ async function handleRequestFromAgentControlLoop(message: any) {
                 }
             } else if (actionToPerform === "PRESS_ENTER") {
 
-
-                //todo use chrome.debugger api:  https://stackoverflow.com/a/76816427/10808625
-                // https://developer.chrome.com/docs/extensions/reference/api/debugger#method-sendCommand
-                // https://chromedevtools.github.io/devtools-protocol/1-2/Input/
-                // for keyboard events, may want to call element.focus() first, so hopefully the browser tab
-                //  directs the key press to that element
+                elementToActOn.focus();
+                //todo explore focusVisible:true option, and/or a conditional poll/wait approach to ensure the element is
+                // focused before we send the Enter key event
+                await sleep(50);//todo maybe experiment with this value
+                logger.trace("about to press Enter on particular element");
+                await chrome.runtime.sendMessage({reqType: "pressEnter"});
+                logger.trace("pressed Enter on particular element");
 
                 actionSuccessful = true;
             } else {
                 logger.warn("unknown action type: " + actionToPerform);
                 actionResult = "unknown action type: " + actionToPerform;
             }
-            //todo HOVER, SELECT
+            //todo! SELECT
+
+
+            //todo? HOVER?
+            // maybe use this https://chromedevtools.github.io/devtools-protocol/1-3/Input/#method-dispatchMouseEvent
+            // with type "mouseMoved"
 
         } else {
             if (actionToPerform === "SCROLL_UP" || actionToPerform === "SCROLL_DOWN") {
@@ -185,15 +202,24 @@ async function handleRequestFromAgentControlLoop(message: any) {
                 // also need to affect the relevant sentence of the system prompt (about magnitude of scrolling actions)
                 const scrollAmount = viewportHeight * 0.75;
                 const scrollVertOffset = actionToPerform === "SCROLL_UP" ? -scrollAmount : scrollAmount;
+                logger.trace(`scrolling page by ${scrollVertOffset}px`);
                 window.scrollBy(0, scrollVertOffset);
+                //notes on scrolling regression after adding PRESS_ENTER feature:
+                // still works if it's the first thing you do at start of task
+                // still works if page nav via click first
+                // todo what if page nav via PRESS_ENTER/debugger first?
+                // todo what if page nav goes to new tab via click first? IT SENDS THE SCROLL DOWN TO THE OLD TAB
+                //   need to recognize when the tab has changed and kill the old tab's port/script
+                //   will test this shortly
+                // todo what if page nav goes to new tab via press_enter/debugger first?
             } else if (actionToPerform === "PRESS_ENTER") {
-                //todo use chrome.debugger api:  https://stackoverflow.com/a/76816427/10808625
-                // https://developer.chrome.com/docs/extensions/reference/api/debugger#method-sendCommand
-                // https://chromedevtools.github.io/devtools-protocol/1-2/Input/
-                // for keyboard event
-
-
-
+                logger.trace("about to press Enter on whatever element had focus in the tab");
+                await chrome.runtime.sendMessage({reqType: "pressEnter"});
+                logger.trace("pressed Enter on whatever element had focus in the tab");
+                actionSuccessful = true;
+                //todo open question for chrome.debugger api: how to handle the case where the tab is already being
+                // debugged by another extension (or if chrome dev tools side panel is open??)? tell the LLM that
+                // it can't use PRESS_ENTER for now and must try to click instead?
             } else {
                 logger.warn("no element index provided in message from background script; can't perform action "
                     + actionToPerform);
@@ -205,10 +231,10 @@ async function handleRequestFromAgentControlLoop(message: any) {
 
         //todo find better way to wait for action to finish than just waiting a fixed amount of time
         // maybe inspired by playwright's page stability checks?
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await sleep(3000);
 
         currInteractiveElements = undefined;
-        //this part would only be reached if the action didn't cause page navigation
+        //this part would only be reached if the action didn't cause page navigation in current tab
 
         try {
             portToBackground.postMessage({msg: "action performed", success: actionSuccessful, result: actionResult});
@@ -225,9 +251,20 @@ async function handleRequestFromAgentControlLoop(message: any) {
 }
 
 portToBackground.onMessage.addListener(handleRequestFromAgentControlLoop);
-portToBackground.postMessage({msg: "content script initialized and ready"});
+
+
+//todo move this duplicated function to some generic utilities file
+async function sleep(numMs: number) {
+    await new Promise(resolve => setTimeout(resolve, numMs));
+}
+
 (async () => {
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    //todo! wait here until page is loaded/stable!
+    await sleep(5000);//todo make this configurable
+
+    portToBackground.postMessage({msg: "content script initialized and ready"});
+
+    await sleep(1000);
     if (!hasControllerEverResponded) {
         portToBackground.postMessage({msg: "content script initialized and ready"});
     }

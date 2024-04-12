@@ -7,7 +7,7 @@
         "tabCapture", "scripting", "debugger", "tabs", "debugger"
     ],
     "host_permissions": [
-        "http://*/*", "https://*/*"
+        "<all_urls>"
     ],
     "icons": {
         "16": "images/seeact_icon_16.png",

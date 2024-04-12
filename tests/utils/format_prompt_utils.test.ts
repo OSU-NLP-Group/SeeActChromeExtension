@@ -175,13 +175,13 @@ describe('getIndexFromOptionName', () => {
     it('should return 701 for "ZZ"', () => {
         expect(getIndexFromOptionName("ZZ")).toBe(701);
     });
-    it('should throw an error for "AAA"', () => {
-        expect(() => getIndexFromOptionName("AAA")).toThrow();
+    it('should return undefined for "AAA"', () => {
+        expect(getIndexFromOptionName("AAA")).toBe(undefined);
     });
-    it('should throw an error for ""', () => {
-        expect(() => getIndexFromOptionName("")).toThrow();
+    it('should return undefined for ""', () => {
+        expect(getIndexFromOptionName("")).toBe(undefined);
     });
-    it('should throw an error for "A!"', () => {
-        expect(() => getIndexFromOptionName("A!")).toThrow();
+    it('should return undefined for "A!"', () => {
+        expect(getIndexFromOptionName("A!")).toBe(undefined);
     });
 });

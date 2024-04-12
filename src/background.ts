@@ -1,16 +1,13 @@
-import {
-    assertIsValidLogLevelName,
-    augmentLogMsg,
-    createNamedLogger
-} from "./utils/shared_logging_setup";
+import {assertIsValidLogLevelName, augmentLogMsg, createNamedLogger} from "./utils/shared_logging_setup";
 import {v4 as uuidV4} from 'uuid';
 import {OpenAiEngine} from "./utils/OpenAiEngine";
 import {SerializableElementData} from "./utils/BrowserHelper";
 import {formatChoices, generatePrompt, postProcessActionLlm, StrTriple} from "./utils/format_prompts";
 import {getIndexFromOptionName} from "./utils/format_prompt_utils";
-import MessageSender = chrome.runtime.MessageSender;
-import Port = chrome.runtime.Port;
 import {Mutex} from "async-mutex";
+import log = require("loglevel");
+import Port = chrome.runtime.Port;
+import MessageSender = chrome.runtime.MessageSender;
 
 
 const expectedMsgForPortDisconnection = "Attempting to use a disconnected port object";
@@ -58,6 +55,12 @@ chrome.runtime.onInstalled.addListener(function (details) {
 //todo before official release, if indexeddb persistent logging was implemented, make mechanism to trigger
 // once every 14 days and purge logs older than 14 days from the extension's indexeddb
 
+//todo experiment with console.group() and console.groupEnd() at start and end of code blocks which contain a bunch of
+// logging statements, to make the console log easier to parse
+//  Only do this at the start of a try catch, and do console.groupEnd() in a finally
+//  ?Or in a very simple case where no methods are being called that might throw something between the group() call and the groupEnd() call? risks someone missing this and adding risky statements within the group's scope later :(
+
+//todo semi-relatedly, look out for cases where console.dir() could be used for examining objects with complex internal state when there's a problem, e.g. html elements
 
 // if microsecond precision timestamps are needed for logging, can use this (only ~5usec precision, but still better than 1msec precision)
 // https://developer.mozilla.org/en-US/docs/Web/API/Performance/now#performance.now_vs._date.now
@@ -82,6 +85,7 @@ let currTaskTabId: number | undefined;
 
 type ActionInfo = { elementIndex?: number, elementData?: SerializableElementData, action: string, value?: string };
 let tentativeActionInfo: ActionInfo | undefined;
+let mightNextActionCausePageNav: boolean = false;
 
 let actionsSoFar: { actionDesc: string, success: boolean }[] = [];
 
@@ -89,24 +93,30 @@ let state: AgentControllerState = AgentControllerState.IDLE;
 
 let currPortToContentScript: Port | undefined;
 
-const modelName: string = "gpt-4-vision-preview";
+const modelName: string = "gpt-4-turbo";
 //REMINDER- DO NOT COMMIT ANY NONTRIVIAL EDITS OF THE FOLLOWING LINE
 const apiKey: string = "PLACEHOLDER";
 
 const aiEngine = new OpenAiEngine(modelName, apiKey);
 
 //todo jsdoc
-async function injectContentScript(isStartOfTask: boolean, sendResponse?: (response?: any) => void) {
-    let tabId: number | undefined;
-    try {
-        tabId = await getActiveTabId();
-    } catch (error) {
-        centralLogger.error(`error ${error} getting active tab id, cannot inject content script; full error object:`, JSON.stringify(error));
-        terminateTask();
-        sendResponse?.({
-            success: false, message: `Can't get tab id because of error: ${error}, jsonified: ${JSON.stringify(error)}`
-        });
+async function injectContentScript(isStartOfTask: boolean, sendResponse?: (response?: any) => void, newTab?: chrome.tabs.Tab) {
+    let tabId: number | undefined = undefined;
+    let tab: chrome.tabs.Tab | undefined = newTab;
+    if (!tab) {
+        try {
+            tab = await getActiveTabId();
+        } catch (error) {
+            centralLogger.error(`error ${error} getting active tab id, cannot inject content script; full error object:`, JSON.stringify(error));
+            terminateTask();
+            sendResponse?.({
+                success: false,
+                message: `Can't get tab id because of error: ${error}, jsonified: ${JSON.stringify(error)}`
+            });
+            return;
+        }
     }
+    tabId = tab.id;
     if (!tabId) {
         centralLogger.error("Can't inject agent script into chrome:// URLs for security reasons; " + isStartOfTask ? "please only try to start the agent on a regular web page." : "please don't switch to a chrome:// URL while the agent is running");
         terminateTask();
@@ -117,12 +127,15 @@ async function injectContentScript(isStartOfTask: boolean, sendResponse?: (respo
         if (isStartOfTask) {
             currTaskTabId = tabId;
         } else if (currTaskTabId !== tabId) {
-            centralLogger.error("Can't inject agent script into a different tab than the one the task was started in");
-            terminateTask();
-            sendResponse?.({
-                success: false, message: "Can't inject script in a different tab than the one the task was started in"
-            });
-            return;
+            if (mightNextActionCausePageNav) {
+                currTaskTabId = tabId;
+            } else {
+                const errMsg = `The active tab changed unexpectedly to ${tab.title}. Terminating task.`;
+                centralLogger.error(errMsg);
+                terminateTask();
+                sendResponse?.({success: false, message: errMsg});
+                return;
+            }
         }
         centralLogger.trace("injecting agent script into page" + toStartTaskStr + "; in tab " + tabId);
 
@@ -140,6 +153,29 @@ async function injectContentScript(isStartOfTask: boolean, sendResponse?: (respo
             sendResponse?.({success: false, message: "Error injecting agent script into page" + toStartTaskStr});
         }
     }
+}
+
+async function sendEnterKeyPress(tabId: number) {
+    //todo if/when adding support for press_sequentially for TYPE action, will want this helper method to flexibly
+    // handle strings of other characters; in that case, want to do testing to see if windowsVirtualKeyCode is needed or
+    // if text (and?/or? unmodifiedText) is enough (or something else)
+    await chrome.debugger.attach({tabId: tabId}, "1.3");
+    centralLogger.debug(`chrome.debugger attached to the tab ${tabId} to send an Enter key press`)
+    //thanks to @activeliang https://github.com/ChromeDevTools/devtools-protocol/issues/45#issuecomment-850953391
+    await chrome.debugger.sendCommand({tabId: tabId}, "Input.dispatchKeyEvent", {
+        "type": "rawKeyDown", "windowsVirtualKeyCode": 13, "unmodifiedText": "\r", "text": "\r"
+    });
+    centralLogger.debug(`chrome.debugger sent key-down keyevent for Enter/CR key to tab ${tabId}`)
+    await chrome.debugger.sendCommand({tabId: tabId}, "Input.dispatchKeyEvent", {
+        "type": "char", "windowsVirtualKeyCode": 13, "unmodifiedText": "\r", "text": "\r"
+    });
+    centralLogger.debug(`chrome.debugger sent char keyevent for Enter/CR key to tab ${tabId}`)
+    await chrome.debugger.sendCommand({tabId: tabId}, "Input.dispatchKeyEvent", {
+        "type": "keyUp", "windowsVirtualKeyCode": 13, "unmodifiedText": "\r", "text": "\r"
+    });
+    centralLogger.debug(`chrome.debugger sent keyup keyevent for Enter/CR key to tab ${tabId}`)
+    await chrome.debugger.detach({tabId: tabId});
+    centralLogger.debug(`chrome.debugger detached from the tab ${tabId} after sending an Enter key press`)
 }
 
 
@@ -161,8 +197,12 @@ function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (r
         const level = request.level;
         const args = request.args as unknown[];
         assertIsValidLogLevelName(level);
+        let consoleMethodNm: log.LogLevelNames = level;
+        if (level === "trace") {
+            consoleMethodNm = "debug";
+        }
 
-        console[level](augmentLogMsg(timestamp, loggerName, level, taskId, args));
+        console[consoleMethodNm](augmentLogMsg(timestamp, loggerName, level, taskId, args));
         sendResponse({success: true});
     } else if (request.reqType === "startTask") {
         mutex.runExclusive(() => {
@@ -192,6 +232,14 @@ function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (r
                 sendResponse({success: true, taskId: terminatedTaskId});
             }
         });
+    } else if (request.reqType === "pressEnter") {
+        if (currTaskTabId === undefined) {
+            sendResponse({success: false, message: "No active tab to press Enter for"});
+        } else {
+            sendEnterKeyPress(currTaskTabId).then(() => {
+                sendResponse({success: true, message: "Sent Enter key press"});
+            });
+        }
     } else {
         centralLogger.error("unrecognized request type:", request.reqType);
     }
@@ -251,14 +299,14 @@ async function handlePageMsgToAgentController(message: any, port: Port): Promise
             centralLogger.debug("screenshot data url (truncated): " + screenshotDataUrl.slice(0, 100));
             let planningOutput: string;
             let groundingOutput: string;
-            const aiApiBaseDelay = 75_000;//todo eventually make this configurable (needs to be increased a lot for people with new/untested api keys)
+            const aiApiBaseDelay = 1_000;
             try {
                 planningOutput = await aiEngine.generateWithRetry(prompts, 0, screenshotDataUrl, undefined, undefined, undefined, undefined, aiApiBaseDelay);
                 centralLogger.info("planning output: " + planningOutput);
                 //todo add prompt details and logic here to skip element selection part of grounding step if the ai suggests a scroll, terminate, or press-enter-without-specific-element action
 
-                await new Promise(resolve => setTimeout(resolve, aiApiBaseDelay));//todo remove this temp hacky patch once my api key is no longer quite so acutely limited
                 groundingOutput = await aiEngine.generateWithRetry(prompts, 1, screenshotDataUrl, planningOutput, undefined, undefined, undefined, aiApiBaseDelay);
+                //todo low priority per Boyuan, but experiment with json output mode specifically for the grounding api call
             } catch (error) {
                 centralLogger.error(`error getting next step from ai; terminating task; error: ${error}, jsonified: ${JSON.stringify(error)}`);
                 terminateTask();
@@ -279,35 +327,46 @@ async function handlePageMsgToAgentController(message: any, port: Port): Promise
                 return;
                 //todo need to properly handle NONE actionName (which means the AI couldn't come up with a valid action)
                 // not simply kill the task
+                // maybe increase temperature on next api call? and/or add more to prompt
+            }
+            const actionNeedsNoElement = actionName === "SCROLL_UP" || actionName === "SCROLL_DOWN" || actionName === "PRESS_ENTER";
+
+            let chosenCandidateIndex = getIndexFromOptionName(elementName);
+
+            if ((!chosenCandidateIndex || chosenCandidateIndex > candidateIds.length) && !actionNeedsNoElement) {
+                    //todo remove this temp hacky patch
+                    centralLogger.warn(`ai selected invalid option ${elementName} ` + (chosenCandidateIndex
+                        ? `(was parsed as candidate index ${chosenCandidateIndex}, but the candidates list only had ${candidateIds.length} entries)`
+                        : `(cannot be parsed into an index)`) + ", terminating task as dead-ended");
+                    terminateTask();
+                    return;
+
+                    //todo increment noop counter
+                    //todo reprompt the ai??
+
+            } else if (chosenCandidateIndex === candidateIds.length && !actionNeedsNoElement) {
+                    //todo remove this temp hacky patch
+                    centralLogger.warn("ai selected 'none of the above' option, terminating task as dead-ended");
+                    terminateTask();
+                    return;
+
+                    //todo increment noop counter
+                    //todo how to handle this?
+            }
+            if (chosenCandidateIndex && chosenCandidateIndex >= candidateIds.length && actionNeedsNoElement) {
+                chosenCandidateIndex = undefined;
             }
 
-            const chosenCandidateIndex = getIndexFromOptionName(elementName);
-            if (chosenCandidateIndex === candidateIds.length && actionName !== "SCROLL_UP"
-                && actionName !== "SCROLL_DOWN") {
-                //todo remove this temp hacky patch
-                centralLogger.warn("ai selected 'none of the above' option, terminating task as dead-ended");
-                terminateTask();
-                return;
-
-                //todo increment noop counter
-                //todo how to handle this?
-            } else if (chosenCandidateIndex > candidateIds.length) {
-                //todo remove this temp hacky patch
-                centralLogger.warn(`ai selected invalid option ${elementName} (corresponds to candidate index ${chosenCandidateIndex}, but the candidates list only had ${candidateIds.length} entries), terminating task as dead-ended`);
-                terminateTask();
-                return;
-
-                //todo increment noop counter
-                //todo reprompt the ai??
-            }
-
-            const chosenElementIndex = candidateIds[chosenCandidateIndex];
+            const chosenElementIndex: number | undefined = chosenCandidateIndex ? candidateIds[chosenCandidateIndex] : undefined;
             centralLogger.debug(`acting on the ${chosenCandidateIndex} entry from the candidates list; which is the ${chosenElementIndex} element of the original interactiveElements list`);
 
             tentativeActionInfo = {
-                elementIndex: chosenElementIndex, elementData: interactiveElements[chosenElementIndex],
-                action: actionName, value: value
+                elementIndex: chosenElementIndex, action: actionName, value: value,
+                elementData: chosenElementIndex ? interactiveElements[chosenElementIndex] : undefined
             };
+            //todo add TYPE and SELECT here if I ever see or get reports of such actions causing page navigation
+            mightNextActionCausePageNav = (actionName === "PRESS_ENTER" || actionName === "CLICK");
+
             state = AgentControllerState.WAITING_FOR_ACTION;
             try {
                 port.postMessage({
@@ -325,7 +384,7 @@ async function handlePageMsgToAgentController(message: any, port: Port): Promise
             }
         });
     } else if (message.msg === "action performed") {
-        await mutex.runExclusive(() => {
+        await mutex.runExclusive(async () => {
             if (state !== AgentControllerState.WAITING_FOR_ACTION) {
                 centralLogger.error("received 'action performed' message from content script while not waiting for action, but rather in state " + AgentControllerState[state]);
                 terminateTask();
@@ -335,21 +394,45 @@ async function handlePageMsgToAgentController(message: any, port: Port): Promise
             state = AgentControllerState.ACTIVE;
 
             const wasSuccessful: boolean = message.success;
-            const actionDesc: string = message.result ? message.result : buildGenericActionDesc(tentativeActionInfo);
+            let actionDesc: string = message.result ? message.result : buildGenericActionDesc(tentativeActionInfo);
+
+            let wasPageNav = false;
+            let tab: chrome.tabs.Tab | undefined;
+            if (mightNextActionCausePageNav) {
+                await sleep(500);//make sure that, if the browser is opening a new tab, there's time for browser to
+                // make the new tab the active tab before we check for active tab change
+                tab = await getActiveTabId();
+                const tabId = tab.id;
+                if (tabId !== currTaskTabId) {
+                    wasPageNav = true;
+                    actionDesc += `; opened ${tab.title} in new tab`;
+                }
+            }
 
             actionsSoFar.push({actionDesc: actionDesc, success: wasSuccessful});
             tentativeActionInfo = undefined;
 
-            state = AgentControllerState.WAITING_FOR_ELEMENTS
-            try {
-                port.postMessage({msg: "get interactive elements"});
-            } catch (error: any) {
-                if ('message' in error && error.message === expectedMsgForPortDisconnection) {
-                    centralLogger.info("content script disconnected from service worker while processing completed action and before trying to request more interactive elements; task will resume after new content script connection is established");
-                    state = AgentControllerState.PENDING_RECONNECT;
-                } else {
-                    centralLogger.error(`unexpected error while processing completed action and before trying to request more interactive elements; terminating task; error: ${error}, jsonified: ${JSON.stringify(error)}`);
-                    terminateTask();
+            if (wasPageNav) {
+                centralLogger.info("tab id changed after action was performed, so killing connection to " +
+                    "old tab and injecting content script in new tab " + tab?.title);
+                killPageConnection(port);
+                await injectContentScript(false, undefined, tab);
+                //only resetting this after script injection because script injection needs to know whether it's ok
+                // that the tab id might've changed
+                mightNextActionCausePageNav = false;
+            } else {
+                mightNextActionCausePageNav = false;
+                state = AgentControllerState.WAITING_FOR_ELEMENTS
+                try {
+                    port.postMessage({msg: "get interactive elements"});
+                } catch (error: any) {
+                    if ('message' in error && error.message === expectedMsgForPortDisconnection) {
+                        centralLogger.info("content script disconnected from service worker while processing completed action and before trying to request more interactive elements; task will resume after new content script connection is established");
+                        state = AgentControllerState.PENDING_RECONNECT;
+                    } else {
+                        centralLogger.error(`unexpected error while processing completed action and before trying to request more interactive elements; terminating task; error: ${error}, jsonified: ${JSON.stringify(error)}`);
+                        terminateTask();
+                    }
                 }
             }
         });
@@ -372,7 +455,6 @@ function buildGenericActionDesc(actionInfo?: ActionInfo): string {
     return `[${actionInfo.elementData?.tagHead}] ${actionInfo.elementData?.description} -> ${actionInfo.action}${valueDesc}`;
 }
 
-
 //todo jsdoc
 async function handlePageDisconnectFromAgentController(port: Port) {
     await mutex.runExclusive(async () => {
@@ -381,21 +463,33 @@ async function handlePageDisconnectFromAgentController(port: Port) {
 
         if (state === AgentControllerState.WAITING_FOR_ACTION) {
             if (!tentativeActionInfo) {
-                centralLogger.error("service worker's connection to content script was lost while performing an action, " +
-                    "but no tentative action was stored; terminating current task");
+                centralLogger.error("service worker's connection to content script was lost while performing an " +
+                    "action, but no tentative action was stored; terminating current task");
                 terminateTask();
                 return;
             }
             state = AgentControllerState.ACTIVE;
             centralLogger.info("service worker's connection to content script was lost while performing an action, " +
                 "which most likely means that the action has caused page navigation");
+            if (mightNextActionCausePageNav) {
+                //give the browser time to ensure that the new page is ready for scripts to be injected into it
+                await sleep(500);
+            }//todo consider whether there should be an else block here that logs a warning or even terminates task
 
-            const actionDesc = "Page navigation occurred from: " + buildGenericActionDesc(tentativeActionInfo);
+            const tab = await getActiveTabId();
+            if (tab.id !== currTaskTabId) {
+                centralLogger.warn("tab changed after page navigation and yet the connection to the old tab's " +
+                    "content script was lost; this is unexpected")
+            }
+            const actionDesc = buildGenericActionDesc(tentativeActionInfo) + `; this caused page navigation to ${tab.title}`;
 
             actionsSoFar.push({actionDesc: actionDesc, success: true});
             tentativeActionInfo = undefined;
 
             await injectContentScript(false);
+            //only resetting this after script injection because script injection needs to know whether it's ok that the
+            // tab id might've changed
+            mightNextActionCausePageNav = false;
         } else if (state === AgentControllerState.PENDING_RECONNECT) {
             centralLogger.info("service worker's connection to content script was lost partway through the controller's processing of some step; reestablishing connection")
             await injectContentScript(false);
@@ -404,7 +498,7 @@ async function handlePageDisconnectFromAgentController(port: Port) {
                 "but rather in state " + AgentControllerState[state] + "; terminating current task " + taskSpecification);
             terminateTask();
             //todo Boyuan may eventually want recovery logic here for the user accidentally closing the tab or for the tab/page crashing
-            //reloading or reopening the tab might require adding more permissions to the manifest.json
+            // reloading or reopening the tab might require adding more permissions to the manifest.json
         }
     });
 }
@@ -431,32 +525,50 @@ function handleConnectionFromPage(port: Port) {
 
 chrome.runtime.onConnect.addListener(handleConnectionFromPage);
 
+function killPageConnection(pageConn: Port) {
+    try {
+        pageConn.onDisconnect.removeListener(handlePageDisconnectFromAgentController);
+        if (pageConn.onDisconnect.hasListeners()) {
+            centralLogger.error("something went wrong when removing the onDisconnect listener for the port "
+                + pageConn.name + "between service worker and content script. the ondisconnect event of that port " +
+                "still has one or more listeners");
+        }
+        pageConn.disconnect();
+        centralLogger.info(`successfully cleaned up content script connection ${pageConn.name}`);
+    } catch (error: any) {
+        if ('message' in error && error.message === expectedMsgForPortDisconnection) {
+            centralLogger.info(`unable to clean up content script connection ${pageConn.name} because the connection to the content script was already closed`);
+        } else {
+            centralLogger.error(`unexpected error while cleaning up content script connection ${pageConn.name}; error: ${error}, jsonified: ${JSON.stringify(error)}`);
+        }
+    }
+}
 
+
+//todo jsdoc
+//todo b4 release, make this take an error message param and make it show an alert so the user doesn't need to look
+// at the extension's dev console to see why the actions stopped (if param null, alert would just say task completed)
 function terminateTask() {
     centralLogger.info(`TERMINATING TASK ${taskId} which had specification: ${taskSpecification}; final state was ${AgentControllerState[state]}`);
+    //most of the below will become simply a call to AgentController.reset()
     taskId = undefined;
     taskSpecification = "";
     currTaskTabId = undefined;
     state = AgentControllerState.IDLE;
     tentativeActionInfo = undefined;
+    mightNextActionCausePageNav = false;
     actionsSoFar = [];
     if (currPortToContentScript) {
         centralLogger.info("terminating task while content script connection may still be open, attempting to close it")
-        try {
-            currPortToContentScript.onDisconnect.removeListener(handlePageDisconnectFromAgentController);
-            currPortToContentScript.disconnect();
-            centralLogger.info("successfully cleaned up connection to content script as part of terminating task");
-        } catch (error: any) {
-            if ('message' in error && error.message === expectedMsgForPortDisconnection) {
-                centralLogger.info("unable to clean up content script while terminating task because the connection to the content script was already closed");
-            } else {
-                centralLogger.error(`unexpected error while cleaning up content script as part of terminating task; error: ${error}, jsonified: ${JSON.stringify(error)}`);
-            }
-        }
+        killPageConnection(currPortToContentScript);
         currPortToContentScript = undefined;
     }
-    //todo before release, the end of this method should create an alert popup so user is informed about task failure
-    // even if they don't have extension's dev console open
+    //todo if aiEngine ever has its own nontrivial bits of state, should probably somehow reset them here
+
+    //todo if I use console.group elsewhere, should use console.groupEnd() here repeatedly (maybe 10 times) to be
+    // completely certain that any nested groups get escaped when the task ends, even if things went really wrong with
+    // exception handling and control flow expectations wrt group management
+    // If groupEnd throws when there's no group to escape, use a try catch and the catch block would break the loop
 }
 
 /**
@@ -465,7 +577,7 @@ function terminateTask() {
  *                                          (which scripts can't be injected into for safety reasons)
  * @throws {Error} If the active tab is not found or doesn't have an id
  */
-const getActiveTabId = async (): Promise<number | undefined> => {
+const getActiveTabId = async (): Promise<chrome.tabs.Tab> => {
     let tabs;
     try {
         tabs = await chrome.tabs.query({active: true, currentWindow: true});
@@ -476,17 +588,22 @@ const getActiveTabId = async (): Promise<number | undefined> => {
     }
     const tab: chrome.tabs.Tab | undefined = tabs[0];
     if (!tab) throw new Error('Active tab not found');
-    let id = tab.id;
+    const id = tab.id;
     if (!id) throw new Error('Active tab id not found');
     if (tab.url?.startsWith('chrome://')) {
         centralLogger.warn('Active tab is a chrome:// URL: ' + tab.url);
-        id = undefined;
+        tab.id = undefined;
     }
-    return id;
+    return tab;
 }
 //todo unit test above helper? how hard is it to mock chrome api calls?
 // worst case, could make ChromeHelper in utils/ with thing like DomWrapper for chrome api's, then unit test ChromeHelper
 // with an injected mock of the chrome api wrapper object
+
+//todo move this duplicated function to some generic utilities file
+async function sleep(numMs: number) {
+    await new Promise(resolve => setTimeout(resolve, numMs));
+}
 
 
 //todo once basic prototype is fully working (i.e. can complete a full multi-step task),
