@@ -183,12 +183,31 @@ async function handleRequestFromAgentControlLoop(message: any) {
                 logger.trace("pressed Enter on particular element");
 
                 actionSuccessful = true;
+            } else if (actionToPerform === "SELECT") {
+                logger.trace("entered SELECT action branch");
+                if (valueForAction === undefined) {
+                    logger.warn("no value provided for SELECT action; rejecting action");
+                    actionResult = "; no value provided for SELECT action, so cannot perform it";
+                } else if (tagName !== "select") {
+                    logger.warn("SELECT action given for non <select> element; rejecting action");
+                    actionResult = "; SELECT action given for non <select> element, so cannot perform it";
+                } else {
+                    logger.trace("about to select option with value [<" + valueForAction + ">]");
+                    const selectedOptVal = browserHelper.selectOption(elementToActOn, valueForAction);
+                    if (selectedOptVal === valueForAction) {
+                        actionSuccessful = true;
+                        actionResult += `; select succeeded`;
+                    } else if (selectedOptVal) {
+                        actionSuccessful = true;
+                        actionResult += `; selected most-similar option [<${selectedOptVal}>]`;
+                    } else {
+                        actionResult = `; failed to select any option similar to the given value`;
+                    }
+                }
             } else {
                 logger.warn("unknown action type: " + actionToPerform);
                 actionResult = "unknown action type: " + actionToPerform;
             }
-            //todo! SELECT
-
 
             //todo? HOVER?
             // maybe use this https://chromedevtools.github.io/devtools-protocol/1-3/Input/#method-dispatchMouseEvent

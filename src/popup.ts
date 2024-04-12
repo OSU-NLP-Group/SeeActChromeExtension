@@ -27,19 +27,23 @@ startButton.addEventListener('click', async () => {
         taskSpecification: taskSpec
     });
 
+    statusDiv.style.display = 'block';
     if (taskStartResponse.success) {
         statusDiv.textContent = `Task ${taskStartResponse.taskId} started successfully`;
+        setTimeout(() => {
+            window.close();
+        }, 2000);
+
+        //todo allow user in config menu to decide whether or not they want pop-up to automatically/immediately close on successful task start
     } else {
         statusDiv.textContent = 'Task start failed: ' + taskStartResponse.message;
     }
-    statusDiv.style.display = 'block';
 
-    // Hide the status div after 10 seconds
+    //Hide the status div after 10 seconds
     setTimeout(() => {
         statusDiv.style.display = 'none';
         statusDiv.textContent = '';
     }, 10000);
-
 
 });
 //todo is it worth unit testing the above handler?

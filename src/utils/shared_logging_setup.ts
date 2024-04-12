@@ -34,8 +34,8 @@ export const createNamedLogger = (loggerName: string, inServiceWorker: boolean):
                     level: methodName,
                     args: args
                 }).catch((err) => {
-                    console.error("error ]|", err, "|[ while sending log message ]|", msg,
-                        "|[ to background script for persistence");
+                    console.error("error [<", err, ">] while sending log message [<", msg,
+                        ">] to background script for persistence");
                 });
             };
         };

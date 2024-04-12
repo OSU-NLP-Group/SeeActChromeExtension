@@ -2,7 +2,7 @@ import getXPath from "get-xpath";
 import {createNamedLogger} from "./shared_logging_setup";
 import {DomWrapper} from "./mockable_wrappers";
 import log from "loglevel";
-import * as difflib from "difflib";
+import * as fuzz from "fuzzball";
 
 export type ElementData = {
     centerCoords: readonly [number, number],
@@ -45,17 +45,22 @@ export class BrowserHelper {
      * @param optionName the name (or an approximation of the name) of the option element to select
      * @return the name/innertext of the option element which was selected
      */
-    selectOption = (selectElement: HTMLElement, optionName: string): string => {
+    selectOption = (selectElement: HTMLElement, optionName: string): string|undefined => {
         let bestOptIndex = -1;
-        let bestOptVal = "";
+        let bestOptVal = undefined;//in case it's important, for some <select>, to be able to choose an option whose innertext is the empty string
         let bestOptSimilarity = -1;
+        //todo idea for later- we might want to initialize bestOptSimilarity at some value above 0, to avoid selecting
+        // an option with negligible similarity to the requested option name in a scenario where the AI got really
+        // confused and gave a completely wrong value for the chosen select element, e.g. 0.3?
+        // confer with Boyuan; & should check what the similarity values look like in practice for good vs bad elements
 
         const selectElem = selectElement as HTMLSelectElement;
 
         console.time("timeFor_selectOptionFuzzyStringCompares");
         for (let optIndex = 0; optIndex < selectElem.options.length; optIndex++) {
+            this.logger.trace("Comparing option #" + optIndex + " against " + optionName);
             const currOptVal = this.domHelper.getInnerText(selectElem.options[optIndex]);
-            const similarity = new difflib.SequenceMatcher(null, optionName, currOptVal).ratio();
+            const similarity = fuzz.ratio(optionName, currOptVal);
             if (similarity > bestOptSimilarity) {
                 this.logger.debug(`For requested option name ${optionName}, found better option ${currOptVal} with similarity ${similarity} at index ${optIndex}, beating prior best option ${bestOptVal} with similarity ${bestOptSimilarity} at index ${bestOptIndex}`);
                 bestOptIndex = optIndex;
@@ -65,6 +70,9 @@ export class BrowserHelper {
         }
         console.timeEnd("timeFor_selectOptionFuzzyStringCompares");
         selectElem.selectedIndex = bestOptIndex;
+        this.logger.trace("sending change event to select element");
+        const changeEvent = new Event('change', { bubbles: true });
+        selectElem.dispatchEvent(changeEvent);
 
         return bestOptVal;
     }
@@ -119,7 +127,7 @@ export class BrowserHelper {
         const parentText = parent ? this.domHelper.getInnerText(parent) : "";
         const parentFirstLine = this.removeEolAndCollapseWhitespace(this.getFirstLine(parentText)).trim();
         if (parentFirstLine) {
-            parentValue = "parent_node: " + parentFirstLine + " ";
+            parentValue = "parent_node: [<" + parentFirstLine + ">] ";
         }
 
         if (tagName === "select") {

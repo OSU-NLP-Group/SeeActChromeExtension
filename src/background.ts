@@ -296,15 +296,7 @@ async function handlePageMsgToAgentController(message: any, port: Port): Promise
             centralLogger.debug("prompts:", prompts);
             //todo? try catch for error when trying to get screenshot, if that fails, then terminate task
             const screenshotDataUrl: string = await chrome.tabs.captureVisibleTab();
-
-            //TODO grab a screenshot in full and test it (data url as src of html element in toy html file, then open in browser)
-            // to see whether it contains scroll bar; if not, must pass that info from content script along with the
-            // interactive elements (and eventually the viewport coordinate details) to the agent controller in
-            // background script, then must modify planning and grounding prompts to tell the ai where its viewport is
-            // on the page and where elements are relative to viewport (i.e. are they in, below, or above it)
-            // also record its resolution, so we can consider downsampling it to reduce cost
-            //todo then go back to truncating it
-            centralLogger.debug("screenshot data url: " + screenshotDataUrl);
+            centralLogger.debug("screenshot data url (truncated): " + screenshotDataUrl.slice(0, 100) + "...");
             let planningOutput: string;
             let groundingOutput: string;
             const aiApiBaseDelay = 1_000;

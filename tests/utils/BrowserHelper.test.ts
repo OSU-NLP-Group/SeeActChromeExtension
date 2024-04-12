@@ -186,7 +186,7 @@ describe('BrowserHelper.selectOption', () => {
         const browserHelper = new BrowserHelper(domHelper, testLogger);
         const selectElement = domHelper.grabElementByXpath("//select") as HTMLElement;
         expect(browserHelper.selectOption(selectElement, "Chemical and Biomolecular Engineering"))
-            .toEqual("");
+            .toBe(undefined);
         expect((selectElement as HTMLSelectElement).selectedIndex).toEqual(-1);
     });
 
