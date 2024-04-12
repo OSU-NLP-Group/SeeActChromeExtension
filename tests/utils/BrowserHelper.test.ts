@@ -7,6 +7,7 @@ import {origLoggerFactory} from "../../src/utils/shared_logging_setup";
 const testLogger = log.getLogger("browser-test");
 testLogger.methodFactory = origLoggerFactory;
 testLogger.setLevel("warn");
+testLogger.rebuild();
 
 describe('BrowserHelper.calcIsHidden', () => {
     const {window} = (new JSDOM(`<!DOCTYPE html><body></body>`));
@@ -108,26 +109,40 @@ describe('BrowserHelper.selectOption', () => {
             <div class="js-form-item form-item js-form-type-select">
                 <label for="edit-field-fiscal-unit-academic-org-target-id">Fiscal Unit / Academic ORG</label>
                 <select data-drupal-selector="edit-field-fiscal-unit-academic-org-target-id"
-                        id="edit-field-fiscal-unit-academic-org-target-id" name="field_fiscal_unit_academic_org_target_id"
-                        class="form-select">
-                    <option value="All">- Any -</option>
-                    <option value="1">Aerospace Engineering</option>
-                    <option value="2">Aviation</option>
-                    <option value="3" selected="selected">Biomedical Engineering</option>
-                    <option value="4">Chemical and Biomolecular Engineering</option>
-                    <option value="5">Civil, Environmental, and Geodetic Engineering</option>
-                </select>
+        id="edit-field-fiscal-unit-academic-org-target-id" name="field_fiscal_unit_academic_org_target_id"
+        class="form-select">
+    <option value="All">- Any -</option>
+    <option value="1">Aerospace Engineering</option>
+    <option value="2">Aviation</option>
+    <option value="3" selected="selected">Biomedical Engineering</option>
+    <option value="4">Chemical and Biomolecular Engineering</option>
+    <option value="5">Civil, Environmental, and Geodetic Engineering</option>
+    <option value="6">Computer Science and Engineering</option>
+    <option value="7">Electrical and Computer Engineering</option>
+    <option value="8">Engineering Administration</option>
+    <option value="9">Integrated Systems Engineering</option>
+    <option value="10">Materials Science and Engineering</option>
+    <option value="11">Mechanical Engineering</option>
+</select>
             </div></body>`);
         const domHelper = new DomWrapper(window);
-        const browserHelper = new BrowserHelper(domHelper);
+        const browserHelper = new BrowserHelper(domHelper, testLogger);
         domHelper.getInnerText = jest.fn().mockReturnValueOnce('- Any -')
             .mockReturnValueOnce('Aerospace Engineering').mockReturnValueOnce('Aviation')
             .mockReturnValueOnce('Biomedical Engineering')
             .mockReturnValueOnce('Chemical and Biomolecular Engineering')
-            .mockReturnValueOnce('Civil, Environmental, and Geodetic Engineering');
+            .mockReturnValueOnce('Civil, Environmental, and Geodetic Engineering')
+            .mockReturnValueOnce('Computer Science and Engineering')
+            .mockReturnValueOnce('Electrical and Computer Engineering')
+            .mockReturnValueOnce('Engineering Administration')
+            .mockReturnValueOnce('Integrated Systems Engineering')
+            .mockReturnValueOnce('Materials Science and Engineering')
+            .mockReturnValueOnce('Mechanical Engineering')
+        ;
+
         const selectElement = domHelper.grabElementByXpath("//select") as HTMLElement;
-        expect(browserHelper.selectOption(selectElement, "Airospace Engineer")).toEqual("Aerospace Engineering");
-        expect((selectElement as HTMLSelectElement).selectedIndex).toEqual(1);
+        expect(browserHelper.selectOption(selectElement, "Enginearing Admin")).toEqual("Engineering Administration");
+        expect((selectElement as HTMLSelectElement).selectedIndex).toEqual(8);
     });
 
     it('should select the best option in a select element by partial value, even if that is a middle option', () => {
@@ -146,7 +161,7 @@ describe('BrowserHelper.selectOption', () => {
                 </select>
             </div></body>`);
         const domHelper = new DomWrapper(window);
-        const browserHelper = new BrowserHelper(domHelper);
+        const browserHelper = new BrowserHelper(domHelper, testLogger);
         domHelper.getInnerText = jest.fn().mockReturnValueOnce('- Any -')
             .mockReturnValueOnce('Aerospace Engineering').mockReturnValueOnce('Aviation')
             .mockReturnValueOnce('Biomedical Engineering')
@@ -168,7 +183,7 @@ describe('BrowserHelper.selectOption', () => {
                 </select>
             </div></body>`);
         const domHelper = new DomWrapper(window);
-        const browserHelper = new BrowserHelper(domHelper);
+        const browserHelper = new BrowserHelper(domHelper, testLogger);
         const selectElement = domHelper.grabElementByXpath("//select") as HTMLElement;
         expect(browserHelper.selectOption(selectElement, "Chemical and Biomolecular Engineering"))
             .toEqual("");

@@ -2,6 +2,7 @@ import getXPath from "get-xpath";
 import {createNamedLogger} from "./shared_logging_setup";
 import {DomWrapper} from "./mockable_wrappers";
 import log from "loglevel";
+import * as difflib from "difflib";
 
 export type ElementData = {
     centerCoords: readonly [number, number],
@@ -40,14 +41,32 @@ export class BrowserHelper {
 
     /**
      * @description Select an option from a select element, based on the option's name or an approximation of it
-     * @param selectElem the select element to select an option from
+     * @param selectElement the select element to select an option from
      * @param optionName the name (or an approximation of the name) of the option element to select
      * @return the name/innertext of the option element which was selected
      */
-    selectOption = (selectElem: HTMLElement, optionName: string): string => {
+    selectOption = (selectElement: HTMLElement, optionName: string): string => {
+        let bestOptIndex = -1;
+        let bestOptVal = "";
+        let bestOptSimilarity = -1;
 
-        //todo implement this
-        return "not implemented yet";
+        const selectElem = selectElement as HTMLSelectElement;
+
+        console.time("timeFor_selectOptionFuzzyStringCompares");
+        for (let optIndex = 0; optIndex < selectElem.options.length; optIndex++) {
+            const currOptVal = this.domHelper.getInnerText(selectElem.options[optIndex]);
+            const similarity = new difflib.SequenceMatcher(null, optionName, currOptVal).ratio();
+            if (similarity > bestOptSimilarity) {
+                this.logger.debug(`For requested option name ${optionName}, found better option ${currOptVal} with similarity ${similarity} at index ${optIndex}, beating prior best option ${bestOptVal} with similarity ${bestOptSimilarity} at index ${bestOptIndex}`);
+                bestOptIndex = optIndex;
+                bestOptVal = currOptVal;
+                bestOptSimilarity = similarity;
+            }
+        }
+        console.timeEnd("timeFor_selectOptionFuzzyStringCompares");
+        selectElem.selectedIndex = bestOptIndex;
+
+        return bestOptVal;
     }
 
 
