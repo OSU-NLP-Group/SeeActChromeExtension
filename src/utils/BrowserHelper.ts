@@ -39,6 +39,19 @@ export class BrowserHelper {
     }
 
     /**
+     * @description Select an option from a select element, based on the option's name or an approximation of it
+     * @param selectElem the select element to select an option from
+     * @param optionName the name (or an approximation of the name) of the option element to select
+     * @return the name/innertext of the option element which was selected
+     */
+    selectOption = (selectElem: HTMLElement, optionName: string): string => {
+
+        //todo implement this
+        return "not implemented yet";
+    }
+
+
+    /**
      * @description converts line breaks to spaces and collapse multiple consecutive whitespace characters into a single space
      * This handles carriage-returns in addition to line feeds, unlike remove_extra_eol from browser_helper.py
      * @param text the text to process

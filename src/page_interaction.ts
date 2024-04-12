@@ -3,7 +3,7 @@ import {createNamedLogger} from "./utils/shared_logging_setup";
 
 
 const logger = createNamedLogger('agent-page-interaction', false);
-logger.trace("successfully injected page_interaction script in browser");
+logger.trace(`successfully injected page_interaction script in browser for page ${document.URL}`);
 
 const expectedMsgForPortDisconnection = "Attempting to use a disconnected port object";
 
@@ -13,8 +13,8 @@ const browserHelper = new BrowserHelper();
 
 let currInteractiveElements: ElementData[] | undefined;
 
-const portToBackground = chrome.runtime.connect({name: "content-script-2-agent-controller"});
-
+//todo revisit safe way to make different tabs' ports distinguishable by name (putting url in wasn't accepted by chrome)
+const portToBackground = chrome.runtime.connect({name: `content-script-2-agent-controller`});
 let hasControllerEverResponded: boolean = false;
 
 
@@ -31,7 +31,7 @@ function getElementText(elementToActOn: HTMLElement) {
 
 //todo jsdoc and break up body into multiple methods
 async function handleRequestFromAgentControlLoop(message: any) {
-    logger.trace("message received from background script: " + JSON.stringify(message));
+    logger.trace(`message received from background script: ${JSON.stringify(message)} by page ${document.URL}`);
     hasControllerEverResponded = true;
     if (message.msg === "get interactive elements") {
         if (currInteractiveElements) {
@@ -154,7 +154,8 @@ async function handleRequestFromAgentControlLoop(message: any) {
 
                 if (actionSuccessful) {
                     logger.debug("element focused status after typing: " + (document.activeElement === elementToActOn));
-                    elementToActOn.focus();//todo remove this if logging reveals that it's unnecessary
+                    elementToActOn.focus();
+                    logger.debug("element focused status after element.focus(): " + (document.activeElement === elementToActOn));
 
                     const postTypeElementText = getElementText(elementToActOn);
                     if (postTypeElementText !== valueForAction) {
@@ -203,15 +204,13 @@ async function handleRequestFromAgentControlLoop(message: any) {
                 const scrollAmount = viewportHeight * 0.75;
                 const scrollVertOffset = actionToPerform === "SCROLL_UP" ? -scrollAmount : scrollAmount;
                 logger.trace(`scrolling page by ${scrollVertOffset}px`);
+                const priorVertScrollPos = window.scrollY;
                 window.scrollBy(0, scrollVertOffset);
-                //notes on scrolling regression after adding PRESS_ENTER feature:
-                // still works if it's the first thing you do at start of task
-                // still works if page nav via click first
-                // todo what if page nav via PRESS_ENTER/debugger first?
-                // todo what if page nav goes to new tab via click first? IT SENDS THE SCROLL DOWN TO THE OLD TAB
-                //   need to recognize when the tab has changed and kill the old tab's port/script
-                //   will test this shortly
-                // todo what if page nav goes to new tab via press_enter/debugger first?
+                if (priorVertScrollPos != window.scrollY) {
+                    actionSuccessful= true;
+                } else {
+                    logger.error("scroll action failed to move the viewport's vertical position")
+                }
             } else if (actionToPerform === "PRESS_ENTER") {
                 logger.trace("about to press Enter on whatever element had focus in the tab");
                 await chrome.runtime.sendMessage({reqType: "pressEnter"});

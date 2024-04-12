@@ -101,6 +101,82 @@ describe('BrowserHelper.calcIsHidden', () => {
     });
 });
 
+describe('BrowserHelper.selectOption', () => {
+
+    it('should select an option in a select element by value', () => {
+        const {window} = new JSDOM(`<!DOCTYPE html><body>
+            <div class="js-form-item form-item js-form-type-select">
+                <label for="edit-field-fiscal-unit-academic-org-target-id">Fiscal Unit / Academic ORG</label>
+                <select data-drupal-selector="edit-field-fiscal-unit-academic-org-target-id"
+                        id="edit-field-fiscal-unit-academic-org-target-id" name="field_fiscal_unit_academic_org_target_id"
+                        class="form-select">
+                    <option value="All">- Any -</option>
+                    <option value="1">Aerospace Engineering</option>
+                    <option value="2">Aviation</option>
+                    <option value="3" selected="selected">Biomedical Engineering</option>
+                    <option value="4">Chemical and Biomolecular Engineering</option>
+                    <option value="5">Civil, Environmental, and Geodetic Engineering</option>
+                </select>
+            </div></body>`);
+        const domHelper = new DomWrapper(window);
+        const browserHelper = new BrowserHelper(domHelper);
+        domHelper.getInnerText = jest.fn().mockReturnValueOnce('- Any -')
+            .mockReturnValueOnce('Aerospace Engineering').mockReturnValueOnce('Aviation')
+            .mockReturnValueOnce('Biomedical Engineering')
+            .mockReturnValueOnce('Chemical and Biomolecular Engineering')
+            .mockReturnValueOnce('Civil, Environmental, and Geodetic Engineering');
+        const selectElement = domHelper.grabElementByXpath("//select") as HTMLElement;
+        expect(browserHelper.selectOption(selectElement, "Airospace Engineer")).toEqual("Aerospace Engineering");
+        expect((selectElement as HTMLSelectElement).selectedIndex).toEqual(1);
+    });
+
+    it('should select the best option in a select element by partial value, even if that is a middle option', () => {
+        const {window} = new JSDOM(`<!DOCTYPE html><body>
+            <div class="js-form-item form-item js-form-type-select ">
+                <label for="edit-field-fiscal-unit-academic-org-target-id">Fiscal Unit / Academic ORG</label>
+                <select data-drupal-selector="edit-field-fiscal-unit-academic-org-target-id"
+                        id="edit-field-fiscal-unit-academic-org-target-id" name="field_fiscal_unit_academic_org_target_id"
+                        class="form-select">
+                    <option value="All">- Any -</option>
+                    <option value="1">Aerospace Engineering</option>
+                    <option value="2">Aviation</option>
+                    <option value="3" selected="selected">Biomedical Engineering</option>
+                    <option value="4">Chemical and Biomolecular Engineering</option>
+                    <option value="5">Civil, Environmental, and Geodetic Engineering</option>
+                </select>
+            </div></body>`);
+        const domHelper = new DomWrapper(window);
+        const browserHelper = new BrowserHelper(domHelper);
+        domHelper.getInnerText = jest.fn().mockReturnValueOnce('- Any -')
+            .mockReturnValueOnce('Aerospace Engineering').mockReturnValueOnce('Aviation')
+            .mockReturnValueOnce('Biomedical Engineering')
+            .mockReturnValueOnce('Chemical and Biomolecular Engineering')
+            .mockReturnValueOnce('Civil, Environmental, and Geodetic Engineering');
+        const selectElement = domHelper.grabElementByXpath("//select") as HTMLElement;
+        expect(browserHelper.selectOption(selectElement, "Chemical and Biomolecular Engineering"))
+            .toEqual("Chemical and Biomolecular Engineering");
+        expect((selectElement as HTMLSelectElement).selectedIndex).toEqual(4);
+    });
+
+    it("shouldn't crash when select has no options", () => {
+        const {window} = new JSDOM(`<!DOCTYPE html><body>
+            <div class="js-form-item form-item js-form-type-select">
+                <label for="edit-field-fiscal-unit-academic-org-target-id">Fiscal Unit / Academic ORG</label>
+                <select data-drupal-selector="edit-field-fiscal-unit-academic-org-target-id"
+                        id="edit-field-fiscal-unit-academic-org-target-id" name="field_fiscal_unit_academic_org_target_id"
+                        class="form-select">
+                </select>
+            </div></body>`);
+        const domHelper = new DomWrapper(window);
+        const browserHelper = new BrowserHelper(domHelper);
+        const selectElement = domHelper.grabElementByXpath("//select") as HTMLElement;
+        expect(browserHelper.selectOption(selectElement, "Chemical and Biomolecular Engineering"))
+            .toEqual("");
+        expect((selectElement as HTMLSelectElement).selectedIndex).toEqual(-1);
+    });
+
+});
+
 describe('BrowserHelper.removeAndCollapseEol', () => {
     const {window} = new JSDOM(`<!DOCTYPE html><body></body>`);
     const domHelper = new DomWrapper(window);
