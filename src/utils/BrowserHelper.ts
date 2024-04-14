@@ -40,6 +40,19 @@ export class BrowserHelper {
     }
 
     /**
+     * @description Gets the text content of an element, or the value of an input or textarea element
+     * @param elementToActOn the element whose text or value is to be retrieved
+     * @return the text content of the element, or the value of an input or textarea element
+     */
+    getElementText = (elementToActOn: HTMLElement): string|null => {
+        let priorElementText = elementToActOn.textContent;
+        if (elementToActOn instanceof HTMLInputElement || elementToActOn instanceof HTMLTextAreaElement) {
+            priorElementText = elementToActOn.value;
+        }
+        return priorElementText;
+    }
+
+    /**
      * @description Select an option from a select element, based on the option's name or an approximation of it
      * @param selectElement the select element to select an option from
      * @param optionName the name (or an approximation of the name) of the option element to select
@@ -49,9 +62,9 @@ export class BrowserHelper {
         let bestOptIndex = -1;
         let bestOptVal = undefined;//in case it's important, for some <select>, to be able to choose an option whose innertext is the empty string
         let bestOptSimilarity = -1;
-        //todo idea for later- we might want to initialize bestOptSimilarity at some value above 0, to avoid selecting
-        // an option with negligible similarity to the requested option name in a scenario where the AI got really
-        // confused and gave a completely wrong value for the chosen select element, e.g. 0.3?
+        //todo idea for later- we might want to initialize bestOptSimilarity at some value above 0 (e.g. 0.3), to avoid
+        // selecting an option with negligible similarity to the requested option name in a scenario where the AI got
+        // really confused and gave a completely wrong value for the chosen select element?
         // confer with Boyuan; & should check what the similarity values look like in practice for good vs bad elements
 
         const selectElem = selectElement as HTMLSelectElement;

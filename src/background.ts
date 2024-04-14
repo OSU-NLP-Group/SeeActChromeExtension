@@ -11,7 +11,6 @@ import Port = chrome.runtime.Port;
 import MessageSender = chrome.runtime.MessageSender;
 
 
-
 console.log("successfully loaded background script in browser");
 
 //initially, unified/relatively-persistent logging is achieved simply by having content script and popup's js
@@ -191,6 +190,7 @@ function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (r
         centralLogger.trace("request received by service worker", sender.tab ?
             "from a content script:" + sender.tab.url : "from the extension");
     }
+    //todo enum for ephemeral messages' reqType values
     if (request.reqType === "log") {
         const timestamp = String(request.timestamp);
         const loggerName = String(request.loggerName);
@@ -238,6 +238,9 @@ function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (r
         } else {
             sendEnterKeyPress(currTaskTabId).then(() => {
                 sendResponse({success: true, message: "Sent Enter key press"});
+            }, (error) => {
+                centralLogger.error(`error sending Enter key press; error: ${error}, jsonified: ${JSON.stringify(error)}`);
+                sendResponse({success: false, message: `Error sending Enter key press: ${error}`});
             });
         }
     } else {
@@ -250,6 +253,7 @@ chrome.runtime.onMessage.addListener(handleMsgFromPage);
 
 //todo jsdoc, and preferably also break this up into sub-methods
 async function handlePageMsgToAgentController(message: any, port: Port): Promise<void> {
+    //todo enum for page actor to agent controller message types
     if (message.msg === "content script initialized and ready") {
         await mutex.runExclusive(() => {
             if (state !== AgentControllerState.WAITING_FOR_CONTENT_SCRIPT_INIT) {
@@ -397,7 +401,7 @@ async function handlePageMsgToAgentController(message: any, port: Port): Promise
             const wasSuccessful: boolean = message.success;
             let actionDesc: string = message.result ? message.result :
                 (tentativeActionInfo ?
-                        buildGenericActionDesc( tentativeActionInfo?.action, tentativeActionInfo?.elementData,
+                        buildGenericActionDesc(tentativeActionInfo?.action, tentativeActionInfo?.elementData,
                             tentativeActionInfo?.value)
                         : "no information stored about the action"
                 );
@@ -484,7 +488,7 @@ async function handlePageDisconnectFromAgentController(port: Port) {
                     "content script was lost; this is unexpected")
             }
             const actionDesc = buildGenericActionDesc(tentativeActionInfo.action, tentativeActionInfo.elementData,
-                    tentativeActionInfo.value) + `; this caused page navigation to ${tab.title}`;
+                tentativeActionInfo.value) + `; this caused page navigation to ${tab.title}`;
 
             actionsSoFar.push({actionDesc: actionDesc, success: true});
             tentativeActionInfo = undefined;
