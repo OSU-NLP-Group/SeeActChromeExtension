@@ -7,7 +7,7 @@ const logger = createNamedLogger('agent-page-interaction', false);
 logger.trace(`successfully injected page_interaction script in browser for page ${document.URL}`);
 
 //todo revisit safe way to make different tabs' ports distinguishable by name (putting url in wasn't accepted by chrome)
-const portToBackground: chrome.runtime.Port = chrome.runtime.connect({name: `content-script-2-agent-controller`});
+const portToBackground: chrome.runtime.Port = chrome.runtime.connect({name: `page-actor-2-agent-controller`});
 
 const pageActor = new PageActor(portToBackground);
 

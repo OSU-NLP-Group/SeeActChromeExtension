@@ -6,6 +6,7 @@ import {buildGenericActionDesc, expectedMsgForPortDisconnection, sleep} from "./
 type ActionOutcome = { success: boolean; result: string };
 
 
+//todo jsdoc
 export class PageActor {
 
     private browserHelper: BrowserHelper;
@@ -16,6 +17,7 @@ export class PageActor {
     portToBackground: chrome.runtime.Port;
     readonly logger: Logger;
 
+    //todo jsdoc
     constructor(portToBackground: chrome.runtime.Port, browserHelper?: BrowserHelper, logger?: Logger) {
         this.browserHelper = browserHelper ?? new BrowserHelper();
         this.portToBackground = portToBackground;

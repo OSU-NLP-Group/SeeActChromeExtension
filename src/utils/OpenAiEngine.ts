@@ -35,6 +35,7 @@ export class OpenAiEngine {
     constructor(model: string, apiKey?: string | Array<string>, openAi?: OpenAI, stop: string = "\n\n", rateLimit: number = -1,
                 temperature: number = 0, loggerToUse?: log.Logger) {
         //todo consider the automatic unpacking trick for effectively having named arguments in the constructor, b/c this is absurd
+        // !!before sending to Prof Su!
         let apiKeys: Array<string> = [];
         const apiKeyInputUseless = apiKey == undefined ||
             (Array.isArray(apiKey) && apiKey.length == 0);
@@ -88,6 +89,7 @@ export class OpenAiEngine {
                       maxNewTokens: number = 4096, temp?: number, model?: string): Promise<string> => {
         //todo eventually create options object/type for all optional parameters of generate(), currently hard to read or use
         // then reuse that as part of the params of generateWithRetry()
+        // !!before sending to Prof Su!
 
         this.currKeyIdx = (this.currKeyIdx + 1) % this.apiKeys.length;
         //todo unit test and implement rate-limit-respecting sleep code if Boyuan confirms it's still desired
@@ -106,16 +108,8 @@ export class OpenAiEngine {
         const modelToUse = model ?? this.model;
 
         const messages: Array<ChatCompletionMessageParam> = [
-            {
-                role: "system",
-                content: prompts[0]
-            },
-            {
-                role: "user",
-                content: [
-                    {type: "text", text: prompts[1]}
-                ]
-            }
+            {role: "system", content: prompts[0]},
+            {role: "user", content: [{type: "text", text: prompts[1]}]}
         ];
         if (imgDataUrl) {
             (messages[1].content as Array<ChatCompletionContentPart>)
@@ -124,31 +118,23 @@ export class OpenAiEngine {
 
         let respStr: string | undefined | null;
         if (turnInStep === 0) {
-            const response = await this.openAi.chat.completions.create({
-                messages: messages, model: modelToUse, temperature: tempToUse, max_tokens: maxNewTokens
-            });
+            const response = await this.openAi.chat.completions.create(
+                {messages: messages, model: modelToUse, temperature: tempToUse, max_tokens: maxNewTokens});
             respStr = response.choices?.[0].message?.content;
             //confer with Boyuan- should this log warning with response object if respStr null? or throw error?
             // feedback - don't worry about the api being that weird/unreliable
 
         } else if (turnInStep === 1) {
             if (priorTurnOutput) {
-                messages.push({
-                    role: "assistant",
-                    content: priorTurnOutput
-                });
+                messages.push({role: "assistant", content: priorTurnOutput});
             } else {
                 throw new Error("priorTurnOutput must be provided for turn 1");
             }
 
-            messages.push({
-                role: "user",
-                content: prompts[2]
-            });
+            messages.push({role: "user", content: prompts[2]});
 
-            const response = await this.openAi.chat.completions.create({
-                messages: messages, model: modelToUse, temperature: tempToUse, max_tokens: maxNewTokens
-            });
+            const response = await this.openAi.chat.completions.create(
+                {messages: messages, model: modelToUse, temperature: tempToUse, max_tokens: maxNewTokens});
             respStr = response.choices?.[0].message?.content;
             //confer with Boyuan- should this log warning with response object if respStr null? or throw error?
             // feedback - don't worry about the api being that weird/unreliable
@@ -186,15 +172,15 @@ export class OpenAiEngine {
                     // these retry log messages become less detailed
                     const indexOfPrefix = err.message.indexOf(" on ");
                     const indexOfSuffix = err.message.indexOf(". Visit");
-                    if (indexOfPrefix > 0 && indexOfSuffix > 0 && indexOfPrefix+4 < indexOfSuffix) {
+                    if (indexOfPrefix > 0 && indexOfSuffix > 0 && indexOfPrefix + 4 < indexOfSuffix) {
                         rateLimitIssueDetails = err.message.substring(indexOfPrefix + 4, indexOfSuffix);
                     }
                     this.logger.info(`hit OpenAI rate limit but will retry: ${rateLimitIssueDetails}`);
                 } else if (err instanceof APIConnectionError || err instanceof APIConnectionTimeoutError
                     || err instanceof InternalServerError) {
-                    this.logger.warn(`non-fatal problem with OpenAI API at ${new Date().toISOString()}, will retry; problem: ${err.message}`);
+                    this.logger.warn(`non-fatal problem with OpenAI API, will retry; problem: ${err.message}`);
                 } else {
-                    this.logger.error(`problem (${err.message}) occurred at ${new Date().toISOString()} with OpenAI API that isn't likely to get better, not retrying`);
+                    this.logger.error(`problem (${err.message}) occurred with OpenAI API that isn't likely to get better, not retrying`);
                     throw err;
                 }
             }
