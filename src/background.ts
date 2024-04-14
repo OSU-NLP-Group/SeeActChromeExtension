@@ -152,7 +152,6 @@ function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (r
 chrome.runtime.onMessage.addListener(handleMsgFromPage);
 
 
-//reminder- I think this shouldn't go in AgentController either
 //todo jsdoc; this is for persistent connection that allows interaction between agent control loop in service worker
 // and dom data-collection/actions in content script
 function handleConnectionFromPage(port: Port): void {
@@ -160,7 +159,7 @@ function handleConnectionFromPage(port: Port): void {
     //todo if make port names unique (for each injected content script), change this to a "starts with" check
     if (port.name === "page-actor-2-agent-controller") {
         if (!agentController) {
-            throw new Error("agentController not initialized when content script connected to agent controller in service worker");
+            throw new Error(`agentController not initialized when page actor ${port.name} tried to connect to agent controller in service worker`);
         }
         agentController.mutex.runExclusive(() => {
             if (agentController?.state !== AgentControllerState.WAITING_FOR_CONTENT_SCRIPT_INIT) {

@@ -8,6 +8,7 @@ import {OpenAiEngine} from "./OpenAiEngine";
 import {buildGenericActionDesc, expectedMsgForPortDisconnection, sleep} from "./misc";
 import {formatChoices, generatePrompt, postProcessActionLlm, StrTriple} from "./format_prompts";
 import {getIndexFromOptionName} from "./format_prompt_utils";
+import {ChromeWrapper} from "./ChromeWrapper";
 
 
 export enum AgentControllerState {
@@ -40,10 +41,12 @@ export class AgentController {
 
     currPortToContentScript: Port | undefined;
     private aiEngine: OpenAiEngine;
+    private chromeWrapper: ChromeWrapper;
     readonly logger: Logger;
 
-    constructor(aiEngine: OpenAiEngine, logger?: Logger) {
+    constructor(aiEngine: OpenAiEngine, logger?: Logger, chromeWrapper?: ChromeWrapper) {
         this.aiEngine = aiEngine;
+        this.chromeWrapper = chromeWrapper ?? new ChromeWrapper();
 
         this.logger = logger ?? createNamedLogger('agent-controller', true);
     }
@@ -88,7 +91,7 @@ export class AgentController {
 
             this.state = AgentControllerState.WAITING_FOR_CONTENT_SCRIPT_INIT;
             try {
-                await chrome.scripting.executeScript({files: ['./src/page_interaction.js'], target: {tabId: tabId}});
+                await this.chromeWrapper.runScript({files: ['./src/page_interaction.js'], target: {tabId: tabId}});
                 this.logger.trace('agent script injected into page' + toStartTaskStr);
                 sendResponse?.({success: true, taskId: this.taskId, message: "Started content script in current tab"});
             } catch (error) {
@@ -168,7 +171,7 @@ export class AgentController {
         const prompts = generatePrompt(this.taskSpecification, this.actionsSoFar.map(entry => entry.actionDesc), interactiveChoices);
         this.logger.debug("prompts:", prompts);
         //todo? try catch for error when trying to get screenshot, if that fails, then terminate task
-        const screenshotDataUrl: string = await chrome.tabs.captureVisibleTab();
+        const screenshotDataUrl: string = await this.chromeWrapper.fetchVisibleTabScreenshot();
         this.logger.debug("screenshot data url (truncated): " + screenshotDataUrl.slice(0, 100) + "...");
         let planningOutput: string;
         let groundingOutput: string;
@@ -449,7 +452,7 @@ export class AgentController {
     getActiveTab = async (): Promise<chrome.tabs.Tab> => {
         let tabs;
         try {
-            tabs = await chrome.tabs.query({active: true, currentWindow: true});
+            tabs = await this.chromeWrapper.fetchTabs({active: true, currentWindow: true});
         } catch (error) {
             const errMsg = `error querying active tab; error: ${error}, jsonified: ${JSON.stringify(error)}`;
             this.logger.error(errMsg);
@@ -470,26 +473,21 @@ export class AgentController {
         //todo if/when adding support for press_sequentially for TYPE action, will want this helper method to flexibly
         // handle strings of other characters; in that case, want to do testing to see if windowsVirtualKeyCode is needed or
         // if text (and?/or? unmodifiedText) is enough (or something else)
-        await chrome.debugger.attach({tabId: tabId}, "1.3");
+        await this.chromeWrapper.attachDebugger({tabId: tabId}, "1.3");
         this.logger.debug(`chrome.debugger attached to the tab ${tabId} to send an Enter key press`)
         //thanks to @activeliang https://github.com/ChromeDevTools/devtools-protocol/issues/45#issuecomment-850953391
-        await chrome.debugger.sendCommand({tabId: tabId}, "Input.dispatchKeyEvent", {
-            "type": "rawKeyDown", "windowsVirtualKeyCode": 13, "unmodifiedText": "\r", "text": "\r"
-        });
+        await this.chromeWrapper.sendCommand({tabId: tabId}, "Input.dispatchKeyEvent",
+            {"type": "rawKeyDown", "windowsVirtualKeyCode": 13, "unmodifiedText": "\r", "text": "\r"});
         this.logger.debug(`chrome.debugger sent key-down keyevent for Enter/CR key to tab ${tabId}`)
-        await chrome.debugger.sendCommand({tabId: tabId}, "Input.dispatchKeyEvent", {
-            "type": "char", "windowsVirtualKeyCode": 13, "unmodifiedText": "\r", "text": "\r"
-        });
+        await this.chromeWrapper.sendCommand({tabId: tabId}, "Input.dispatchKeyEvent",
+            {"type": "char", "windowsVirtualKeyCode": 13, "unmodifiedText": "\r", "text": "\r"});
         this.logger.debug(`chrome.debugger sent char keyevent for Enter/CR key to tab ${tabId}`)
-        await chrome.debugger.sendCommand({tabId: tabId}, "Input.dispatchKeyEvent", {
-            "type": "keyUp", "windowsVirtualKeyCode": 13, "unmodifiedText": "\r", "text": "\r"
-        });
+        await this.chromeWrapper.sendCommand({tabId: tabId}, "Input.dispatchKeyEvent",
+            {"type": "keyUp", "windowsVirtualKeyCode": 13, "unmodifiedText": "\r", "text": "\r"});
         this.logger.debug(`chrome.debugger sent keyup keyevent for Enter/CR key to tab ${tabId}`)
-        await chrome.debugger.detach({tabId: tabId});
+        await this.chromeWrapper.detachDebugger({tabId: tabId});
         this.logger.debug(`chrome.debugger detached from the tab ${tabId} after sending an Enter key press`)
     }
-
-
 
 
 }

@@ -2,6 +2,7 @@ import {Logger} from "loglevel";
 import {BrowserHelper, ElementData, SerializableElementData} from "./BrowserHelper";
 import {createNamedLogger} from "./shared_logging_setup";
 import {buildGenericActionDesc, expectedMsgForPortDisconnection, sleep} from "./misc";
+import {ChromeWrapper} from "./ChromeWrapper";
 
 type ActionOutcome = { success: boolean; result: string };
 
@@ -10,6 +11,7 @@ type ActionOutcome = { success: boolean; result: string };
 export class PageActor {
 
     private browserHelper: BrowserHelper;
+    private chromeWrapper: ChromeWrapper;
     private currInteractiveElements: ElementData[] | undefined;
     //if significant mutable state at some point extends beyond currInteractiveElements,
     // consider making a mutex for the state
@@ -18,8 +20,10 @@ export class PageActor {
     readonly logger: Logger;
 
     //todo jsdoc
-    constructor(portToBackground: chrome.runtime.Port, browserHelper?: BrowserHelper, logger?: Logger) {
+    constructor(portToBackground: chrome.runtime.Port, browserHelper?: BrowserHelper, logger?: Logger,
+                chromeWrapper?: ChromeWrapper) {
         this.browserHelper = browserHelper ?? new BrowserHelper();
+        this.chromeWrapper = chromeWrapper ?? new ChromeWrapper();
         this.portToBackground = portToBackground;
         this.logger = logger ?? createNamedLogger('page-actor', false);
     }
@@ -169,7 +173,7 @@ export class PageActor {
     performPressEnterAction = async (actionOutcome: ActionOutcome,
                                      targetElementDesc: string): Promise<void> => {
         this.logger.trace(`about to press Enter on ${targetElementDesc}`);
-        const resp = await chrome.runtime.sendMessage({reqType: "pressEnter"});
+        const resp = await this.chromeWrapper.sendMessageToServiceWorker({reqType: "pressEnter"});
         if (resp.success) {
             this.logger.trace(`pressed Enter on ${targetElementDesc}`);
             actionOutcome.success = true;
