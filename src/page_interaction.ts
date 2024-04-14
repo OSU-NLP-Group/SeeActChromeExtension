@@ -1,11 +1,11 @@
 import {BrowserHelper, ElementData, SerializableElementData} from "./utils/BrowserHelper";
 import {createNamedLogger} from "./utils/shared_logging_setup";
+import {expectedMsgForPortDisconnection, buildGenericActionDesc, sleep} from "./utils/misc";
 
 
 const logger = createNamedLogger('agent-page-interaction', false);
 logger.trace(`successfully injected page_interaction script in browser for page ${document.URL}`);
 
-const expectedMsgForPortDisconnection = "Attempting to use a disconnected port object";
 
 //todo to make this testable, need to have a class which has instance variables for
 // browserHelper, currInteractiveElements, portToBackground, and hasControllerEverResponded
@@ -83,9 +83,7 @@ async function handleRequestFromAgentControlLoop(message: any) {
             const tagName = elementToActOnData.tagName;
             const elementToActOn = elementToActOnData.element;
 
-            //try reusing buildGenericActionDesc() once it's in a class file and not in background.ts
-            const valueDesc = valueForAction ? ` with value ]${valueForAction}[` : "";
-            actionResult = `[${elementToActOnData.tagHead}] ${elementToActOnData.description} -> ${actionToPerform}${valueDesc}`;
+            actionResult = buildGenericActionDesc(actionToPerform, elementToActOnData, valueForAction);
 
             /*
             todo consider implementing in js a conditional polling/wait for 'stability'
@@ -270,11 +268,6 @@ async function handleRequestFromAgentControlLoop(message: any) {
 
 portToBackground.onMessage.addListener(handleRequestFromAgentControlLoop);
 
-
-//todo move this duplicated function to some generic utilities file
-async function sleep(numMs: number) {
-    await new Promise(resolve => setTimeout(resolve, numMs));
-}
 
 (async () => {
     //todo! wait here until page is loaded/stable!

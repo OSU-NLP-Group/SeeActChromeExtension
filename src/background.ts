@@ -4,13 +4,13 @@ import {OpenAiEngine} from "./utils/OpenAiEngine";
 import {SerializableElementData} from "./utils/BrowserHelper";
 import {formatChoices, generatePrompt, postProcessActionLlm, StrTriple} from "./utils/format_prompts";
 import {getIndexFromOptionName} from "./utils/format_prompt_utils";
+import {expectedMsgForPortDisconnection, buildGenericActionDesc, sleep} from "./utils/misc";
 import {Mutex} from "async-mutex";
 import log = require("loglevel");
 import Port = chrome.runtime.Port;
 import MessageSender = chrome.runtime.MessageSender;
 
 
-const expectedMsgForPortDisconnection = "Attempting to use a disconnected port object";
 
 console.log("successfully loaded background script in browser");
 
@@ -335,24 +335,24 @@ async function handlePageMsgToAgentController(message: any, port: Port): Promise
             let chosenCandidateIndex = getIndexFromOptionName(elementName);
 
             if ((!chosenCandidateIndex || chosenCandidateIndex > candidateIds.length) && !actionNeedsNoElement) {
-                    //todo remove this temp hacky patch
-                    centralLogger.warn(`ai selected invalid option ${elementName} ` + (chosenCandidateIndex
-                        ? `(was parsed as candidate index ${chosenCandidateIndex}, but the candidates list only had ${candidateIds.length} entries)`
-                        : `(cannot be parsed into an index)`) + ", terminating task as dead-ended");
-                    terminateTask();
-                    return;
+                //todo remove this temp hacky patch
+                centralLogger.warn(`ai selected invalid option ${elementName} ` + (chosenCandidateIndex
+                    ? `(was parsed as candidate index ${chosenCandidateIndex}, but the candidates list only had ${candidateIds.length} entries)`
+                    : `(cannot be parsed into an index)`) + ", terminating task as dead-ended");
+                terminateTask();
+                return;
 
-                    //todo increment noop counter
-                    //todo reprompt the ai??
+                //todo increment noop counter
+                //todo reprompt the ai??
 
             } else if (chosenCandidateIndex === candidateIds.length && !actionNeedsNoElement) {
-                    //todo remove this temp hacky patch
-                    centralLogger.warn("ai selected 'none of the above' option, terminating task as dead-ended");
-                    terminateTask();
-                    return;
+                //todo remove this temp hacky patch
+                centralLogger.warn("ai selected 'none of the above' option, terminating task as dead-ended");
+                terminateTask();
+                return;
 
-                    //todo increment noop counter
-                    //todo how to handle this?
+                //todo increment noop counter
+                //todo how to handle this?
             }
             if (chosenCandidateIndex && chosenCandidateIndex >= candidateIds.length && actionNeedsNoElement) {
                 chosenCandidateIndex = undefined;
@@ -395,7 +395,12 @@ async function handlePageMsgToAgentController(message: any, port: Port): Promise
             state = AgentControllerState.ACTIVE;
 
             const wasSuccessful: boolean = message.success;
-            let actionDesc: string = message.result ? message.result : buildGenericActionDesc(tentativeActionInfo);
+            let actionDesc: string = message.result ? message.result :
+                (tentativeActionInfo ?
+                        buildGenericActionDesc( tentativeActionInfo?.action, tentativeActionInfo?.elementData,
+                            tentativeActionInfo?.value)
+                        : "no information stored about the action"
+                );
 
             let wasPageNav = false;
             let tab: chrome.tabs.Tab | undefined;
@@ -410,7 +415,7 @@ async function handlePageMsgToAgentController(message: any, port: Port): Promise
                 }
             }
 
-            //todo low priority- keep track of number of unsuccessful operations
+            //todo keep track of number of unsuccessful operations
             // maybe terminate task after too many (total or in a row) unsuccessful operations
             // maaaybe also add more feedback or warnings to prompt after unsuccessful operation
 
@@ -451,14 +456,6 @@ async function handlePageMsgToAgentController(message: any, port: Port): Promise
     }
 }
 
-//todo jsdoc
-function buildGenericActionDesc(actionInfo?: ActionInfo): string {
-    if (!actionInfo) {
-        return "no information stored about the action";
-    }
-    const valueDesc = actionInfo.value ? ` with value: ${(actionInfo.value)}` : "";
-    return `[${actionInfo.elementData?.tagHead}] ${actionInfo.elementData?.description} -> ${actionInfo.action}${valueDesc}`;
-}
 
 //todo jsdoc
 async function handlePageDisconnectFromAgentController(port: Port) {
@@ -486,7 +483,8 @@ async function handlePageDisconnectFromAgentController(port: Port) {
                 centralLogger.warn("tab changed after page navigation and yet the connection to the old tab's " +
                     "content script was lost; this is unexpected")
             }
-            const actionDesc = buildGenericActionDesc(tentativeActionInfo) + `; this caused page navigation to ${tab.title}`;
+            const actionDesc = buildGenericActionDesc(tentativeActionInfo.action, tentativeActionInfo.elementData,
+                    tentativeActionInfo.value) + `; this caused page navigation to ${tab.title}`;
 
             actionsSoFar.push({actionDesc: actionDesc, success: true});
             tentativeActionInfo = undefined;
@@ -578,7 +576,7 @@ function terminateTask() {
 
 /**
  * @description Get the id of the active tab in the current window
- * @returns {Promise<number|undefined>} The id of the active tab, or undefined if the active tab is a chrome:// URL
+ * @returns {Promise<chrome.tabs.Tab>} The id of the active tab, or undefined if the active tab is a chrome:// URL
  *                                          (which scripts can't be injected into for safety reasons)
  * @throws {Error} If the active tab is not found or doesn't have an id
  */
@@ -604,11 +602,6 @@ const getActiveTabId = async (): Promise<chrome.tabs.Tab> => {
 //todo unit test above helper? how hard is it to mock chrome api calls?
 // worst case, could make ChromeHelper in utils/ with thing like DomWrapper for chrome api's, then unit test ChromeHelper
 // with an injected mock of the chrome api wrapper object
-
-//todo move this duplicated function to some generic utilities file
-async function sleep(numMs: number) {
-    await new Promise(resolve => setTimeout(resolve, numMs));
-}
 
 
 //todo once basic prototype is fully working (i.e. can complete a full multi-step task),
