@@ -1,12 +1,16 @@
-import { Mutex } from "async-mutex";
+import {Mutex} from "async-mutex";
 import {SerializableElementData} from "./BrowserHelper";
 import Port = chrome.runtime.Port;
-import { Logger } from "loglevel";
+import {v4 as uuidV4} from 'uuid';
+import {Logger} from "loglevel";
 import {createNamedLogger} from "./shared_logging_setup";
 import {OpenAiEngine} from "./OpenAiEngine";
+import {buildGenericActionDesc, expectedMsgForPortDisconnection, sleep} from "./misc";
+import {formatChoices, generatePrompt, postProcessActionLlm, StrTriple} from "./format_prompts";
+import {getIndexFromOptionName} from "./format_prompt_utils";
 
 
-enum AgentControllerState {
+export enum AgentControllerState {
     IDLE,//i.e. no active task
     WAITING_FOR_CONTENT_SCRIPT_INIT,//there's an active task, but injection of content script hasn't completed yet
     ACTIVE,//partway through an event handler function
@@ -22,9 +26,9 @@ type ActionInfo = { elementIndex?: number, elementData?: SerializableElementData
 export class AgentController {
     readonly mutex = new Mutex();
 
-    private taskId: string | undefined = undefined;
+    taskId: string | undefined = undefined;
     private taskSpecification: string = "";
-    private currTaskTabId: number | undefined;
+    currTaskTabId: number | undefined;
 
 
     private tentativeActionInfo: ActionInfo | undefined;
@@ -32,9 +36,9 @@ export class AgentController {
 
     private actionsSoFar: { actionDesc: string, success: boolean }[] = [];
 
-    private state: AgentControllerState = AgentControllerState.IDLE;
+    state: AgentControllerState = AgentControllerState.IDLE;
 
-    private currPortToContentScript: Port | undefined;
+    currPortToContentScript: Port | undefined;
     private aiEngine: OpenAiEngine;
     readonly logger: Logger;
 
@@ -43,6 +47,449 @@ export class AgentController {
 
         this.logger = logger ?? createNamedLogger('agent-controller', true);
     }
+
+
+    //todo jsdoc
+    injectPageActorScript = async (isStartOfTask: boolean, sendResponse?: (response?: any) => void, newTab?: chrome.tabs.Tab): Promise<void> => {
+        let tabId: number | undefined = undefined;
+        let tab: chrome.tabs.Tab | undefined = newTab;
+        if (!tab) {
+            try {
+                tab = await this.getActiveTab();
+            } catch (error) {
+                this.logger.error(`error ${error} getting active tab id, cannot inject content script; full error object:${JSON.stringify(error)}`);
+                this.terminateTask();
+                sendResponse?.({success: false, message: `Can't get tab id because of error: ${error}`});
+                return;
+            }
+        }
+        tabId = tab.id;
+        if (!tabId) {
+            this.logger.error("Can't inject agent script into chrome:// URLs for security reasons; " + isStartOfTask ? "please only try to start the agent on a regular web page." : "please don't switch to a chrome:// URL while the agent is running");
+            this.terminateTask();
+            sendResponse?.({success: false, message: "Can't inject script in a chrome:// URL"});
+        } else {
+            const toStartTaskStr = isStartOfTask ? " to start a task" : "";
+
+            if (isStartOfTask) {
+                this.currTaskTabId = tabId;
+            } else if (this.currTaskTabId !== tabId) {
+                if (this.mightNextActionCausePageNav) {
+                    this.currTaskTabId = tabId;
+                } else {
+                    const errMsg = `The active tab changed unexpectedly to ${tab.title}. Terminating task.`;
+                    this.logger.error(errMsg);
+                    this.terminateTask();
+                    sendResponse?.({success: false, message: errMsg});
+                    return;
+                }
+            }
+            this.logger.trace("injecting agent script into page" + toStartTaskStr + "; in tab " + tabId);
+
+            this.state = AgentControllerState.WAITING_FOR_CONTENT_SCRIPT_INIT;
+            try {
+                await chrome.scripting.executeScript({files: ['./src/page_interaction.js'], target: {tabId: tabId}});
+                this.logger.trace('agent script injected into page' + toStartTaskStr);
+                sendResponse?.({success: true, taskId: this.taskId, message: "Started content script in current tab"});
+            } catch (error) {
+                this.logger.error(`error injecting agent script into page${toStartTaskStr}; error: ${error}; jsonified error: ${JSON.stringify(error)}`);
+                this.terminateTask();
+                sendResponse?.({success: false, message: "Error injecting agent script into page" + toStartTaskStr});
+            }
+        }
+    }
+
+
+    //todo jsdoc
+    startTask = async (request: any, sendResponse: (response?: any) => void): Promise<void> => {
+        if (this.taskId !== undefined) {
+            const taskRejectMsg = `Task ${this.taskId} already in progress; not starting new task`;
+            this.logger.warn(taskRejectMsg);
+            sendResponse({success: false, message: taskRejectMsg});
+        } else {
+            this.taskId = uuidV4();
+            this.taskSpecification = request.taskSpecification;
+            this.logger.info(`STARTING TASK ${this.taskId} with specification: ${this.taskSpecification}`);
+            try {
+                await this.injectPageActorScript(true, sendResponse)
+            } catch (error: any) {
+                this.logger.error(`error injecting content script to start task; error: ${error}, jsonified: ${JSON.stringify(error)}`);
+                this.terminateTask();
+                sendResponse({success: false, message: `Error injecting content script to start task: ${error}`});
+            }
+        }
+    }
+
+    //todo jsdoc
+    processPageActorInitialized = (port: Port): void => {
+        if (this.state !== AgentControllerState.WAITING_FOR_CONTENT_SCRIPT_INIT) {
+            this.logger.error("received 'content script initialized and ready' message from content script while not waiting for content script initialization, but rather in state " + AgentControllerState[this.state]);
+            this.terminateTask();
+            return;
+        }
+        this.logger.trace("content script initialized and ready; requesting interactive elements")
+
+        this.state = AgentControllerState.WAITING_FOR_ELEMENTS
+        try {
+            port.postMessage({msg: "get interactive elements"});
+        } catch (error: any) {
+            if ('message' in error && error.message === expectedMsgForPortDisconnection) {
+                this.logger.info("content script disconnected from service worker while processing initial message and before trying to request interactive elements; task will resume after new content script connection is established");
+                this.state = AgentControllerState.PENDING_RECONNECT;
+            } else {
+                this.logger.error(`unexpected error while processing initial message and before trying to request interactive elements; terminating task; error: ${error}, jsonified: ${JSON.stringify(error)}`);
+                this.terminateTask();
+            }
+        }
+    }
+
+    //todo later, look for ways to break this up
+    // !! before sending to Prof Su!
+    //todo jsdoc
+    processPageStateFromActor = async (message: any, port: Port): Promise<void> => {
+        if (this.state !== AgentControllerState.WAITING_FOR_ELEMENTS) {
+            this.logger.error("received 'sending interactive elements' message from content script while not waiting for elements, but rather in state " + AgentControllerState[this.state]);
+            this.terminateTask();
+            return;
+        }
+        this.logger.trace("received interactive elements from content script")
+
+        this.state = AgentControllerState.ACTIVE;
+        const interactiveElements = message.interactiveElements as SerializableElementData[];
+
+        const interactiveChoiceDetails = interactiveElements.map<StrTriple>((element) => {
+            return [element.description, element.tagHead, element.tagName];
+        });
+        const candidateIds = interactiveElements.map((element, index) => {
+            return (element.centerCoords[0] != 0 && element.centerCoords[1] != 0) ? index : undefined;
+        }).filter(Boolean) as number[];//ts somehow too dumb to realize that filter(Boolean) removes undefined elements
+        const interactiveChoices = formatChoices(interactiveChoiceDetails, candidateIds);
+        //todo maybe also include the prior actions' success/failure in the prompt
+        const prompts = generatePrompt(this.taskSpecification, this.actionsSoFar.map(entry => entry.actionDesc), interactiveChoices);
+        this.logger.debug("prompts:", prompts);
+        //todo? try catch for error when trying to get screenshot, if that fails, then terminate task
+        const screenshotDataUrl: string = await chrome.tabs.captureVisibleTab();
+        this.logger.debug("screenshot data url (truncated): " + screenshotDataUrl.slice(0, 100) + "...");
+        let planningOutput: string;
+        let groundingOutput: string;
+        const aiApiBaseDelay = 1_000;
+        try {
+            planningOutput = await this.aiEngine.generateWithRetry(prompts, 0, screenshotDataUrl, undefined, undefined, undefined, undefined, aiApiBaseDelay);
+            this.logger.info("planning output: " + planningOutput);
+            //todo add prompt details and logic here to skip element selection part of grounding step if the ai suggests a scroll, terminate, or press-enter-without-specific-element action
+            // feedback- Boyuan thinks this is good idea
+
+            groundingOutput = await this.aiEngine.generateWithRetry(prompts, 1, screenshotDataUrl, planningOutput, undefined, undefined, undefined, aiApiBaseDelay);
+            //todo low priority per Boyuan, but experiment with json output mode specifically for the grounding api call
+        } catch (error) {
+            this.logger.error(`error getting next step from ai; terminating task; error: ${error}, jsonified: ${JSON.stringify(error)}`);
+            this.terminateTask();
+            return;
+        }
+        this.logger.info("grounding output: " + groundingOutput);
+        const [elementName, actionName, value] = postProcessActionLlm(groundingOutput);
+        this.logger.debug(`suggested action: ${actionName}; value: ${value}`);
+
+        if (actionName === "TERMINATE") {
+            this.logger.info("Task completed!");
+            this.terminateTask();
+            return;
+        } else if (actionName === "NONE") {
+            //todo remove this temp hacky patch
+            this.logger.warn("ai selected NONE action, terminating task as dead-ended");
+            this.terminateTask();
+            return;
+            //todo need to properly handle NONE actionName (which means the AI couldn't come up with a valid action)
+            // not simply kill the task
+            // maybe increase temperature on next api call? and/or add more to prompt
+        }
+        const actionNeedsNoElement = actionName === "SCROLL_UP" || actionName === "SCROLL_DOWN" || actionName === "PRESS_ENTER";
+
+        let chosenCandidateIndex = getIndexFromOptionName(elementName);
+
+        if ((!chosenCandidateIndex || chosenCandidateIndex > candidateIds.length) && !actionNeedsNoElement) {
+            //todo remove this temp hacky patch
+            this.logger.warn(`ai selected invalid option ${elementName} ` + (chosenCandidateIndex
+                ? `(was parsed as candidate index ${chosenCandidateIndex}, but the candidates list only had ${candidateIds.length} entries)`
+                : `(cannot be parsed into an index)`) + ", terminating task as dead-ended");
+            this.terminateTask();
+            return;
+
+            //todo increment noop counter
+            //todo reprompt the ai??
+
+        } else if (chosenCandidateIndex === candidateIds.length && !actionNeedsNoElement) {
+            //todo remove this temp hacky patch
+            this.logger.warn("ai selected 'none of the above' option, terminating task as dead-ended");
+            this.terminateTask();
+            return;
+
+            //todo increment noop counter
+            //todo how to handle this?
+        }
+        if (chosenCandidateIndex && chosenCandidateIndex >= candidateIds.length && actionNeedsNoElement) {
+            chosenCandidateIndex = undefined;
+        }
+
+        const chosenElementIndex: number | undefined = chosenCandidateIndex ? candidateIds[chosenCandidateIndex] : undefined;
+        this.logger.debug(`acting on the ${chosenCandidateIndex} entry from the candidates list; which is the ${chosenElementIndex} element of the original interactiveElements list`);
+
+        this.tentativeActionInfo = {
+            elementIndex: chosenElementIndex, action: actionName, value: value,
+            elementData: chosenElementIndex ? interactiveElements[chosenElementIndex] : undefined
+        };
+        //todo add TYPE and SELECT here if I ever see or get reports of such actions causing page navigation
+        this.mightNextActionCausePageNav = (actionName === "PRESS_ENTER" || actionName === "CLICK");
+
+        this.state = AgentControllerState.WAITING_FOR_ACTION;
+        try {
+            port.postMessage({
+                msg: "perform action", elementIndex: chosenElementIndex, action: actionName, value: value
+            });
+        } catch (error: any) {
+            if ('message' in error && error.message === expectedMsgForPortDisconnection) {
+                this.logger.info("content script disconnected from service worker while processing interactive elements and before trying to request an action; task will resume after new content script connection is established");
+                this.state = AgentControllerState.PENDING_RECONNECT;
+                this.tentativeActionInfo = undefined;
+            } else {
+                this.logger.error(`unexpected error while processing interactive elements and before trying to request an action; terminating task; error: ${error}, jsonified: ${JSON.stringify(error)}`);
+                this.terminateTask();
+            }
+        }
+    }
+
+    //todo jsdoc
+    processActionPerformedConfirmation = async (message: any, port: Port): Promise<void> => {
+        if (this.state !== AgentControllerState.WAITING_FOR_ACTION) {
+            this.logger.error("received 'action performed' message from content script while not waiting for action, but rather in state " + AgentControllerState[this.state]);
+            this.terminateTask();
+            return;
+        }
+        this.logger.trace("controller notified that action was performed by content script");
+        this.state = AgentControllerState.ACTIVE;
+
+        const wasSuccessful: boolean = message.success;
+        let actionDesc: string = message.result ? message.result :
+            (this.tentativeActionInfo ?
+                    buildGenericActionDesc(this.tentativeActionInfo?.action, this.tentativeActionInfo?.elementData,
+                        this.tentativeActionInfo?.value)
+                    : "no information stored about the action"
+            );
+
+        let wasPageNav = false;
+        let tab: chrome.tabs.Tab | undefined;
+        if (this.mightNextActionCausePageNav) {
+            await sleep(500);//make sure that, if the browser is opening a new tab, there's time for browser to
+            // make the new tab the active tab before we check for active tab change
+            tab = await this.getActiveTab();
+            const tabId = tab.id;
+            if (tabId !== this.currTaskTabId) {
+                wasPageNav = true;
+                actionDesc += `; opened ${tab.title} in new tab`;
+            }
+        }
+
+        //todo keep track of number of unsuccessful operations
+        // maybe terminate task after too many (total or in a row) unsuccessful operations
+        // maaaybe also add more feedback or warnings to prompt after unsuccessful operation
+
+        this.actionsSoFar.push({actionDesc: actionDesc, success: wasSuccessful});
+        this.tentativeActionInfo = undefined;
+
+        if (wasPageNav) {
+            this.logger.info("tab id changed after action was performed, so killing connection to " +
+                "old tab and injecting content script in new tab " + tab?.title);
+            this.killPageConnection(port);
+            await this.injectPageActorScript(false, undefined, tab);
+            //only resetting this after script injection because script injection needs to know whether it's ok
+            // that the tab id might've changed
+            this.mightNextActionCausePageNav = false;
+        } else {
+            this.mightNextActionCausePageNav = false;
+            this.state = AgentControllerState.WAITING_FOR_ELEMENTS
+            try {
+                port.postMessage({msg: "get interactive elements"});
+            } catch (error: any) {
+                if ('message' in error && error.message === expectedMsgForPortDisconnection) {
+                    this.logger.info("content script disconnected from service worker while processing completed action and before trying to request more interactive elements; task will resume after new content script connection is established");
+                    this.state = AgentControllerState.PENDING_RECONNECT;
+                } else {
+                    this.logger.error(`unexpected error while processing completed action and before trying to request more interactive elements; terminating task; error: ${error}, jsonified: ${JSON.stringify(error)}`);
+                    this.terminateTask();
+                }
+            }
+        }
+    }
+
+    //todo jsdoc
+    handlePageMsgToAgentController = async (message: any, port: Port): Promise<void> => {
+        //todo enum for page actor to agent controller message types
+        if (message.msg === "content script initialized and ready") {
+            await this.mutex.runExclusive(() => {this.processPageActorInitialized(port);});
+        } else if (message.msg === "sending interactive elements") {
+            await this.mutex.runExclusive(async () => {await this.processPageStateFromActor(message, port);});
+        } else if (message.msg === "action performed") {
+            await this.mutex.runExclusive(async () => {await this.processActionPerformedConfirmation(message, port);});
+        } else if (message.msg === "terminal page-side error") {
+            await this.mutex.runExclusive(() => {
+                this.logger.error("something went horribly wrong in the content script, so terminating the task; details: ", message.error);
+                this.terminateTask();
+            });
+        } else {
+            this.logger.warn("unknown message from content script:", message);
+        }
+    }
+
+    //todo jsdoc
+    processActorDisconnectDuringAction = async (): Promise<void> => {
+        if (!this.tentativeActionInfo) {
+            this.logger.error("service worker's connection to content script was lost while performing an " +
+                "action, but no tentative action was stored; terminating current task");
+            this.terminateTask();
+            return;
+        }
+        this.state = AgentControllerState.ACTIVE;
+        this.logger.info("service worker's connection to content script was lost while performing an action, " +
+            "which most likely means that the action has caused page navigation");
+        if (this.mightNextActionCausePageNav) {
+            //give the browser time to ensure that the new page is ready for scripts to be injected into it
+            await sleep(500);
+        }//todo consider whether there should be an else block here that logs a warning or even terminates task
+
+        const tab = await this.getActiveTab();
+        if (tab.id !== this.currTaskTabId) {
+            this.logger.warn("tab changed after page navigation and yet the connection to the old tab's " +
+                "content script was lost; this is unexpected")
+        }
+        const actionDesc = buildGenericActionDesc(this.tentativeActionInfo.action, this.tentativeActionInfo.elementData,
+            this.tentativeActionInfo.value) + `; this caused page navigation to ${tab.title}`;
+
+        this.actionsSoFar.push({actionDesc: actionDesc, success: true});
+        this.tentativeActionInfo = undefined;
+
+        await this.injectPageActorScript(false);
+        //only resetting this after script injection because script injection needs to know whether it's ok that the
+        // tab id might've changed
+        this.mightNextActionCausePageNav = false;
+    }
+
+    //todo jsdoc
+    handlePageDisconnectFromAgentController = async (port: Port): Promise<void> => {
+        await this.mutex.runExclusive(async () => {
+            this.logger.debug("content script disconnected from service worker; port name:", port.name);
+            this.currPortToContentScript = undefined;
+
+            if (this.state === AgentControllerState.WAITING_FOR_ACTION) {
+                await this.processActorDisconnectDuringAction();
+            } else if (this.state === AgentControllerState.PENDING_RECONNECT) {
+                this.logger.info("service worker's connection to content script was lost partway through the controller's processing of some step; reestablishing connection")
+                await this.injectPageActorScript(false);
+            } else {
+                this.logger.error("service worker's connection to content script was lost while not waiting for action, " +
+                    "but rather in state " + AgentControllerState[this.state] + "; terminating current task " + this.taskSpecification);
+                this.terminateTask();
+                //todo Boyuan may eventually want recovery logic here for the user accidentally closing the tab or for the tab/page crashing
+                // reloading or reopening the tab might require adding even more permissions to the manifest.json
+            }
+        });
+    }
+
+    //todo jsdoc
+    killPageConnection = (pageConn: Port): void => {
+        try {
+            pageConn.onDisconnect.removeListener(this.handlePageDisconnectFromAgentController);
+            if (pageConn.onDisconnect.hasListeners()) {
+                this.logger.error("something went wrong when removing the onDisconnect listener for the port "
+                    + pageConn.name + "between service worker and content script. the onDisconnect event of that port " +
+                    "still has one or more listeners");
+            }
+            pageConn.disconnect();
+            this.logger.info(`successfully cleaned up content script connection ${pageConn.name}`);
+        } catch (error: any) {
+            if ('message' in error && error.message === expectedMsgForPortDisconnection) {
+                this.logger.info(`unable to clean up content script connection ${pageConn.name} because the connection to the content script was already closed`);
+            } else {
+                this.logger.error(`unexpected error while cleaning up content script connection ${pageConn.name}; error: ${error}, jsonified: ${JSON.stringify(error)}`);
+            }
+        }
+    }
+
+
+    //todo jsdoc
+    //todo b4 release, make this take an error message param and make it show an alert so the user doesn't need to look
+    // at the extension's dev console to see why the actions stopped (if param null, alert would just say task completed)
+    terminateTask = (): void => {
+        this.logger.info(`TERMINATING TASK ${this.taskId} which had specification: ${this.taskSpecification}; final this.state was ${AgentControllerState[this.state]}`);
+        this.taskId = undefined;
+        this.taskSpecification = "";
+        this.currTaskTabId = undefined;
+        this.state = AgentControllerState.IDLE;
+        this.tentativeActionInfo = undefined;
+        this.mightNextActionCausePageNav = false;
+        this.actionsSoFar = [];
+        if (this.currPortToContentScript) {
+            this.logger.info("terminating task while content script connection may still be open, attempting to close it")
+            this.killPageConnection(this.currPortToContentScript);
+            this.currPortToContentScript = undefined;
+        }
+        //todo if aiEngine ever has its own nontrivial bits of state, should probably somehow reset them here
+
+        //todo if I use console.group elsewhere, should use console.groupEnd() here repeatedly (maybe 10 times) to be
+        // completely certain that any nested groups get escaped when the task ends, even if things went really wrong with
+        // exception handling and control flow expectations wrt group management
+        // If groupEnd throws when there's no group to escape, use a try catch and the catch block would break the loop
+    }
+
+    /**
+     * @description Get the active tab in the current window (but with id set to undefined if the active tab is a chrome:// URL)
+     * @returns {Promise<chrome.tabs.Tab>} The active tab, with the id member undefined if the active tab is a chrome:// URL
+     *                                          (which scripts can't be injected into for safety reasons)
+     * @throws {Error} If the active tab is not found or doesn't have an id
+     */
+    getActiveTab = async (): Promise<chrome.tabs.Tab> => {
+        let tabs;
+        try {
+            tabs = await chrome.tabs.query({active: true, currentWindow: true});
+        } catch (error) {
+            const errMsg = `error querying active tab; error: ${error}, jsonified: ${JSON.stringify(error)}`;
+            this.logger.error(errMsg);
+            throw new Error(errMsg);
+        }
+        const tab: chrome.tabs.Tab | undefined = tabs[0];
+        if (!tab) throw new Error('Active tab not found');
+        const id = tab.id;
+        if (!id) throw new Error('Active tab id not found');
+        if (tab.url?.startsWith('chrome://')) {
+            this.logger.warn('Active tab is a chrome:// URL: ' + tab.url);
+            tab.id = undefined;
+        }
+        return tab;
+    }
+
+    sendEnterKeyPress = async (tabId: number): Promise<void> => {
+        //todo if/when adding support for press_sequentially for TYPE action, will want this helper method to flexibly
+        // handle strings of other characters; in that case, want to do testing to see if windowsVirtualKeyCode is needed or
+        // if text (and?/or? unmodifiedText) is enough (or something else)
+        await chrome.debugger.attach({tabId: tabId}, "1.3");
+        this.logger.debug(`chrome.debugger attached to the tab ${tabId} to send an Enter key press`)
+        //thanks to @activeliang https://github.com/ChromeDevTools/devtools-protocol/issues/45#issuecomment-850953391
+        await chrome.debugger.sendCommand({tabId: tabId}, "Input.dispatchKeyEvent", {
+            "type": "rawKeyDown", "windowsVirtualKeyCode": 13, "unmodifiedText": "\r", "text": "\r"
+        });
+        this.logger.debug(`chrome.debugger sent key-down keyevent for Enter/CR key to tab ${tabId}`)
+        await chrome.debugger.sendCommand({tabId: tabId}, "Input.dispatchKeyEvent", {
+            "type": "char", "windowsVirtualKeyCode": 13, "unmodifiedText": "\r", "text": "\r"
+        });
+        this.logger.debug(`chrome.debugger sent char keyevent for Enter/CR key to tab ${tabId}`)
+        await chrome.debugger.sendCommand({tabId: tabId}, "Input.dispatchKeyEvent", {
+            "type": "keyUp", "windowsVirtualKeyCode": 13, "unmodifiedText": "\r", "text": "\r"
+        });
+        this.logger.debug(`chrome.debugger sent keyup keyevent for Enter/CR key to tab ${tabId}`)
+        await chrome.debugger.detach({tabId: tabId});
+        this.logger.debug(`chrome.debugger detached from the tab ${tabId} after sending an Enter key press`)
+    }
+
+
 
 
 }

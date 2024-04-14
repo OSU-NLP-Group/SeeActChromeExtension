@@ -1,17 +1,8 @@
-/**
- * @description classes with thin wrappers around a tricky-to-mock thing like DOM-manipulation or the chrome extension API's
- * They may annoy some people, but they should reduce the complexity and brittleness of mocking in unit tests
- */
 import {DOMWindow} from "jsdom";
-
-export class ChromeWrapper {
-    //todo maybe implement this as part of putting some functions from popup.ts, background.ts, etc.
-    // into a ChromeHelper class where they can be unit tested
-}
 
 /**
  * @description class with thin wrappers around DOM interaction
- * This is a class so that it can be mocked in unit tests
+ * This is a class so that it can be mocked in unit tests (should reduce complexity/brittleness of mocking in unit tests)
  * It should never have any mutable state
  */
 export class DomWrapper {

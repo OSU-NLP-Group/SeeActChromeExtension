@@ -1,6 +1,6 @@
 import getXPath from "get-xpath";
 import {createNamedLogger} from "./shared_logging_setup";
-import {DomWrapper} from "./mockable_wrappers";
+import {DomWrapper} from "./DomWrapper";
 import log from "loglevel";
 import * as fuzz from "fuzzball";
 

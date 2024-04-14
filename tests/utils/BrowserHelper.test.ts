@@ -1,6 +1,6 @@
 import {BrowserHelper} from "../../src/utils/BrowserHelper";
 import {DOMWindow, JSDOM} from "jsdom";
-import {DomWrapper} from "../../src/utils/mockable_wrappers";
+import {DomWrapper} from "../../src/utils/DomWrapper";
 import log from "loglevel";
 import {origLoggerFactory} from "../../src/utils/shared_logging_setup";
 
