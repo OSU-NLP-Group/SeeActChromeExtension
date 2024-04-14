@@ -1,5 +1,5 @@
 import {createNamedLogger} from "./utils/shared_logging_setup";
-import {sleep} from "./utils/misc";
+import {Page2BackgroundPortMsgType, sleep} from "./utils/misc";
 import {PageActor} from "./utils/PageActor";
 
 
@@ -19,10 +19,10 @@ portToBackground.onMessage.addListener(pageActor.handleRequestFromAgentControlle
     //todo! wait here until page is loaded/stable!
     await sleep(5000);
 
-    portToBackground.postMessage({msg: "content script initialized and ready"});
+    portToBackground.postMessage({msg: Page2BackgroundPortMsgType.READY});
 
     await sleep(1000);
     if (!pageActor.hasControllerEverResponded) {
-        portToBackground.postMessage({msg: "content script initialized and ready"});
+        portToBackground.postMessage({msg: Page2BackgroundPortMsgType.READY});
     }
 })();

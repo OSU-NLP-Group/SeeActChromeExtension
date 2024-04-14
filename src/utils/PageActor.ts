@@ -1,7 +1,10 @@
 import {Logger} from "loglevel";
 import {BrowserHelper, ElementData, SerializableElementData} from "./BrowserHelper";
 import {createNamedLogger} from "./shared_logging_setup";
-import {buildGenericActionDesc, expectedMsgForPortDisconnection, sleep} from "./misc";
+import {
+    Action, Background2PagePortMsgType, buildGenericActionDesc, expectedMsgForPortDisconnection, PageRequestType,
+    Page2BackgroundPortMsgType, sleep
+} from "./misc";
 import {ChromeWrapper} from "./ChromeWrapper";
 
 type ActionOutcome = { success: boolean; result: string };
@@ -33,9 +36,8 @@ export class PageActor {
     getPageInfoForController = (): void => {
         if (this.currInteractiveElements) {
             this.logger.error("interactive elements already exist; background script might've asked for interactive elements twice in a row without in between instructing that an action be performed or without waiting for the action to be finished")
-            this.portToBackground.postMessage({
-                msg: "terminal page-side error", error: "interactive elements already exist"
-            });
+            this.portToBackground.postMessage(
+                {msg: Page2BackgroundPortMsgType.TERMINAL, error: "interactive elements already exist"});
             return;
         }
 
@@ -51,7 +53,7 @@ export class PageActor {
         //todo also retrieve current viewport position and provide that to controller logic in background script
         try {
             this.portToBackground.postMessage(
-                {msg: "sending interactive elements", interactiveElements: elementsInSerializableForm});
+                {msg: Page2BackgroundPortMsgType.PAGE_STATE, interactiveElements: elementsInSerializableForm});
         } catch (error: any) {
             if ('message' in error && error.message === expectedMsgForPortDisconnection) {
                 this.logger.info("service worker disconnected from content script while content script was gathering interactive elements (task was probably terminated by user)");
@@ -156,7 +158,7 @@ export class PageActor {
         //todo make scroll increment fraction configurable in options menu? if so, that config option would
         // also need to affect the relevant sentence of the system prompt (about magnitude of scrolling actions)
         const scrollAmount = viewportHeight * 0.75;
-        const scrollVertOffset = actionToPerform === "SCROLL_UP" ? -scrollAmount : scrollAmount;
+        const scrollVertOffset = actionToPerform === Action.SCROLL_UP ? -scrollAmount : scrollAmount;
         this.logger.trace(`scrolling page by ${scrollVertOffset}px`);
         const priorVertScrollPos = window.scrollY;
         window.scrollBy(0, scrollVertOffset);
@@ -173,7 +175,7 @@ export class PageActor {
     performPressEnterAction = async (actionOutcome: ActionOutcome,
                                      targetElementDesc: string): Promise<void> => {
         this.logger.trace(`about to press Enter on ${targetElementDesc}`);
-        const resp = await this.chromeWrapper.sendMessageToServiceWorker({reqType: "pressEnter"});
+        const resp = await this.chromeWrapper.sendMessageToServiceWorker({reqType: PageRequestType.PRESS_ENTER});
         if (resp.success) {
             this.logger.trace(`pressed Enter on ${targetElementDesc}`);
             actionOutcome.success = true;
@@ -187,10 +189,10 @@ export class PageActor {
         if (!this.currInteractiveElements) {
             this.logger.error("perform action message received from background script but no interactive elements are currently stored");
             this.portToBackground.postMessage(
-                {msg: "terminal page-side error", error: "no interactive elements stored to be acted on"});
+                {msg: Page2BackgroundPortMsgType.TERMINAL, error: "no interactive elements stored to be acted on"});
             return;
         }
-        const actionToPerform: string = message.action;// todo make enum for action types/names in misc.ts
+        const actionToPerform: Action = message.action;
         const valueForAction: string | undefined = message.value;
 
         const actionOutcome: ActionOutcome = {success: false, result: ""};
@@ -217,7 +219,7 @@ export class PageActor {
 
             this.logger.trace("performing action <" + actionToPerform + "> on element <" + elementToActOnData.tagHead + "> " + elementToActOnData.description);
 
-            if (actionToPerform === "CLICK") {
+            if (actionToPerform === Action.CLICK) {
                 this.logger.trace("clicking element");
                 elementToActOn.click();
                 actionOutcome.result += "; clicked element with js";
@@ -228,29 +230,29 @@ export class PageActor {
                 //  https://developer.chrome.com/docs/extensions/reference/api/debugger#method-sendCommand
                 //  https://chromedevtools.github.io/devtools-protocol/1-2/Input/
                 actionOutcome.success = true;
-            } else if (actionToPerform === "TYPE") {
+            } else if (actionToPerform === Action.TYPE) {
                 this.typeIntoElement(elementToActOn, valueForAction, tagName, actionOutcome);
-            } else if (actionToPerform === "PRESS_ENTER") {
+            } else if (actionToPerform === Action.PRESS_ENTER) {
                 elementToActOn.focus();
                 //todo explore focusVisible:true option, and/or a conditional poll/wait approach to ensure the element is
                 // focused before we send the Enter key event
                 await sleep(50);
                 await this.performPressEnterAction(actionOutcome, "a particular element");
-            } else if (actionToPerform === "SELECT") {
+            } else if (actionToPerform === Action.SELECT) {
                 this.performSelectAction(valueForAction, tagName, elementToActOn, actionOutcome);
             } else {
                 this.logger.warn("unknown action type: " + actionToPerform);
                 actionOutcome.result = "unknown action type: " + actionToPerform;
             }
 
-            //todo? HOVER?
+            //todo HOVER
             // maybe use this https://chromedevtools.github.io/devtools-protocol/1-3/Input/#method-dispatchMouseEvent
             // with type "mouseMoved"
 
         } else {
-            if (actionToPerform === "SCROLL_UP" || actionToPerform === "SCROLL_DOWN") {
+            if (actionToPerform === Action.SCROLL_UP || actionToPerform === Action.SCROLL_DOWN) {
                 this.performScrollAction(actionToPerform, actionOutcome);
-            } else if (actionToPerform === "PRESS_ENTER") {
+            } else if (actionToPerform === Action.PRESS_ENTER) {
                 await this.performPressEnterAction(actionOutcome, "whatever element had focus in the tab")
                 //todo open question for chrome.debugger api: how to handle the case where the tab is already being
                 // debugged by another extension (or if chrome dev tools side panel is open??)? tell the LLM that
@@ -273,7 +275,7 @@ export class PageActor {
 
         try {
             this.portToBackground.postMessage(
-                {msg: "action performed", success: actionOutcome.success, result: actionOutcome.result});
+                {msg: Page2BackgroundPortMsgType.ACTION_DONE, success: actionOutcome.success, result: actionOutcome.result});
         } catch (error: any) {
             if ('message' in error && error.message === expectedMsgForPortDisconnection) {
                 this.logger.info("service worker disconnected from content script while content script was performing action (task was probably terminated by user)");
@@ -287,10 +289,9 @@ export class PageActor {
     handleRequestFromAgentController = async (message: any): Promise<void> => {
         this.logger.trace(`message received from background script: ${JSON.stringify(message)} by page ${document.URL}`);
         this.hasControllerEverResponded = true;
-        //todo enum for controller to page message types
-        if (message.msg === "get interactive elements") {
+        if (message.msg === Background2PagePortMsgType.REQ_PAGE_STATE) {
             this.getPageInfoForController();
-        } else if (message.msg === "perform action") {
+        } else if (message.msg === Background2PagePortMsgType.REQ_ACTION) {
             await this.performActionFromController(message);
         } else {
             this.logger.warn("unknown message from background script: " + JSON.stringify(message));

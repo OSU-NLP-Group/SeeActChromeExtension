@@ -4,6 +4,7 @@ import log from "loglevel";
 import Port = chrome.runtime.Port;
 import MessageSender = chrome.runtime.MessageSender;
 import {AgentController, AgentControllerState} from "./utils/AgentController";
+import {PageRequestType} from "./utils/misc";
 
 
 console.log("successfully loaded background script in browser");
@@ -60,10 +61,6 @@ chrome.runtime.onInstalled.addListener(function (details) {
 // https://developer.mozilla.org/en-US/docs/Web/API/Performance/now#performance.now_vs._date.now
 
 
-//todo to avoid the user having to keep the extension's devtools window open whenever they want to use the web agent,
-// the aiengine/agentcontroller initialization will probably need to go in the handleMsgFromPage() function in the
-// "startTask" else-if block
-
 //eventually allow other api's/model-providers
 const modelName: string = "gpt-4-turbo";
 //REMINDER - DO NOT COMMIT ANY NONTRIVIAL EDITS OF THE FOLLOWING LINE
@@ -84,12 +81,11 @@ let agentController: AgentController | undefined = new AgentController(aiEngine)
  * @return true to indicate to chrome that the requester's connection should be held open to wait for a response
  */
 function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (response?: any) => void): boolean {
-    if (request.reqType !== "log") {
+    if (request.reqType !== PageRequestType.LOG) {
         centralLogger.trace("request received by service worker", sender.tab ?
             "from a content script:" + sender.tab.url : "from the extension");
     }
-    //todo enum for ephemeral messages' reqType values
-    if (request.reqType === "log") {
+    if (request.reqType === PageRequestType.LOG) {
         if (!centralLogger) {
             centralLogger = createNamedLogger('service-worker', true);
         }
@@ -105,14 +101,14 @@ function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (r
         }
         console[consoleMethodNm](augmentLogMsg(timestamp, loggerName, level, args));
         sendResponse({success: true});
-    } else if (request.reqType === "startTask") {
+    } else if (request.reqType === PageRequestType.START_TASK) {
         if (!agentController) {
             aiEngine = new OpenAiEngine(modelName, apiKey);
             agentController = new AgentController(aiEngine);
         }
         if (!centralLogger) {centralLogger = createNamedLogger('service-worker', true);}
         agentController.mutex.runExclusive(async () => await agentController?.startTask(request, sendResponse));
-    } else if (request.reqType === "endTask") {
+    } else if (request.reqType === PageRequestType.END_TASK) {
         if (!agentController) {
             sendResponse({
                 success: false,
@@ -130,7 +126,7 @@ function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (r
                 }
             });
         }
-    } else if (request.reqType === "pressEnter") {
+    } else if (request.reqType === PageRequestType.PRESS_ENTER) {
         if (!agentController) {
             sendResponse({success: false, message: "Cannot press enter when agent controller is not initialized"});
         } else if (agentController.currTaskTabId === undefined) {

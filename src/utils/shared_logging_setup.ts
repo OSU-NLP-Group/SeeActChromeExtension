@@ -1,4 +1,5 @@
 import log, {LogLevelNames} from "loglevel";
+import {PageRequestType} from "./misc";
 
 export const origLoggerFactory = log.methodFactory;
 
@@ -28,10 +29,7 @@ export const createNamedLogger = (loggerName: string, inServiceWorker: boolean):
                 rawMethod(msg);
 
                 chrome.runtime.sendMessage({
-                    reqType: 'log',
-                    timestamp: timestampStr,
-                    loggerName: loggerName,
-                    level: methodName,
+                    reqType: PageRequestType.LOG, timestamp: timestampStr, loggerName: loggerName, level: methodName,
                     args: args
                 }).catch((err) => {
                     console.error("error [<", err, ">] while sending log message [<", msg,

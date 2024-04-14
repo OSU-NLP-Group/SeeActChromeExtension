@@ -1,4 +1,5 @@
 import {createNamedLogger} from "./utils/shared_logging_setup";
+import {PageRequestType} from "./utils/misc";
 
 const logger = createNamedLogger('main-popup', false);
 
@@ -22,10 +23,8 @@ startButton.addEventListener('click', async () => {
         return;
     }
     const taskSpec = taskSpecField.value;
-    const taskStartResponse = await chrome.runtime.sendMessage({
-        reqType: "startTask",
-        taskSpecification: taskSpec
-    });
+    const taskStartResponse = await chrome.runtime.sendMessage(
+        {reqType: PageRequestType.START_TASK, taskSpecification: taskSpec});
 
     statusDiv.style.display = 'block';
     if (taskStartResponse.success) {
@@ -50,9 +49,7 @@ startButton.addEventListener('click', async () => {
 
 killButton.addEventListener('click', async () => {
     logger.trace('endTask button clicked');
-    const taskEndResponse = await chrome.runtime.sendMessage({
-        reqType: "endTask"
-    });
+    const taskEndResponse = await chrome.runtime.sendMessage({reqType: PageRequestType.END_TASK});
 
     if (taskEndResponse.success) {
         statusDiv.textContent = `Task ${taskEndResponse.taskId} ended successfully`;

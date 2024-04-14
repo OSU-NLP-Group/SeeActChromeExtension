@@ -5,7 +5,10 @@ import {v4 as uuidV4} from 'uuid';
 import {Logger} from "loglevel";
 import {createNamedLogger} from "./shared_logging_setup";
 import {OpenAiEngine} from "./OpenAiEngine";
-import {buildGenericActionDesc, expectedMsgForPortDisconnection, sleep} from "./misc";
+import {
+    Action, Background2PagePortMsgType, buildGenericActionDesc, expectedMsgForPortDisconnection, sleep,
+    Page2BackgroundPortMsgType
+} from "./misc";
 import {formatChoices, generatePrompt, postProcessActionLlm, StrTriple} from "./format_prompts";
 import {getIndexFromOptionName} from "./format_prompt_utils";
 import {ChromeWrapper} from "./ChromeWrapper";
@@ -134,7 +137,7 @@ export class AgentController {
 
         this.state = AgentControllerState.WAITING_FOR_ELEMENTS
         try {
-            port.postMessage({msg: "get interactive elements"});
+            port.postMessage({msg: Background2PagePortMsgType.REQ_PAGE_STATE});
         } catch (error: any) {
             if ('message' in error && error.message === expectedMsgForPortDisconnection) {
                 this.logger.info("content script disconnected from service worker while processing initial message and before trying to request interactive elements; task will resume after new content script connection is established");
@@ -193,11 +196,11 @@ export class AgentController {
         const [elementName, actionName, value] = postProcessActionLlm(groundingOutput);
         this.logger.debug(`suggested action: ${actionName}; value: ${value}`);
 
-        if (actionName === "TERMINATE") {
+        if (actionName === Action.TERMINATE) {
             this.logger.info("Task completed!");
             this.terminateTask();
             return;
-        } else if (actionName === "NONE") {
+        } else if (actionName === Action.NONE) {
             //todo remove this temp hacky patch
             this.logger.warn("ai selected NONE action, terminating task as dead-ended");
             this.terminateTask();
@@ -206,7 +209,8 @@ export class AgentController {
             // not simply kill the task
             // maybe increase temperature on next api call? and/or add more to prompt
         }
-        const actionNeedsNoElement = actionName === "SCROLL_UP" || actionName === "SCROLL_DOWN" || actionName === "PRESS_ENTER";
+        const actionNeedsNoElement = actionName === Action.SCROLL_UP || actionName === Action.SCROLL_DOWN
+            || actionName === Action.PRESS_ENTER;
 
         let chosenCandidateIndex = getIndexFromOptionName(elementName);
 
@@ -242,12 +246,13 @@ export class AgentController {
             elementData: chosenElementIndex ? interactiveElements[chosenElementIndex] : undefined
         };
         //todo add TYPE and SELECT here if I ever see or get reports of such actions causing page navigation
-        this.mightNextActionCausePageNav = (actionName === "PRESS_ENTER" || actionName === "CLICK");
+        this.mightNextActionCausePageNav = (actionName === Action.PRESS_ENTER || actionName === Action.CLICK);
 
         this.state = AgentControllerState.WAITING_FOR_ACTION;
         try {
             port.postMessage({
-                msg: "perform action", elementIndex: chosenElementIndex, action: actionName, value: value
+                msg: Background2PagePortMsgType.REQ_ACTION, elementIndex: chosenElementIndex, action: actionName,
+                value: value
             });
         } catch (error: any) {
             if ('message' in error && error.message === expectedMsgForPortDisconnection) {
@@ -311,7 +316,7 @@ export class AgentController {
             this.mightNextActionCausePageNav = false;
             this.state = AgentControllerState.WAITING_FOR_ELEMENTS
             try {
-                port.postMessage({msg: "get interactive elements"});
+                port.postMessage({msg: Background2PagePortMsgType.REQ_PAGE_STATE});
             } catch (error: any) {
                 if ('message' in error && error.message === expectedMsgForPortDisconnection) {
                     this.logger.info("content script disconnected from service worker while processing completed action and before trying to request more interactive elements; task will resume after new content script connection is established");
@@ -326,14 +331,13 @@ export class AgentController {
 
     //todo jsdoc
     handlePageMsgToAgentController = async (message: any, port: Port): Promise<void> => {
-        //todo enum for page actor to agent controller message types
-        if (message.msg === "content script initialized and ready") {
+        if (message.msg === Page2BackgroundPortMsgType.READY) {
             await this.mutex.runExclusive(() => {this.processPageActorInitialized(port);});
-        } else if (message.msg === "sending interactive elements") {
+        } else if (message.msg === Page2BackgroundPortMsgType.PAGE_STATE) {
             await this.mutex.runExclusive(async () => {await this.processPageStateFromActor(message, port);});
-        } else if (message.msg === "action performed") {
+        } else if (message.msg === Page2BackgroundPortMsgType.ACTION_DONE) {
             await this.mutex.runExclusive(async () => {await this.processActionPerformedConfirmation(message, port);});
-        } else if (message.msg === "terminal page-side error") {
+        } else if (message.msg === Page2BackgroundPortMsgType.TERMINAL) {
             await this.mutex.runExclusive(() => {
                 this.logger.error("something went horribly wrong in the content script, so terminating the task; details: ", message.error);
                 this.terminateTask();
