@@ -7,10 +7,18 @@ import {
 } from "./misc";
 import {ChromeWrapper} from "./ChromeWrapper";
 
+/**
+ * used to allow local variables success and result from the main action-performing method to be passed by reference
+ * to helper functions
+ */
 type ActionOutcome = { success: boolean; result: string };
 
 
-//todo jsdoc
+/**
+ * Class that represents the actor that interacts with the page on behalf of the background script's controller logic.
+ * It is responsible for gathering information about the page's state (e.g. interactive elements) and performing actions
+ * on the page (e.g. clicking, typing, scrolling) as instructed by the controller logic.
+ */
 export class PageActor {
 
     private browserHelper: BrowserHelper;
@@ -22,17 +30,27 @@ export class PageActor {
     portToBackground: chrome.runtime.Port;
     readonly logger: Logger;
 
-    //todo jsdoc
+    /**
+     * Constructor for the PageActor class.
+     * @param portToBackground The port object used to communicate with the agent controller in the background script.
+     * @param browserHelper An instance of the BrowserHelper class that provides utility methods for interacting with the page.
+     *                      Used during unit tests to inject an instance of BrowserHelper that contains mocks.
+     * @param logger the logger for the page actor; used to inject a simplified logger during unit tests
+     * @param chromeWrapper a wrapper to allow mocking of Chrome extension API calls
+     */
     constructor(portToBackground: chrome.runtime.Port, browserHelper?: BrowserHelper, logger?: Logger,
                 chromeWrapper?: ChromeWrapper) {
+        this.portToBackground = portToBackground;
         this.browserHelper = browserHelper ?? new BrowserHelper();
         this.chromeWrapper = chromeWrapper ?? new ChromeWrapper();
-        this.portToBackground = portToBackground;
         this.logger = logger ?? createNamedLogger('page-actor', false);
     }
 
 
-    //todo jsdoc
+    /**
+     * Method that retrieves information about the page's state (e.g. interactive elements) and sends it to the
+     * controller
+     */
     getPageInfoForController = (): void => {
         if (this.currInteractiveElements) {
             this.logger.error("interactive elements already exist; background script might've asked for interactive elements twice in a row without in between instructing that an action be performed or without waiting for the action to be finished")
@@ -63,10 +81,17 @@ export class PageActor {
         }
     }
 
-    //todo jsdoc
-    typeIntoElement = (elementToActOn: HTMLElement, valueForAction: string | undefined, tagName: string,
-                       actionOutcome: ActionOutcome): string => {
+    /**
+     * Method that performs the 'TYPE' action on an element on the page.
+     * @param elementToActOn The element which the text should be typed into
+     * @param valueForAction the text that should be typed
+     * @param actionOutcome pass-by-reference for the nested success and result variables in the main
+     *                       performActionFromController method
+     */
+    typeIntoElement = (elementToActOn: HTMLElement, valueForAction: string | undefined, actionOutcome: ActionOutcome
+    ): string => {
         const priorElementText = this.browserHelper.getElementText(elementToActOn);
+        const tagName = elementToActOn.tagName.toLowerCase();
 
         this.logger.trace("typing value [<" + valueForAction + ">] into element with prior text [<" + priorElementText + ">]");
         if (valueForAction === undefined) {
@@ -124,10 +149,18 @@ export class PageActor {
         return valueForAction;
     }
 
-    //todo jsdoc
-    performSelectAction = (valueForAction: string | undefined, tagName: string, elementToActOn: HTMLElement,
+    /**
+     * Method that performs the 'SELECT' action on a select element on the page.
+     * @param valueForAction the value of the option to select
+     * @param elementToActOn the select element to act on
+     * @param actionOutcome pass-by-reference for the nested success and result variables in the main
+     *                       performActionFromController method
+     * @returns the value of the option that was actually selected, or undefined if none was selected
+     */
+    performSelectAction = (valueForAction: string | undefined, elementToActOn: HTMLElement,
                            actionOutcome: ActionOutcome): string | undefined => {
         let selectedOptVal: string | undefined;
+        const tagName = elementToActOn.tagName.toLowerCase();
         this.logger.trace("entered SELECT action branch");
         if (valueForAction === undefined) {
             this.logger.warn("no value provided for SELECT action; rejecting action");
@@ -151,8 +184,13 @@ export class PageActor {
         return selectedOptVal;
     }
 
-    //todo jsdoc
-    performScrollAction = (actionToPerform: string, actionOutcome: ActionOutcome): void => {
+    /**
+     * Method that performs the 'SCROLL_UP' or 'SCROLL_DOWN' action on the page.
+     * @param actionToPerform the type of scroll action to perform
+     * @param actionOutcome pass-by-reference for the nested success and result variables in the main
+     *                       performActionFromController method
+     */
+    performScrollAction = (actionToPerform: Action, actionOutcome: ActionOutcome): void => {
         const docElement = document.documentElement;
         const viewportHeight = docElement.clientHeight;
         //todo make scroll increment fraction configurable in options menu? if so, that config option would
@@ -171,7 +209,12 @@ export class PageActor {
         }
     }
 
-    //todo jsdoc
+    /**
+     * Method that performs the 'PRESS_ENTER' action on whatever element is focused in the page.
+     * @param actionOutcome pass-by-reference for the nested success and result variables in the main
+     *                       performActionFromController method
+     * @param targetElementDesc a description of the element that the Enter key event is being sent to
+     */
     performPressEnterAction = async (actionOutcome: ActionOutcome,
                                      targetElementDesc: string): Promise<void> => {
         this.logger.trace(`about to press Enter on ${targetElementDesc}`);
@@ -184,7 +227,13 @@ export class PageActor {
         }
     }
 
-    //todo jsdoc
+    /**
+     * Method that performs the action specified in the message received from the background script, then notifies
+     * the background script of the outcome of the action (unless the action caused a page navigation in the current
+     * tab, in which case the current page's content script would be terminated before it could send the outcome,
+     * but the background script would be notified separately of the disconnection).
+     * @param message the message received from the background script that describes the action to perform
+     */
     performActionFromController = async (message: any): Promise<void> => {
         if (!this.currInteractiveElements) {
             this.logger.error("perform action message received from background script but no interactive elements are currently stored");
@@ -199,7 +248,6 @@ export class PageActor {
 
         if (message.elementIndex) {
             const elementToActOnData = this.currInteractiveElements[message.elementIndex];
-            const tagName = elementToActOnData.tagName;
             const elementToActOn = elementToActOnData.element;
 
             actionOutcome.result = buildGenericActionDesc(actionToPerform, elementToActOnData, valueForAction);
@@ -231,7 +279,7 @@ export class PageActor {
                 //  https://chromedevtools.github.io/devtools-protocol/1-2/Input/
                 actionOutcome.success = true;
             } else if (actionToPerform === Action.TYPE) {
-                this.typeIntoElement(elementToActOn, valueForAction, tagName, actionOutcome);
+                this.typeIntoElement(elementToActOn, valueForAction, actionOutcome);
             } else if (actionToPerform === Action.PRESS_ENTER) {
                 elementToActOn.focus();
                 //todo explore focusVisible:true option, and/or a conditional poll/wait approach to ensure the element is
@@ -239,7 +287,7 @@ export class PageActor {
                 await sleep(50);
                 await this.performPressEnterAction(actionOutcome, "a particular element");
             } else if (actionToPerform === Action.SELECT) {
-                this.performSelectAction(valueForAction, tagName, elementToActOn, actionOutcome);
+                this.performSelectAction(valueForAction, elementToActOn, actionOutcome);
             } else {
                 this.logger.warn("unknown action type: " + actionToPerform);
                 actionOutcome.result = "unknown action type: " + actionToPerform;
@@ -274,8 +322,10 @@ export class PageActor {
         //this part would only be reached if the action didn't cause page navigation in current tab
 
         try {
-            this.portToBackground.postMessage(
-                {msg: Page2BackgroundPortMsgType.ACTION_DONE, success: actionOutcome.success, result: actionOutcome.result});
+            this.portToBackground.postMessage({
+                msg: Page2BackgroundPortMsgType.ACTION_DONE, success: actionOutcome.success,
+                result: actionOutcome.result
+            });
         } catch (error: any) {
             if ('message' in error && error.message === expectedMsgForPortDisconnection) {
                 this.logger.info("service worker disconnected from content script while content script was performing action (task was probably terminated by user)");
@@ -285,7 +335,10 @@ export class PageActor {
         }
     }
 
-    //todo jsdoc
+    /**
+     * Method that handles messages received from the agent controller in the background script.
+     * @param message the message received from the agent controller
+     */
     handleRequestFromAgentController = async (message: any): Promise<void> => {
         this.logger.trace(`message received from background script: ${JSON.stringify(message)} by page ${document.URL}`);
         this.hasControllerEverResponded = true;

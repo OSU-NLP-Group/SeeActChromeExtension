@@ -1,4 +1,5 @@
 import {generateNewQueryPrompt, generateNewReferringPrompt, StrPair} from "./format_prompt_utils";
+import {Action} from "./misc";
 
 
 /**
@@ -71,7 +72,7 @@ export const formatChoices = (elements: Array<StrTriple>, candidateIds: Array<nu
  *          third string is the text value (empty string if no value was available)
  */
 //todo later idea for improvement is to leverage open ai api's "forced json" output mode instead of this regex-based parsing
-export const postProcessActionLlm = (llmText: string): [string, string, string] => {
+export const postProcessActionLlm = (llmText: string): [string, Action, string] => {
     //sorted/deduplicated copy of list from src/format_prompt.py
     //todo confer with Boyuan about whether this particular pre-processing is actually adding any value at this point
     const llmJunkStrings = [
@@ -129,10 +130,10 @@ export const postProcessActionLlm = (llmText: string): [string, string, string] 
         elementChoice = elementMatch[1];
     }
 
-    let actionChoice = "None";
+    let actionChoice: Action = Action.NONE;
     const actionMatch: RegExpMatchArray | null = llmText.match(/ACTION: (CLICK|SELECT|TYPE|HOVER|PRESS_ENTER|SCROLL_UP|SCROLL_DOWN|TERMINATE|NONE)/);
     if (actionMatch) {
-        actionChoice = actionMatch[1];
+        actionChoice = actionMatch[1] as Action;
     }
 
     let valueChoice = "";

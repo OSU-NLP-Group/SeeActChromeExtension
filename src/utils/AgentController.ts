@@ -13,20 +13,23 @@ import {formatChoices, generatePrompt, postProcessActionLlm, StrTriple} from "./
 import {getIndexFromOptionName} from "./format_prompt_utils";
 import {ChromeWrapper} from "./ChromeWrapper";
 
-
+/**
+ * states for the agent controller FSM
+ */
 export enum AgentControllerState {
     IDLE,//i.e. no active task
     WAITING_FOR_CONTENT_SCRIPT_INIT,//there's an active task, but injection of content script hasn't completed yet
     ACTIVE,//partway through an event handler function
-    WAITING_FOR_ELEMENTS,// waiting for content script to retrieve interactive elements from page
+    WAITING_FOR_PAGE_STATE,// waiting for content script to retrieve page state (e.g. interactive elements) from page
     WAITING_FOR_ACTION,//waiting for content script to perform an action on an element
     PENDING_RECONNECT//content script disconnected, but waiting for new connection to be established when the onDisconnect listener gets to run
 }
 
+type ActionInfo = { elementIndex?: number, elementData?: SerializableElementData, action: Action, value?: string };
 
-type ActionInfo = { elementIndex?: number, elementData?: SerializableElementData, action: string, value?: string };
-
-//todo jsdoc
+/**
+ * @description Controller for the agent that completes tasks for the user in their browser
+ */
 export class AgentController {
     readonly mutex = new Mutex();
 
@@ -47,15 +50,27 @@ export class AgentController {
     private chromeWrapper: ChromeWrapper;
     readonly logger: Logger;
 
-    constructor(aiEngine: OpenAiEngine, logger?: Logger, chromeWrapper?: ChromeWrapper) {
+    /**
+     * @description Constructor for the AgentController
+     * @param aiEngine The OpenAiEngine instance to use for analyzing the situation and generating actions
+     * @param chromeWrapper a wrapper to allow mocking of Chrome extension API calls
+     */
+    constructor(aiEngine: OpenAiEngine, chromeWrapper?: ChromeWrapper) {
         this.aiEngine = aiEngine;
         this.chromeWrapper = chromeWrapper ?? new ChromeWrapper();
 
-        this.logger = logger ?? createNamedLogger('agent-controller', true);
+        this.logger = createNamedLogger('agent-controller', true);
     }
 
 
-    //todo jsdoc
+    /**
+     * @description Injects the agent's page-interaction/data-gathering script into the current tab
+     * @param isStartOfTask Whether this injection is to start a new task or to continue an existing one (e.g. after
+     *                      a page navigation)
+     * @param sendResponse Optional callback to send a response back to the caller if it's a start-of-task injection
+     * @param newTab optional tab object to inject the script into, to avoid wasted effort if the caller has already
+     *                identified the active tab
+     */
     injectPageActorScript = async (isStartOfTask: boolean, sendResponse?: (response?: any) => void, newTab?: chrome.tabs.Tab): Promise<void> => {
         let tabId: number | undefined = undefined;
         let tab: chrome.tabs.Tab | undefined = newTab;
@@ -106,7 +121,11 @@ export class AgentController {
     }
 
 
-    //todo jsdoc
+    /**
+     * @description Starts a new task for the agent to complete
+     * @param request The request object describing the new task
+     * @param sendResponse The callback to send a response back to the caller that requested the new task
+     */
     startTask = async (request: any, sendResponse: (response?: any) => void): Promise<void> => {
         if (this.taskId !== undefined) {
             const taskRejectMsg = `Task ${this.taskId} already in progress; not starting new task`;
@@ -126,7 +145,11 @@ export class AgentController {
         }
     }
 
-    //todo jsdoc
+    /**
+     * @description deals with notification from content script that the page actor is ready to accept requests from
+     * the controller
+     * @param port the port object representing the connection between the service worker and the content script
+     */
     processPageActorInitialized = (port: Port): void => {
         if (this.state !== AgentControllerState.WAITING_FOR_CONTENT_SCRIPT_INIT) {
             this.logger.error("received 'content script initialized and ready' message from content script while not waiting for content script initialization, but rather in state " + AgentControllerState[this.state]);
@@ -135,7 +158,7 @@ export class AgentController {
         }
         this.logger.trace("content script initialized and ready; requesting interactive elements")
 
-        this.state = AgentControllerState.WAITING_FOR_ELEMENTS
+        this.state = AgentControllerState.WAITING_FOR_PAGE_STATE
         try {
             port.postMessage({msg: Background2PagePortMsgType.REQ_PAGE_STATE});
         } catch (error: any) {
@@ -151,9 +174,14 @@ export class AgentController {
 
     //todo later, look for ways to break this up
     // !! before sending to Prof Su!
-    //todo jsdoc
+    /**
+     * given page information (e.g. interactive elements) from the page actor in the content script, determine via LLM
+     * what the next step should be and then send a request for that action to the page actor
+     * @param message the message from the content script containing the page state information
+     * @param port the port object representing the connection between the service worker and the content script
+     */
     processPageStateFromActor = async (message: any, port: Port): Promise<void> => {
-        if (this.state !== AgentControllerState.WAITING_FOR_ELEMENTS) {
+        if (this.state !== AgentControllerState.WAITING_FOR_PAGE_STATE) {
             this.logger.error("received 'sending interactive elements' message from content script while not waiting for elements, but rather in state " + AgentControllerState[this.state]);
             this.terminateTask();
             return;
@@ -266,7 +294,12 @@ export class AgentController {
         }
     }
 
-    //todo jsdoc
+    /**
+     * @description Processes the confirmation from the content script that an action was performed, and then requests
+     * information about the new page state from the content script
+     * @param message the message from the content script containing the result of the action
+     * @param port the port object representing the connection between the service worker and the content script
+     */
     processActionPerformedConfirmation = async (message: any, port: Port): Promise<void> => {
         if (this.state !== AgentControllerState.WAITING_FOR_ACTION) {
             this.logger.error("received 'action performed' message from content script while not waiting for action, but rather in state " + AgentControllerState[this.state]);
@@ -279,7 +312,7 @@ export class AgentController {
         const wasSuccessful: boolean = message.success;
         let actionDesc: string = message.result ? message.result :
             (this.tentativeActionInfo ?
-                    buildGenericActionDesc(this.tentativeActionInfo?.action, this.tentativeActionInfo?.elementData,
+                    buildGenericActionDesc(this.tentativeActionInfo.action, this.tentativeActionInfo.elementData,
                         this.tentativeActionInfo?.value)
                     : "no information stored about the action"
             );
@@ -314,7 +347,7 @@ export class AgentController {
             this.mightNextActionCausePageNav = false;
         } else {
             this.mightNextActionCausePageNav = false;
-            this.state = AgentControllerState.WAITING_FOR_ELEMENTS
+            this.state = AgentControllerState.WAITING_FOR_PAGE_STATE
             try {
                 port.postMessage({msg: Background2PagePortMsgType.REQ_PAGE_STATE});
             } catch (error: any) {
@@ -329,7 +362,11 @@ export class AgentController {
         }
     }
 
-    //todo jsdoc
+    /**
+     * @description Handles messages from the content script to the service worker over their persistent connection
+     * @param message the message from the content script
+     * @param port the port object representing the connection between the service worker and the content script
+     */
     handlePageMsgToAgentController = async (message: any, port: Port): Promise<void> => {
         if (message.msg === Page2BackgroundPortMsgType.READY) {
             await this.mutex.runExclusive(() => {this.processPageActorInitialized(port);});
@@ -347,7 +384,11 @@ export class AgentController {
         }
     }
 
-    //todo jsdoc
+    /**
+     * @description deals with the case where the content script disconnects from the service worker while the
+     * controller is waiting for the content script to perform an action; reinjecting the content script into the
+     * (presumably new) page
+     */
     processActorDisconnectDuringAction = async (): Promise<void> => {
         if (!this.tentativeActionInfo) {
             this.logger.error("service worker's connection to content script was lost while performing an " +
@@ -380,7 +421,10 @@ export class AgentController {
         this.mightNextActionCausePageNav = false;
     }
 
-    //todo jsdoc
+    /**
+     * @description Handles a loss of the connection between the content script and the service worker
+     * @param port the port object representing the connection between the service worker and the content script
+     */
     handlePageDisconnectFromAgentController = async (port: Port): Promise<void> => {
         await this.mutex.runExclusive(async () => {
             this.logger.debug("content script disconnected from service worker; port name:", port.name);
@@ -401,7 +445,11 @@ export class AgentController {
         });
     }
 
-    //todo jsdoc
+    /**
+     * @description ends any connection the service worker may still have to the content script, which should
+     * eliminate any further computation in the targeted content script
+     * @param pageConn the port object representing the connection between the service worker and the content script
+     */
     killPageConnection = (pageConn: Port): void => {
         try {
             pageConn.onDisconnect.removeListener(this.handlePageDisconnectFromAgentController);
@@ -422,9 +470,13 @@ export class AgentController {
     }
 
 
-    //todo jsdoc
+
     //todo b4 release, make this take an error message param and make it show an alert so the user doesn't need to look
     // at the extension's dev console to see why the actions stopped (if param null, alert would just say task completed)
+    /**
+     * @description Terminates the current task, resetting any state and cleaning up the page connection if it's still
+     * open
+     */
     terminateTask = (): void => {
         this.logger.info(`TERMINATING TASK ${this.taskId} which had specification: ${this.taskSpecification}; final this.state was ${AgentControllerState[this.state]}`);
         this.taskId = undefined;
@@ -473,6 +525,10 @@ export class AgentController {
         return tab;
     }
 
+    /**
+     * @description Sends an Enter key press to the tab with the given id
+     * @param tabId the id of the tab to send the Enter key press to
+     */
     sendEnterKeyPress = async (tabId: number): Promise<void> => {
         //todo if/when adding support for press_sequentially for TYPE action, will want this helper method to flexibly
         // handle strings of other characters; in that case, want to do testing to see if windowsVirtualKeyCode is needed or

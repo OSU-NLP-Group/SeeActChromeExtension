@@ -148,8 +148,14 @@ function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (r
 chrome.runtime.onMessage.addListener(handleMsgFromPage);
 
 
-//todo jsdoc; this is for persistent connection that allows interaction between agent control loop in service worker
-// and dom data-collection/actions in content script
+/**
+ * @description Handle a connection being opened from a content script (page actor) to the agent controller in the
+ * service worker
+ * Cannot be in AgentController because a service worker's main listeners must be at the top level of the background
+ * script, and we can't guarantee that, when a message arrives, the script-global variables like agentController will
+ * be initialized
+ * @param port the new connection opened from the content script
+ */
 function handleConnectionFromPage(port: Port): void {
     if (!centralLogger) { centralLogger = createNamedLogger("service-worker", true)}
     //todo if make port names unique (for each injected content script), change this to a "starts with" check
