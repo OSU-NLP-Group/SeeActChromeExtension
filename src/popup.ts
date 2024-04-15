@@ -45,7 +45,6 @@ startButton.addEventListener('click', async () => {
     }, 10000);
 
 });
-//todo is it worth unit testing the above handler?
 
 killButton.addEventListener('click', async () => {
     logger.trace('endTask button clicked');

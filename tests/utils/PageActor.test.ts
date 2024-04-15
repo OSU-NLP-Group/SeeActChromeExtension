@@ -334,7 +334,6 @@ describe('PageActor.performScrollAction', () => {
         actionOutcome = { success: false, result: "" };
     });
 
-
     it('should report failure if SCROLL_UP but already at top of window', () => {
         domWrapper.getVertScrollPos = jest.fn().mockReturnValueOnce(0).mockReturnValueOnce(0);
         domWrapper.scrollBy = jest.fn();
@@ -388,6 +387,8 @@ describe('PageActor.performPressEnterAction', () => {
     //todo 1 case where resp says success
 
     //todo 1 case where resp says failure
+
+    //todo 1 case where await ends in error
 });
 
 describe('PageActor.performActionFromController', () => {

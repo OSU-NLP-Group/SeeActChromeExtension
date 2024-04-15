@@ -94,10 +94,10 @@ export class PageActor {
      * @return the text of the field after typing, or null if the field wasn't an editable text field
      */
     typeIntoElement = (elementToActOn: HTMLElement, valueForAction: string | undefined, actionOutcome: ActionOutcome
-    ): string|null => {
+    ): string | null => {
         const priorElementText = this.browserHelper.getElementText(elementToActOn);
         const tagName = elementToActOn.tagName.toLowerCase();
-        let result: string|null = null;
+        let result: string | null = null;
 
         this.logger.trace("typing value [<" + valueForAction + ">] into element with prior text [<" + priorElementText + ">]");
         if (valueForAction === undefined) {
@@ -229,12 +229,18 @@ export class PageActor {
     performPressEnterAction = async (actionOutcome: ActionOutcome,
                                      targetElementDesc: string): Promise<void> => {
         this.logger.trace(`about to press Enter on ${targetElementDesc}`);
-        const resp = await this.chromeWrapper.sendMessageToServiceWorker({reqType: PageRequestType.PRESS_ENTER});
-        if (resp.success) {
-            this.logger.trace(`pressed Enter on ${targetElementDesc}`);
-            actionOutcome.success = true;
-        } else {
-            actionOutcome.result += "; " + resp.message;
+        try {
+            const resp = await this.chromeWrapper.sendMessageToServiceWorker({reqType: PageRequestType.PRESS_ENTER});
+            if (resp.success) {
+                this.logger.trace(`pressed Enter on ${targetElementDesc}`);
+                actionOutcome.success = true;
+            } else {
+                actionOutcome.result += "; " + resp.message;
+                actionOutcome.success = false;
+            }
+        } catch (error: any) {
+            actionOutcome.success = false;
+            actionOutcome.result += "; error while asking service worker to press enter: " + error;
         }
     }
 
@@ -255,14 +261,14 @@ export class PageActor {
         const actionToPerform: Action = message.action;
         const valueForAction: string | undefined = message.value;
 
-        const actionOutcome: ActionOutcome = {success: false, result: ""};
+        const actionOutcome: ActionOutcome = {
+            success: false, result: buildGenericActionDesc(actionToPerform,
+                message.elementIndex ? this.currInteractiveElements[message.elementIndex] : undefined, valueForAction)
+        };
 
         if (message.elementIndex) {
             const elementToActOnData = this.currInteractiveElements[message.elementIndex];
             const elementToActOn = elementToActOnData.element;
-
-            actionOutcome.result = buildGenericActionDesc(actionToPerform, elementToActOnData, valueForAction);
-
             /*
             todo consider implementing in js a conditional polling/wait for 'stability'
              https://playwright.dev/docs/actionability#stable
@@ -309,8 +315,6 @@ export class PageActor {
             // with type "mouseMoved"
 
         } else {
-            actionOutcome.result = buildGenericActionDesc(actionToPerform, undefined, valueForAction);
-
             if (actionToPerform === Action.SCROLL_UP || actionToPerform === Action.SCROLL_DOWN) {
                 this.performScrollAction(actionToPerform, actionOutcome);
             } else if (actionToPerform === Action.PRESS_ENTER) {
