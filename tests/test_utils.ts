@@ -1,4 +1,4 @@
-
+import { DOMWindow } from 'jsdom';
 
 
 export function createMockPort(): chrome.runtime.Port {
@@ -42,4 +42,23 @@ export function createMockPort(): chrome.runtime.Port {
             frameId: 0
         }
     };
+}
+
+/**
+ * working around infuriating 8-yr-old gap in jsdom
+ * @param testWindow jsdom window whose html elements need to realistically handle contenteditable attribute and
+ *                      related properties
+ */
+export function fixHtmlElementContentEditable(testWindow: DOMWindow) {
+    Object.defineProperty(testWindow.HTMLElement.prototype, 'contentEditable', {
+        get: function() {
+            return this.getAttribute('contenteditable');
+        }
+    });
+    Object.defineProperty(testWindow.HTMLElement.prototype, 'isContentEditable', {
+        get: function() {
+            return this.getAttribute('contenteditable') === 'true';
+        }
+    });
+
 }

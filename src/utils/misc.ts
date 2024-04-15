@@ -58,7 +58,7 @@ export enum Action {
  */
 export function buildGenericActionDesc(action: Action, elementData?: SerializableElementData, value?: string): string {
     if (elementData) {
-        const valueDesc = value ? ` with value: ${(value)}` : "";
+        const valueDesc = value ? ` with value: ${value}` : "";
         return `[${elementData?.tagHead}] ${elementData?.description} -> ${action}${valueDesc}`;
     } else {
         return `Performed element-independent action ${action}`;

@@ -46,8 +46,9 @@ export class BrowserHelper {
      */
     getElementText = (elementToActOn: HTMLElement): string|null => {
         let priorElementText = elementToActOn.textContent;
-        if (elementToActOn instanceof HTMLInputElement || elementToActOn instanceof HTMLTextAreaElement) {
-            priorElementText = elementToActOn.value;
+        if (elementToActOn instanceof HTMLInputElement || elementToActOn instanceof HTMLTextAreaElement
+            || ('value' in elementToActOn && typeof(elementToActOn.value) === 'string')) {
+            priorElementText = (elementToActOn.value as string|null) ?? elementToActOn.textContent;
         }
         return priorElementText;
     }

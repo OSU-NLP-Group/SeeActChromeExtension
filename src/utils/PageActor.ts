@@ -11,7 +11,7 @@ import {ChromeWrapper} from "./ChromeWrapper";
  * used to allow local variables success and result from the main action-performing method to be passed by reference
  * to helper functions
  */
-type ActionOutcome = { success: boolean; result: string };
+export type ActionOutcome = { success: boolean; result: string };
 
 
 /**
@@ -87,20 +87,24 @@ export class PageActor {
      * @param valueForAction the text that should be typed
      * @param actionOutcome pass-by-reference for the nested success and result variables in the main
      *                       performActionFromController method
+     * @return the text of the field after typing, or null if the field wasn't an editable text field
      */
     typeIntoElement = (elementToActOn: HTMLElement, valueForAction: string | undefined, actionOutcome: ActionOutcome
-    ): string => {
+    ): string|null => {
         const priorElementText = this.browserHelper.getElementText(elementToActOn);
         const tagName = elementToActOn.tagName.toLowerCase();
+        let result: string|null = null;
 
         this.logger.trace("typing value [<" + valueForAction + ">] into element with prior text [<" + priorElementText + ">]");
         if (valueForAction === undefined) {
             this.logger.warn("no value provided for TYPE action; using empty string as value")
             valueForAction = "";
+            actionOutcome.result += "; used empty string as default for 'value'"
         }
 
         if (priorElementText === valueForAction) {
             this.logger.warn("element already has the desired text");
+            actionOutcome.result += "; element already has the desired text";
         }
 
         //if encounter problems with this (e.g. from placeholder text not going away unless you start
@@ -120,7 +124,7 @@ export class PageActor {
         } else {
             this.logger.warn("element is not an input, textarea, or contenteditable element; can't type in it. Trying to click it with js instead");
             elementToActOn.click();
-            actionOutcome.result = "element is not an input, textarea, or contenteditable element; can't type in it. Tried clicking with js instead";
+            actionOutcome.result += "; element is not an input, textarea, or contenteditable element; can't type in it. Tried clicking with js instead";
         }
         //possibly relevant thing for getting page to notice that you changed an element's text:
         // https://stackoverflow.com/questions/61190078/simulating-keypress-into-an-input-field-javascript#comment134037565_61192160
@@ -132,21 +136,22 @@ export class PageActor {
             this.logger.debug("element focused status after element.focus(): " + (document.activeElement === elementToActOn));
 
             const postTypeElementText = this.browserHelper.getElementText(elementToActOn);
+            result = postTypeElementText;
             if (postTypeElementText !== valueForAction) {
                 if (priorElementText === postTypeElementText) {
                     this.logger.warn("text of element after typing is the same as the prior text; typing might not have worked");
-                    actionOutcome.result += `element text ]${postTypeElementText}[ not changed by typing`;
+                    actionOutcome.result += `; element text [<${postTypeElementText}>] not changed by typing`;
                     actionOutcome.success = false;
                 } else {
                     this.logger.warn("text of element after typing doesn't match the desired value");
-                    actionOutcome.result += `element text after typing: ]${postTypeElementText}[ doesn't match desired value`;
+                    actionOutcome.result += `; after typing, element text: [<${postTypeElementText}>] still doesn't match desired value`;
                     actionOutcome.success = false;
                 }
                 //todo add fall-back options here like trying to clear the field and then type again, possibly
                 // using newly-written code for turning a string into a sequence of key press events and sending those to the element
             }
         }
-        return valueForAction;
+        return result;
     }
 
     /**
@@ -164,10 +169,10 @@ export class PageActor {
         this.logger.trace("entered SELECT action branch");
         if (valueForAction === undefined) {
             this.logger.warn("no value provided for SELECT action; rejecting action");
-            actionOutcome.result = "; no value provided for SELECT action, so cannot perform it";
+            actionOutcome.result += "; no value provided for SELECT action, so cannot perform it";
         } else if (tagName !== "select") {
             this.logger.warn("SELECT action given for non <select> element; rejecting action");
-            actionOutcome.result = "; SELECT action given for non <select> element, so cannot perform it";
+            actionOutcome.result += "; SELECT action given for non <select> element, so cannot perform it";
         } else {
             this.logger.trace("about to select option with value [<" + valueForAction + ">]");
             selectedOptVal = this.browserHelper.selectOption(elementToActOn, valueForAction);
@@ -178,7 +183,7 @@ export class PageActor {
                 actionOutcome.success = true;
                 actionOutcome.result += `; selected most-similar option [<${selectedOptVal}>]`;
             } else {
-                actionOutcome.result = `; failed to select any option similar to the given value`;
+                actionOutcome.result += `; failed to select any option similar to the given value`;
             }
         }
         return selectedOptVal;
@@ -290,7 +295,7 @@ export class PageActor {
                 this.performSelectAction(valueForAction, elementToActOn, actionOutcome);
             } else {
                 this.logger.warn("unknown action type: " + actionToPerform);
-                actionOutcome.result = "unknown action type: " + actionToPerform;
+                actionOutcome.result += "; unknown action type: " + actionToPerform;
             }
 
             //todo HOVER
@@ -309,7 +314,7 @@ export class PageActor {
                 this.logger.warn("no element index provided in message from background script; can't perform action "
                     + actionToPerform);
                 //The TERMINATE action is handled in the background script
-                actionOutcome.result = "no element index provided in message from background script; can't perform action "
+                actionOutcome.result += "; no element index provided in message from background script; can't perform action "
                     + actionToPerform;
             }
         }
