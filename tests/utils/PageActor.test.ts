@@ -380,6 +380,45 @@ describe('PageActor.performScrollAction', () => {
         expect(actionOutcome.success).toBe(true);
         expect(actionOutcome.result).toEqual(baseActionResult + "; scrolled page by 375px down");
     });
+});
+
+describe('PageActor.performPressEnterAction', () => {
+    //todo setup
+
+    //todo 1 case where resp says success
+
+    //todo 1 case where resp says failure
+});
+
+describe('PageActor.performActionFromController', () => {
+    //todo setup
+
+    //todo 1 case where currInteractiveElements is undefined
+
+    //todo 1 case where specific element should be clicked
+
+    //todo 1 case where specific element should be typed into
+
+    //todo 1 case where specific element should be selected
+
+    //todo 1 case where Enter should be pressed on a particular element
+
+    //todo 1 case where specific element given but unknown action for that context (e.g. SCROLL_DOWN)
+
+    //todo 1 case where no specific element given and SCROLL_UP
+
+    //todo 1 case where no specific element given and PRESS_ENTER
+
+    //todo 1 case where no specific element given but unknown action for that context (e.g. SELECT)
+
+    //
+
 
 });
+
+describe('PageActor.handleRequestFromAgentController', () => {
+    //todo
+});
+
+
 
