@@ -14,12 +14,15 @@ testLogger.methodFactory = origLoggerFactory;
 testLogger.setLevel("warn");
 testLogger.rebuild();
 
+let testWindow: DOMWindow;
+let document: Document;
+let domWrapper: DomWrapper;
+let browserHelper: BrowserHelper;
+let chromeWrapper: ChromeWrapper;
+let pageActor: PageActor;
+let mockPort: chrome.runtime.Port;
+
 describe("PageActor.getPageInfoForController", () => {
-    let domWrapper: DomWrapper;
-    let browserHelper: BrowserHelper;
-    let chromeWrapper: ChromeWrapper;
-    let pageActor: PageActor;
-    let mockPort: chrome.runtime.Port;
 
     let interactElems: ElementData[];
     let sampleSerializableElements: SerializableElementData[];
@@ -108,13 +111,6 @@ describe("PageActor.getPageInfoForController", () => {
 });
 
 describe('PageActor.typeIntoElement', () => {
-    let pageActor: PageActor;
-    let domWrapper: DomWrapper;
-    let browserHelper: BrowserHelper;
-    let chromeWrapper: ChromeWrapper;
-    let testWindow: DOMWindow;
-    let document: Document;
-    let mockPort: chrome.runtime.Port;
 
     const testStr = "some input string";
     let actionOutcome: ActionOutcome;
@@ -246,5 +242,74 @@ describe('PageActor.typeIntoElement', () => {
     });
 });
 
+describe('PageActor.performSelectAction', () => {
+
+    let actionOutcome: ActionOutcome;
+
+    beforeEach(() => {
+        testWindow = new JSDOM(`<!DOCTYPE html><body></body>`).window;
+        document = testWindow.document;
+        mockPort = createMockPort();
+        browserHelper = new BrowserHelper(domWrapper, testLogger);
+        chromeWrapper = new ChromeWrapper();
+        pageActor = new PageActor(mockPort, browserHelper, testLogger, chromeWrapper);
+
+        actionOutcome = { success: false, result: "" };
+    });
+
+    it('should reject if value undefined', () => {
+        const selectElem = document.createElement('select');
+        const baseActResult = "[select] some description -> SELECT with value: undefined";
+        actionOutcome.result = baseActResult;
+        expect(pageActor.performSelectAction(undefined, selectElem, actionOutcome)).toBeUndefined();
+        expect(actionOutcome.success).toBe(false);
+        expect(actionOutcome.result).toEqual(baseActResult + "; no value provided for SELECT action, so cannot perform it");
+    });
+
+    it('should reject if element is not a select element', () => {
+        const divElem = document.createElement('div');
+        const baseActResult = "[div] some description -> SELECT with value: test";
+        actionOutcome.result = baseActResult;
+        expect(pageActor.performSelectAction("test", divElem, actionOutcome)).toBeUndefined();
+        expect(actionOutcome.success).toBe(false);
+        expect(actionOutcome.result).toEqual(baseActResult + "; SELECT action given for non <select> element, so cannot perform it");
+    });
+
+    it('should report success if exact match between value and some option', () => {
+        const selectElem = document.createElement('select');
+        const optionElem = document.createElement('option');
+        optionElem.value = "test";
+        selectElem.appendChild(optionElem);
+        browserHelper.selectOption = jest.fn().mockReturnValue("test");
+        const baseActResult = "[select] some description -> SELECT with value: test";
+        actionOutcome.result = baseActResult;
+        expect(pageActor.performSelectAction("test", selectElem, actionOutcome)).toEqual("test");
+        expect(actionOutcome.success).toBe(true);
+        expect(actionOutcome.result).toEqual(baseActResult + "; select succeeded");
+    });
+
+    it('should report success if partial match between value and some option', () => {
+        const selectElem = document.createElement('select');
+        const optionElem = document.createElement('option');
+        optionElem.value = "test";
+        selectElem.appendChild(optionElem);
+        browserHelper.selectOption = jest.fn().mockReturnValue("test");
+        const baseActResult = "[select] some description -> SELECT with value: te";
+        actionOutcome.result = baseActResult;
+        expect(pageActor.performSelectAction("te", selectElem, actionOutcome)).toEqual("test");
+        expect(actionOutcome.success).toBe(true);
+        expect(actionOutcome.result).toEqual(baseActResult + "; selected most-similar option [<test>]");
+    });
+
+    it('should reject if no match between value and any option', () => {
+        const selectElem = document.createElement('select');
+        browserHelper.selectOption = jest.fn().mockReturnValue(undefined);
+        const baseActResult = "[select] some description -> SELECT with value: wrong";
+        actionOutcome.result = baseActResult;
+        expect(pageActor.performSelectAction("wrong", selectElem, actionOutcome)).toBeUndefined();
+        expect(actionOutcome.success).toBe(false);
+        expect(actionOutcome.result).toEqual(baseActResult + "; failed to select any option similar to the given value");
+    });
+})
 
 
