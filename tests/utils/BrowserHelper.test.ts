@@ -138,9 +138,10 @@ describe('BrowserHelper.selectOption', () => {
         ;
 
         const selectElement = domWrapper.grabElementByXpath("//select") as HTMLElement;
-        //todo fix TypeError: Failed to execute 'dispatchEvent' on 'EventTarget': parameter 1 is not of type 'Event'.
+        selectElement.dispatchEvent = jest.fn();//jsdom doesn't support
         expect(browserHelper.selectOption(selectElement, "Enginearing Admin")).toEqual("Engineering Administration");
         expect((selectElement as HTMLSelectElement).selectedIndex).toEqual(8);
+        expect(selectElement.dispatchEvent).toHaveBeenCalled();
     });
 
     it('should select the best option in a select element by partial value, even if that is a middle option', () => {
@@ -166,10 +167,11 @@ describe('BrowserHelper.selectOption', () => {
             .mockReturnValueOnce('Chemical and Biomolecular Engineering')
             .mockReturnValueOnce('Civil, Environmental, and Geodetic Engineering');
         const selectElement = domWrapper.grabElementByXpath("//select") as HTMLElement;
-        //todo fix TypeError: Failed to execute 'dispatchEvent' on 'EventTarget': parameter 1 is not of type 'Event'.
+        selectElement.dispatchEvent = jest.fn();//jsdom doesn't support
         expect(browserHelper.selectOption(selectElement, "Chemical and Biomolecular Engineering"))
             .toEqual("Chemical and Biomolecular Engineering");
         expect((selectElement as HTMLSelectElement).selectedIndex).toEqual(4);
+        expect(selectElement.dispatchEvent).toHaveBeenCalled();
     });
 
     it("shouldn't crash when select has no options", () => {
@@ -184,10 +186,11 @@ describe('BrowserHelper.selectOption', () => {
         const domWrapper = new DomWrapper(window);
         const browserHelper = new BrowserHelper(domWrapper, testLogger);
         const selectElement = domWrapper.grabElementByXpath("//select") as HTMLElement;
-        //todo fix TypeError: Failed to execute 'dispatchEvent' on 'EventTarget': parameter 1 is not of type 'Event'.
+        selectElement.dispatchEvent = jest.fn();//jsdom doesn't support
         expect(browserHelper.selectOption(selectElement, "Chemical and Biomolecular Engineering"))
             .toBe(undefined);
         expect((selectElement as HTMLSelectElement).selectedIndex).toEqual(-1);
+        expect(selectElement.dispatchEvent).toHaveBeenCalled();
     });
 
 });
