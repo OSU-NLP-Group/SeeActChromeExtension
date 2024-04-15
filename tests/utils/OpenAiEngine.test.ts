@@ -61,7 +61,6 @@ describe('OpenAiEngine.generate', () => {
     let mockOpenAi: Mock<OpenAI>;
     let mockCompletions: Mock<OpenAI.Chat.Completions>;
     beforeEach(() => {
-        jest.resetAllMocks();
 
         mockOpenAi = mock(OpenAI);
         mockOpenAi.chat = mock(OpenAI.Chat);
@@ -150,7 +149,6 @@ describe('OpenAiEngine.generateWithRetry', () => {
     let mockOpenAi: Mock<OpenAI>;
     let mockCompletions: Mock<OpenAI.Chat.Completions>;
     beforeEach(() => {
-        jest.resetAllMocks();
 
         mockOpenAi = mock(OpenAI);
         mockOpenAi.chat = mock(OpenAI.Chat);

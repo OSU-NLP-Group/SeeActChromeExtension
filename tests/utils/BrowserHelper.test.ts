@@ -15,9 +15,6 @@ describe('BrowserHelper.calcIsHidden', () => {
     const browserHelper = new BrowserHelper(domWrapper, testLogger);
     const {document} = window;
 
-    beforeEach(() => {
-        jest.resetAllMocks();
-    });
 
     it('returns true for element with display set to none', () => {
         const element = document.createElement('div');
@@ -125,9 +122,9 @@ describe('BrowserHelper.selectOption', () => {
     <option value="11">Mechanical Engineering</option>
 </select>
             </div></body>`);
-        const domHelper = new DomWrapper(window);
-        const browserHelper = new BrowserHelper(domHelper, testLogger);
-        domHelper.getInnerText = jest.fn().mockReturnValueOnce('- Any -')
+        const domWrapper = new DomWrapper(window);
+        const browserHelper = new BrowserHelper(domWrapper, testLogger);
+        domWrapper.getInnerText = jest.fn().mockReturnValueOnce('- Any -')
             .mockReturnValueOnce('Aerospace Engineering').mockReturnValueOnce('Aviation')
             .mockReturnValueOnce('Biomedical Engineering')
             .mockReturnValueOnce('Chemical and Biomolecular Engineering')
@@ -140,7 +137,8 @@ describe('BrowserHelper.selectOption', () => {
             .mockReturnValueOnce('Mechanical Engineering')
         ;
 
-        const selectElement = domHelper.grabElementByXpath("//select") as HTMLElement;
+        const selectElement = domWrapper.grabElementByXpath("//select") as HTMLElement;
+        //todo fix TypeError: Failed to execute 'dispatchEvent' on 'EventTarget': parameter 1 is not of type 'Event'.
         expect(browserHelper.selectOption(selectElement, "Enginearing Admin")).toEqual("Engineering Administration");
         expect((selectElement as HTMLSelectElement).selectedIndex).toEqual(8);
     });
@@ -160,14 +158,15 @@ describe('BrowserHelper.selectOption', () => {
                     <option value="5">Civil, Environmental, and Geodetic Engineering</option>
                 </select>
             </div></body>`);
-        const domHelper = new DomWrapper(window);
-        const browserHelper = new BrowserHelper(domHelper, testLogger);
-        domHelper.getInnerText = jest.fn().mockReturnValueOnce('- Any -')
+        const domWrapper = new DomWrapper(window);
+        const browserHelper = new BrowserHelper(domWrapper, testLogger);
+        domWrapper.getInnerText = jest.fn().mockReturnValueOnce('- Any -')
             .mockReturnValueOnce('Aerospace Engineering').mockReturnValueOnce('Aviation')
             .mockReturnValueOnce('Biomedical Engineering')
             .mockReturnValueOnce('Chemical and Biomolecular Engineering')
             .mockReturnValueOnce('Civil, Environmental, and Geodetic Engineering');
-        const selectElement = domHelper.grabElementByXpath("//select") as HTMLElement;
+        const selectElement = domWrapper.grabElementByXpath("//select") as HTMLElement;
+        //todo fix TypeError: Failed to execute 'dispatchEvent' on 'EventTarget': parameter 1 is not of type 'Event'.
         expect(browserHelper.selectOption(selectElement, "Chemical and Biomolecular Engineering"))
             .toEqual("Chemical and Biomolecular Engineering");
         expect((selectElement as HTMLSelectElement).selectedIndex).toEqual(4);
@@ -182,9 +181,10 @@ describe('BrowserHelper.selectOption', () => {
                         class="form-select">
                 </select>
             </div></body>`);
-        const domHelper = new DomWrapper(window);
-        const browserHelper = new BrowserHelper(domHelper, testLogger);
-        const selectElement = domHelper.grabElementByXpath("//select") as HTMLElement;
+        const domWrapper = new DomWrapper(window);
+        const browserHelper = new BrowserHelper(domWrapper, testLogger);
+        const selectElement = domWrapper.grabElementByXpath("//select") as HTMLElement;
+        //todo fix TypeError: Failed to execute 'dispatchEvent' on 'EventTarget': parameter 1 is not of type 'Event'.
         expect(browserHelper.selectOption(selectElement, "Chemical and Biomolecular Engineering"))
             .toBe(undefined);
         expect((selectElement as HTMLSelectElement).selectedIndex).toEqual(-1);
@@ -194,8 +194,8 @@ describe('BrowserHelper.selectOption', () => {
 
 describe('BrowserHelper.removeAndCollapseEol', () => {
     const {window} = new JSDOM(`<!DOCTYPE html><body></body>`);
-    const domHelper = new DomWrapper(window);
-    const browserHelper = new BrowserHelper(domHelper);
+    const domWrapper = new DomWrapper(window);
+    const browserHelper = new BrowserHelper(domWrapper);
 
     it("shouldn't affect a string with no newlines and no consecutive whitespace chars", () => {
         expect(browserHelper.removeEolAndCollapseWhitespace("hello world")).toBe("hello world");
@@ -214,8 +214,8 @@ describe('BrowserHelper.removeAndCollapseEol', () => {
 
 describe('BrowserHelper.getFirstLine', () => {
     const {window} = (new JSDOM(`<!DOCTYPE html><body></body>`));
-    const domHelper = new DomWrapper(window);
-    const browserHelper = new BrowserHelper(domHelper);
+    const domWrapper = new DomWrapper(window);
+    const browserHelper = new BrowserHelper(domWrapper);
 
     it("should return a short single-line string unchanged", () => {
         expect(browserHelper.getFirstLine("hello world")).toBe("hello world");
@@ -251,16 +251,16 @@ describe('BrowserHelper.getElementDescription', () => {
                 <option value="type:clinic" class="facets-dropdown"> Clinic (364)</option>
             </select>
         </div></body>`);
-        const domHelper = new DomWrapper(window);
-        const browserHelper = new BrowserHelper(domHelper);
-        domHelper.getInnerText = jest.fn().mockReturnValueOnce("TYPE \nSelect Type\nSchool (508)\nClinic (364)")
+        const domWrapper = new DomWrapper(window);
+        const browserHelper = new BrowserHelper(domWrapper);
+        domWrapper.getInnerText = jest.fn().mockReturnValueOnce("TYPE \nSelect Type\nSchool (508)\nClinic (364)")
             .mockReturnValueOnce('Select Type\nSchool (508)\nClinic (364)');
         //2nd mocking above is just in case something weird happens and the code tries to get innerText of <select>
 
-        const selectElement = domHelper.grabElementByXpath("//select") as HTMLElement;
+        const selectElement = domWrapper.grabElementByXpath("//select") as HTMLElement;
 
         expect(browserHelper.getElementDescription(selectElement))
-            .toEqual("parent_node: TYPE Selected Options: School (508) - Options: Select Type | School (508) | Clinic (364)");
+            .toEqual("parent_node: [<TYPE>] Selected Options: School (508) - Options: Select Type | School (508) | Clinic (364)");
     });
 
     it('describes a select with empty default option using textContent', () => {
@@ -277,13 +277,13 @@ describe('BrowserHelper.getElementDescription', () => {
                 <option value="type:clinic" class="facets-dropdown"> Clinic (364)</option>
             </select>
         </div></body>`);
-        const domHelper = new DomWrapper(window);
-        const browserHelper = new BrowserHelper(domHelper, testLogger);
-        domHelper.getInnerText = jest.fn().mockReturnValueOnce('TYPE \nSchool (508)\nClinic (364)')
+        const domWrapper = new DomWrapper(window);
+        const browserHelper = new BrowserHelper(domWrapper, testLogger);
+        domWrapper.getInnerText = jest.fn().mockReturnValueOnce('TYPE \nSchool (508)\nClinic (364)')
             .mockReturnValueOnce('School (508)\nClinic (364)');
         //2nd mocking above is just in case something weird happens and the code tries to get innerText of <select>
 
-        const selectElement = domHelper.grabElementByXpath("//select") as HTMLElement;
+        const selectElement = domWrapper.grabElementByXpath("//select") as HTMLElement;
 
         expect(browserHelper.getElementDescription(selectElement)).toEqual("School (508) Clinic (364)");
         //todo highlight to Boyuan how this loses parent node info and also separator between options
@@ -307,11 +307,11 @@ describe('BrowserHelper.getElementDescription', () => {
         const {window} = new JSDOM(`<!DOCTYPE html><body>
             <textarea class="gLFyf" aria-controls="Alh6id" aria-owns="Alh6id" autofocus="" title="Search" value="" jsaction="paste:puy29d;" aria-label="Search" aria-autocomplete="both" aria-expanded="false" aria-haspopup="false" autocapitalize="off" autocomplete="off" autocorrect="off" id="APjFqb" maxlength="2048" name="q" role="combobox" rows="1" spellcheck="false" data-ved="0ahUKEwjE7tT35I-FAxU3HDQIHeaZBeQQ39UDCA4" style="" aria-activedescendant=""></textarea>
         </body>`);
-        const domHelper = new DomWrapper(window);
-        const browserHelper = new BrowserHelper(domHelper);
-        domHelper.getInnerText = jest.fn().mockReturnValueOnce("").mockReturnValueOnce("");
+        const domWrapper = new DomWrapper(window);
+        const browserHelper = new BrowserHelper(domWrapper);
+        domWrapper.getInnerText = jest.fn().mockReturnValueOnce("").mockReturnValueOnce("");
 
-        const textareaElement = domHelper.grabElementByXpath("//textarea") as HTMLInputElement;
+        const textareaElement = domWrapper.grabElementByXpath("//textarea") as HTMLInputElement;
         textareaElement.value = "GPT-4V(ision) is a Generalist Web Agent, if Grounded";//mimicking the user typing into the textarea
         expect(browserHelper.getElementDescription(textareaElement))
             .toEqual(`INPUT_VALUE="GPT-4V(ision) is a Generalist Web Agent, if Grounded" aria-label="Search" name="q" title="Search"`);
@@ -321,11 +321,11 @@ describe('BrowserHelper.getElementDescription', () => {
         const {window} = new JSDOM(`<!DOCTYPE html><body><div id="search_header">
         <a class="gb_H" aria-label="Gmail (opens a new tab)" data-pid="23" href="https://mail.google.com/mail/&amp;ogbl" target="_top">Gmail</a>
         </div></body>`);
-        const domHelper = new DomWrapper(window);
-        const browserHelper = new BrowserHelper(domHelper);
-        domHelper.getInnerText = jest.fn().mockReturnValueOnce("Gmail").mockReturnValueOnce('Gmail');
+        const domWrapper = new DomWrapper(window);
+        const browserHelper = new BrowserHelper(domWrapper);
+        domWrapper.getInnerText = jest.fn().mockReturnValueOnce("Gmail").mockReturnValueOnce('Gmail');
 
-        const linkElement = domHelper.grabElementByXpath("//a") as HTMLElement;
+        const linkElement = domWrapper.grabElementByXpath("//a") as HTMLElement;
         expect(browserHelper.getElementDescription(linkElement)).toEqual(`Gmail`);
     });
 
@@ -341,11 +341,11 @@ will learn how to make a website.
 </textarea>
             <button id="submit_review" type="submit">Submit</button>
         </div></body>`);
-        const domHelper = new DomWrapper(window);
-        const browserHelper = new BrowserHelper(domHelper);
-        domHelper.getInnerText = jest.fn().mockReturnValueOnce('Review of W3Schools:  Submit').mockReturnValueOnce('');//grabbing innerText for a <textarea> element is weird and seems to always return empty string
+        const domWrapper = new DomWrapper(window);
+        const browserHelper = new BrowserHelper(domWrapper);
+        domWrapper.getInnerText = jest.fn().mockReturnValueOnce('Review of W3Schools:  Submit').mockReturnValueOnce('');//grabbing innerText for a <textarea> element is weird and seems to always return empty string
 
-        const textareaElement = domHelper.grabElementByXpath("//textarea") as HTMLElement;
+        const textareaElement = domWrapper.grabElementByXpath("//textarea") as HTMLElement;
         expect(browserHelper.getElementDescription(textareaElement))
             .toEqual(`INPUT_VALUE="At w3schools.com you \nwill learn how to make a website.\n\n:)\n" At w3schools.com you will learn how to make a website. :)`);
         //problem is that it duplicates the text b/c of how <textarea>'s value _property_ works at runtime (and doesn't 'clean' the input value)
@@ -366,14 +366,14 @@ will learn how to make a website.
             </textarea>
             <button id="submit_review" type="submit">Submit</button>
         </div></body>`));
-        const domHelper = new DomWrapper(window);
-        const browserHelper = new BrowserHelper(domHelper, testLogger);
-        domHelper.getInnerText = jest.fn().mockReturnValueOnce('Review of W3Schools:  Submit').mockReturnValueOnce('');//grabbing innerText for a <textarea> element is weird and seems to always return empty string
+        const domWrapper = new DomWrapper(window);
+        const browserHelper = new BrowserHelper(domWrapper, testLogger);
+        domWrapper.getInnerText = jest.fn().mockReturnValueOnce('Review of W3Schools:  Submit').mockReturnValueOnce('');//grabbing innerText for a <textarea> element is weird and seems to always return empty string
 
-        const textareaElement = domHelper.grabElementByXpath("//textarea") as HTMLInputElement;
+        const textareaElement = domWrapper.grabElementByXpath("//textarea") as HTMLInputElement;
         textareaElement.value = "";//mimicking the user wiping the contents of the textarea
         expect(browserHelper.getElementDescription(textareaElement))
-            .toEqual(`INPUT_VALUE="" parent_node: Review of W3Schools: Submit name="w3review"`);
+            .toEqual(`INPUT_VALUE="" parent_node: [<Review of W3Schools: Submit>] name="w3review"`);
     });
 
     it('describes an input element with a value but no text content', () => {
@@ -383,30 +383,30 @@ will learn how to make a website.
             <button id="clearSearchButtonId" aria-label="Clear" role="button" type="button" class="close btn btn-link">
                 <span aria-hidden="true">x</span></button>
         </div></body>`);
-        const domHelper = new DomWrapper(window);
-        const browserHelper = new BrowserHelper(domHelper);
-        domHelper.getInnerText = jest.fn().mockReturnValueOnce(" x").mockReturnValueOnce("");
+        const domWrapper = new DomWrapper(window);
+        const browserHelper = new BrowserHelper(domWrapper);
+        domWrapper.getInnerText = jest.fn().mockReturnValueOnce(" x").mockReturnValueOnce("");
 
-        const inputElement = domHelper.grabElementByXpath("//input") as HTMLElement;
+        const inputElement = domWrapper.grabElementByXpath("//input") as HTMLElement;
         expect(browserHelper.getElementDescription(inputElement))
-            .toEqual(`INPUT_VALUE="hirsch" parent_node: x name="post-search" placeholder="Search or add a post..." value="hirsch"`);
+            .toEqual(`INPUT_VALUE="hirsch" parent_node: [<x>] name="post-search" placeholder="Search or add a post..." value="hirsch"`);
         //todo ask Boyuan whether the duplication of the value attribute should be fixed
     });
 
     it('should describe an input element with a parent but no value or text content', () => {
         const {window} = new JSDOM(`<!DOCTYPE html><body>
-        <div class="c-form-item c-form-item--text       c-form-item--id-keyword js-form-item js-form-type-textfield js-form-item-keyword">
+        <div class="c-form-item c-form-item--text c-form-item--id-keyword js-form-item js-form-type-textfield js-form-item-keyword">
             <label for="edit-keyword" class="c-form-item__label">Search</label>
             <input placeholder="Search (by City/Location, Zip Code or Name)" data-drupal-selector="edit-keyword" 
             type="text" id="edit-keyword" name="keyword" value="" size="30" maxlength="128" class="c-form-item__text">
         </div></body>`);
-        const domHelper = new DomWrapper(window);
-        const browserHelper = new BrowserHelper(domHelper);
-        domHelper.getInnerText = jest.fn().mockReturnValueOnce("Search ").mockReturnValueOnce("");
+        const domWrapper = new DomWrapper(window);
+        const browserHelper = new BrowserHelper(domWrapper);
+        domWrapper.getInnerText = jest.fn().mockReturnValueOnce("Search ").mockReturnValueOnce("");
 
-        const inputElement = domHelper.grabElementByXpath("//input") as HTMLElement;
+        const inputElement = domWrapper.grabElementByXpath("//input") as HTMLElement;
         expect(browserHelper.getElementDescription(inputElement))
-            .toEqual(`INPUT_VALUE="" parent_node: Search name="keyword" placeholder="Search (by City/Location, Zip Code or Name)"`);
+            .toEqual(`INPUT_VALUE="" parent_node: [<Search>] name="keyword" placeholder="Search (by City/Location, Zip Code or Name)"`);
     });
 
     it('should describe a div element with no parent text or text content or relevant attributes but a child with relevant attributes', () => {
@@ -415,11 +415,11 @@ will learn how to make a website.
             <svg class="icon icon-download" aria-label="Download document">
             <use href="#icon-download"></use></svg>
         </div></div></body>`);
-        const domHelper = new DomWrapper(window);
-        const browserHelper = new BrowserHelper(domHelper);
-        domHelper.getInnerText = jest.fn().mockReturnValueOnce("").mockReturnValueOnce("");
+        const domWrapper = new DomWrapper(window);
+        const browserHelper = new BrowserHelper(domWrapper);
+        domWrapper.getInnerText = jest.fn().mockReturnValueOnce("").mockReturnValueOnce("");
 
-        const divElementWithChild = domHelper.grabElementByXpath(`//*[@id="download_button"]`) as HTMLElement;
+        const divElementWithChild = domWrapper.grabElementByXpath(`//*[@id="download_button"]`) as HTMLElement;
         expect(browserHelper.getElementDescription(divElementWithChild)).toEqual(`aria-label="Download document"`);
     });
 });
@@ -486,7 +486,7 @@ describe('BrowserHelper.getElementData', () => {
             expect(elementData?.centerCoords).toEqual([boundingBox.x + boundingBox.width / 2,
                 boundingBox.y + boundingBox.height / 2]);
             expect(elementData?.description)
-                .toEqual(`INPUT_VALUE="At w3schools.com you    will learn how to make a website.    :)" parent_node: Review of W3Schools: Submit name="w3review" value="At w3schools.com you will learn how to make a website. :)"`)
+                .toEqual(`INPUT_VALUE="At w3schools.com you    will learn how to make a website.    :)" parent_node: [<Review of W3Schools: Submit>] name="w3review" value="At w3schools.com you will learn how to make a website. :)"`)
             expect(elementData?.tagHead).toEqual("input" + roleSpecInTag + typeSpecInTag);
             expect(elementData?.boundingBox).toEqual({
                 tLx: boundingBox.x, tLy: boundingBox.y,
@@ -513,9 +513,9 @@ describe('BrowserHelper.getElementData', () => {
 
 describe('BrowserHelper.calcIsDisabled', () => {
     const {window} = (new JSDOM(`<!DOCTYPE html><body></body>`));
-    const domHelper = new DomWrapper(window);
+    const domWrapper = new DomWrapper(window);
     const {document} = window;
-    const browserHelper = new BrowserHelper(domHelper);
+    const browserHelper = new BrowserHelper(domWrapper);
 
     it('returns true for element with ariaDisabled set to true', () => {
         const element = document.createElement('div');

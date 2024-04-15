@@ -156,7 +156,7 @@ describe('postProcessActionLlm', () => {
             "ACTION: CLICK\nVALUE: None")).toEqual(["JD", "CLICK", "None"]);
     });
     it('should return default values if llm text has nothing relevant', () => {
-        expect(postProcessActionLlm("")).toEqual(["Invalid", "None", ""]);
+        expect(postProcessActionLlm("")).toEqual(["Invalid", "NONE", ""]);
     });
 });
 

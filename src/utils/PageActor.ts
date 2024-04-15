@@ -23,7 +23,7 @@ export class PageActor {
 
     private browserHelper: BrowserHelper;
     private chromeWrapper: ChromeWrapper;
-    private currInteractiveElements: ElementData[] | undefined;
+    currInteractiveElements: ElementData[] | undefined;
     //if significant mutable state at some point extends beyond currInteractiveElements,
     // consider making a mutex for the state
     hasControllerEverResponded: boolean = false;
@@ -64,7 +64,7 @@ export class PageActor {
             const serializableElementData: SerializableElementData = {...elementData};
             if ('element' in serializableElementData) {
                 delete serializableElementData['element'];
-            }//ugly, but avoids forgetting to add another copying here if more serializable fields are added to ElementData
+            }//ugly, but avoids forgetting to add another copying here if serializable fields are added to ElementData
             return serializableElementData;
         });
 

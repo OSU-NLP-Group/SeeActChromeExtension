@@ -4,6 +4,8 @@ Chrome extension to allow end-users to leverage the logic/behavior of the Python
 just installing a chrome extension from chrome web store rather than having to install python and playwright locally and
 then download/run SeeAct).
 
+TODO consider replacing "utils" folder with front, back, and shared folders
+
 # Conventions
 
 ## Typescript
