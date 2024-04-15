@@ -6,6 +6,7 @@ import {
     Page2BackgroundPortMsgType, sleep
 } from "./misc";
 import {ChromeWrapper} from "./ChromeWrapper";
+import {DomWrapper} from "./DomWrapper";
 
 /**
  * used to allow local variables success and result from the main action-performing method to be passed by reference
@@ -22,6 +23,7 @@ export type ActionOutcome = { success: boolean; result: string };
 export class PageActor {
 
     private browserHelper: BrowserHelper;
+    private domWrapper: DomWrapper;
     private chromeWrapper: ChromeWrapper;
     currInteractiveElements: ElementData[] | undefined;
     //if significant mutable state at some point extends beyond currInteractiveElements,
@@ -37,11 +39,13 @@ export class PageActor {
      *                      Used during unit tests to inject an instance of BrowserHelper that contains mocks.
      * @param logger the logger for the page actor; used to inject a simplified logger during unit tests
      * @param chromeWrapper a wrapper to allow mocking of Chrome extension API calls
+     * @param domWrapper a wrapper to allow mocking of dom interactions
      */
     constructor(portToBackground: chrome.runtime.Port, browserHelper?: BrowserHelper, logger?: Logger,
-                chromeWrapper?: ChromeWrapper) {
+                chromeWrapper?: ChromeWrapper, domWrapper?: DomWrapper) {
         this.portToBackground = portToBackground;
         this.browserHelper = browserHelper ?? new BrowserHelper();
+        this.domWrapper = domWrapper ?? new DomWrapper(window);
         this.chromeWrapper = chromeWrapper ?? new ChromeWrapper();
         this.logger = logger ?? createNamedLogger('page-actor', false);
     }
@@ -196,18 +200,20 @@ export class PageActor {
      *                       performActionFromController method
      */
     performScrollAction = (actionToPerform: Action, actionOutcome: ActionOutcome): void => {
-        const docElement = document.documentElement;
+        const docElement = this.domWrapper.getDocumentElement();
         const viewportHeight = docElement.clientHeight;
         //todo make scroll increment fraction configurable in options menu? if so, that config option would
         // also need to affect the relevant sentence of the system prompt (about magnitude of scrolling actions)
         const scrollAmount = viewportHeight * 0.75;
         const scrollVertOffset = actionToPerform === Action.SCROLL_UP ? -scrollAmount : scrollAmount;
         this.logger.trace(`scrolling page by ${scrollVertOffset}px`);
-        const priorVertScrollPos = window.scrollY;
-        window.scrollBy(0, scrollVertOffset);
-        if (priorVertScrollPos != window.scrollY) {
+        const priorVertScrollPos = this.domWrapper.getVertScrollPos();
+        this.domWrapper.scrollBy(0, scrollVertOffset);
+        if (priorVertScrollPos != this.domWrapper.getVertScrollPos()) {
             actionOutcome.success = true;
-            actionOutcome.result += `; scrolled page by ${window.scrollY - priorVertScrollPos} px`;
+            const actualVertOffset = this.domWrapper.getVertScrollPos() - priorVertScrollPos;
+            actionOutcome.result +=
+                `; scrolled page by ${Math.abs(actualVertOffset)}px ${actualVertOffset < 0 ? "up" : "down"}`;
         } else {
             this.logger.warn("scroll action failed to move the viewport's vertical position")
             actionOutcome.result += `; scroll action failed to move the viewport's vertical position`;
@@ -303,6 +309,8 @@ export class PageActor {
             // with type "mouseMoved"
 
         } else {
+            actionOutcome.result = buildGenericActionDesc(actionToPerform, undefined, valueForAction);
+
             if (actionToPerform === Action.SCROLL_UP || actionToPerform === Action.SCROLL_DOWN) {
                 this.performScrollAction(actionToPerform, actionOutcome);
             } else if (actionToPerform === Action.PRESS_ENTER) {

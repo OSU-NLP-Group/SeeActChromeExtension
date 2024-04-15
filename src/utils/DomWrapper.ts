@@ -68,4 +68,33 @@ export class DomWrapper {
         return this.window.getComputedStyle(element);
     }
 
+    /**
+     * @description trivial wrapper around document.documentElement to allow jsdom-based unit tests to work
+     * @return the document element
+     */
+    getDocumentElement = (): HTMLElement => {
+        return this.dom.documentElement;
+    }
+
+    /**
+     * @description trivial wrapper around window.scrollY to allow jsdom-based unit tests to work
+     * @return the vertical scroll position of the window
+     */
+    getVertScrollPos = (): number => {
+        return this.window.scrollY;//random note- every browser except safari supports sub-pixel precision for this
+    }
+
+    /**
+     * @description trivial wrapper around window.scrollBy to allow jsdom-based unit tests to work
+     * @param horizOffset the amount to scroll by in the horizontal direction
+     *                     positive values scroll right, negative values scroll left
+     * @param vertOffset the amount to scroll by in the vertical direction
+     *                      positive values scroll down, negative values scroll up
+     */
+    scrollBy = (horizOffset: number, vertOffset: number): void => {
+        this.window.scrollBy(horizOffset, vertOffset);
+    }
+
+
+
 }

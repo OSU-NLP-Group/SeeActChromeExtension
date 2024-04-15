@@ -6,7 +6,7 @@ import {JSDOM, DOMWindow} from "jsdom";
 import {ActionOutcome, PageActor} from "../../src/utils/PageActor";
 import {createMockPort, fixHtmlElementContentEditable} from "../test_utils";
 import {ChromeWrapper} from "../../src/utils/ChromeWrapper";
-import {expectedMsgForPortDisconnection, Page2BackgroundPortMsgType} from "../../src/utils/misc";
+import {Action, expectedMsgForPortDisconnection, Page2BackgroundPortMsgType} from "../../src/utils/misc";
 
 
 const testLogger = log.getLogger("page-actor-test");
@@ -21,6 +21,8 @@ let browserHelper: BrowserHelper;
 let chromeWrapper: ChromeWrapper;
 let pageActor: PageActor;
 let mockPort: chrome.runtime.Port;
+
+let actionOutcome: ActionOutcome;
 
 describe("PageActor.getPageInfoForController", () => {
 
@@ -39,7 +41,7 @@ describe("PageActor.getPageInfoForController", () => {
         browserHelper = new BrowserHelper(domWrapper, testLogger);
         chromeWrapper = new ChromeWrapper();
         mockPort = createMockPort();
-        pageActor = new PageActor(mockPort, browserHelper, testLogger, chromeWrapper);
+        pageActor = new PageActor(mockPort, browserHelper, testLogger, chromeWrapper, domWrapper);
 
         const inputElement = domWrapper.grabElementByXpath("//input") as HTMLElement;
         const buttonElement = domWrapper.grabElementByXpath("//button") as HTMLElement;
@@ -113,16 +115,16 @@ describe("PageActor.getPageInfoForController", () => {
 describe('PageActor.typeIntoElement', () => {
 
     const testStr = "some input string";
-    let actionOutcome: ActionOutcome;
 
     beforeEach(() => {
         testWindow = new JSDOM(`<!DOCTYPE html><body></body>`).window;
         fixHtmlElementContentEditable(testWindow);
         document = testWindow.document;
         mockPort = createMockPort();
+        domWrapper = new DomWrapper(testWindow);
         browserHelper = new BrowserHelper(domWrapper, testLogger);
         chromeWrapper = new ChromeWrapper();
-        pageActor = new PageActor(mockPort, browserHelper, testLogger, chromeWrapper);
+        pageActor = new PageActor(mockPort, browserHelper, testLogger, chromeWrapper, domWrapper);
 
         actionOutcome = { success: false, result: "" };
     });
@@ -159,7 +161,7 @@ describe('PageActor.typeIntoElement', () => {
         fixHtmlElementContentEditable(testWindow);
         domWrapper = new DomWrapper(testWindow);
         browserHelper = new BrowserHelper(domWrapper, testLogger);
-        pageActor = new PageActor(mockPort, browserHelper, testLogger, chromeWrapper);
+        pageActor = new PageActor(mockPort, browserHelper, testLogger, chromeWrapper, domWrapper);
         const divElem = domWrapper.grabElementByXpath("//div") as HTMLElement;
 
         jest.spyOn(divElem, 'focus');
@@ -244,15 +246,15 @@ describe('PageActor.typeIntoElement', () => {
 
 describe('PageActor.performSelectAction', () => {
 
-    let actionOutcome: ActionOutcome;
 
     beforeEach(() => {
         testWindow = new JSDOM(`<!DOCTYPE html><body></body>`).window;
         document = testWindow.document;
         mockPort = createMockPort();
+        domWrapper = new DomWrapper(testWindow);
         browserHelper = new BrowserHelper(domWrapper, testLogger);
         chromeWrapper = new ChromeWrapper();
-        pageActor = new PageActor(mockPort, browserHelper, testLogger, chromeWrapper);
+        pageActor = new PageActor(mockPort, browserHelper, testLogger, chromeWrapper, domWrapper);
 
         actionOutcome = { success: false, result: "" };
     });
@@ -312,4 +314,72 @@ describe('PageActor.performSelectAction', () => {
     });
 })
 
+describe('PageActor.performScrollAction', () => {
+
+    beforeEach(() => {
+        testWindow = new JSDOM(`<!DOCTYPE html><body></body>`).window;
+        document = testWindow.document;
+        mockPort = createMockPort();
+        domWrapper = new DomWrapper(testWindow);
+        browserHelper = new BrowserHelper(domWrapper, testLogger);
+        chromeWrapper = new ChromeWrapper();
+        pageActor = new PageActor(mockPort, browserHelper, testLogger, chromeWrapper, domWrapper);
+        const fakeDocumentElement = {
+            ...document.documentElement,
+            clientHeight: 500,
+            scrollHeight: 1500
+        }
+        domWrapper.getDocumentElement = jest.fn().mockReturnValue(fakeDocumentElement);
+
+        actionOutcome = { success: false, result: "" };
+    });
+
+
+    it('should report failure if SCROLL_UP but already at top of window', () => {
+        domWrapper.getVertScrollPos = jest.fn().mockReturnValueOnce(0).mockReturnValueOnce(0);
+        domWrapper.scrollBy = jest.fn();
+        const baseActionResult = "Performed element-independent action SCROLL_UP";
+        actionOutcome.result = baseActionResult;
+        pageActor.performScrollAction(Action.SCROLL_UP, actionOutcome);
+        expect(domWrapper.scrollBy).toHaveBeenCalledWith(0, -375);
+        expect(actionOutcome.success).toBe(false);
+        expect(actionOutcome.result).toEqual(baseActionResult + "; scroll action failed to move the viewport's vertical position");
+    });
+
+    it('should report success if SCROLL_UP and not at top of window', () => {
+        domWrapper.getVertScrollPos = jest.fn().mockReturnValueOnce(374).mockReturnValueOnce(0)
+            .mockReturnValueOnce(0);
+        domWrapper.scrollBy = jest.fn();
+        const baseActionResult = "Performed element-independent action SCROLL_UP";
+        actionOutcome.result = baseActionResult;
+        pageActor.performScrollAction(Action.SCROLL_UP, actionOutcome);
+        expect(domWrapper.scrollBy).toHaveBeenCalledWith(0, -375);
+        expect(actionOutcome.success).toBe(true);
+        expect(actionOutcome.result).toEqual(baseActionResult + "; scrolled page by 374px up");
+    });
+
+    it('should report failure if SCROLL_DOWN but already at bottom of window', () => {
+        domWrapper.getVertScrollPos = jest.fn().mockReturnValueOnce(1500).mockReturnValueOnce(1500);
+        domWrapper.scrollBy = jest.fn();
+        const baseActionResult = "Performed element-independent action SCROLL_DOWN";
+        actionOutcome.result = baseActionResult;
+        pageActor.performScrollAction(Action.SCROLL_DOWN, actionOutcome);
+        expect(domWrapper.scrollBy).toHaveBeenCalledWith(0, 375);
+        expect(actionOutcome.success).toBe(false);
+        expect(actionOutcome.result).toEqual(baseActionResult + "; scroll action failed to move the viewport's vertical position");
+    });
+
+    it('should report success if SCROLL_DOWN and not at bottom of window', () => {
+        domWrapper.getVertScrollPos = jest.fn().mockReturnValueOnce(1125).mockReturnValueOnce(1500)
+            .mockReturnValueOnce(1500);
+        domWrapper.scrollBy = jest.fn();
+        const baseActionResult = "Performed element-independent action SCROLL_DOWN";
+        actionOutcome.result = baseActionResult;
+        pageActor.performScrollAction(Action.SCROLL_DOWN, actionOutcome);
+        expect(domWrapper.scrollBy).toHaveBeenCalledWith(0, 375);
+        expect(actionOutcome.success).toBe(true);
+        expect(actionOutcome.result).toEqual(baseActionResult + "; scrolled page by 375px down");
+    });
+
+});
 
