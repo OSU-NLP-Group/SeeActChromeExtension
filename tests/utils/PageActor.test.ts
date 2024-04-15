@@ -411,13 +411,21 @@ describe('PageActor.performActionFromController', () => {
 
     //todo 1 case where no specific element given but unknown action for that context (e.g. SELECT)
 
-    //
+    //todo 1 case for standard port disconnected error when sending confirmation to controller
 
+    //todo 1 case for unexpected error when sending confirmation to controller
 
 });
 
 describe('PageActor.handleRequestFromAgentController', () => {
-    //todo
+    //todo setup
+
+    //todo 1 case where request is for page state
+
+    //todo 1 case where request is for a specific action
+
+    //todo 1 case where request doesn't contain a recognized type of message
+
 });
 
 

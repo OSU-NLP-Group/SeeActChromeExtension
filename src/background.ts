@@ -107,7 +107,9 @@ function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (r
             agentController = new AgentController(aiEngine);
         }
         if (!centralLogger) {centralLogger = createNamedLogger('service-worker', true);}
-        agentController.mutex.runExclusive(async () => await agentController?.startTask(request, sendResponse));
+        if (typeof (request.taskSpecification) === "string" && (request.taskSpecification as string).trim().length > 0) {
+            agentController.mutex.runExclusive(async () => await agentController?.startTask(request, sendResponse));
+        } else {sendResponse({success: false, message: "No valid task specification provided"});}
     } else if (request.reqType === PageRequestType.END_TASK) {
         if (!agentController) {
             sendResponse({

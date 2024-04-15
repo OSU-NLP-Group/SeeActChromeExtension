@@ -402,17 +402,20 @@ export class AgentController {
         if (this.mightNextActionCausePageNav) {
             //give the browser time to ensure that the new page is ready for scripts to be injected into it
             await sleep(500);
-        }//todo consider whether there should be an else block here that logs a warning or even terminates task
+        } else {
+            this.logger.warn("!!! service worker's connection to content script was lost while performing an action, " +
+                "but the action was not expected to cause page navigation; this is unexpected !!!");
+        }
 
         const tab = await this.getActiveTab();
         if (tab.id !== this.currTaskTabId) {
-            this.logger.warn("tab changed after page navigation and yet the connection to the old tab's " +
-                "content script was lost; this is unexpected")
+            this.logger.warn("!!! tab changed after action and yet the connection to the old tab's " +
+                "content script was lost (before the controller could terminate it); this is unexpected!!!")
         }
         const actionDesc = buildGenericActionDesc(this.tentativeActionInfo.action, this.tentativeActionInfo.elementData,
             this.tentativeActionInfo.value) + `; this caused page navigation to ${tab.title}`;
 
-        this.actionsSoFar.push({actionDesc: actionDesc, success: true});
+        this.actionsSoFar.push({actionDesc: actionDesc, success: this.mightNextActionCausePageNav});
         this.tentativeActionInfo = undefined;
 
         await this.injectPageActorScript(false);
