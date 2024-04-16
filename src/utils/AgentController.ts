@@ -338,10 +338,13 @@ export class AgentController {
         // The "add to prompt" part might be redundant with the additions to actionsSoFar when noop detected,
         // depending on model cleverness
         try {
-            planningOutput = await this.aiEngine.generateWithRetry(prompts, 0, screenshotDataUrl, undefined, undefined, undefined, undefined, aiApiBaseDelay);
+            planningOutput = await this.aiEngine.generateWithRetry(
+                {prompts: prompts, turnInStep: 0, imgDataUrl: screenshotDataUrl}, aiApiBaseDelay);
             this.logger.info("planning output: " + planningOutput);
 
-            groundingOutput = await this.aiEngine.generateWithRetry(prompts, 1, screenshotDataUrl, planningOutput, undefined, undefined, undefined, aiApiBaseDelay);
+            groundingOutput = await this.aiEngine.generateWithRetry(
+                {prompts: prompts, turnInStep: 1, imgDataUrl: screenshotDataUrl, priorTurnOutput: planningOutput},
+                aiApiBaseDelay);
             //todo low priority per Boyuan, but experiment with json output mode specifically for the grounding api call
         } catch (error) {
             this.logger.error(`error getting next step from ai; terminating task; error: ${error}, jsonified: ${JSON.stringify(error)}`);

@@ -7,6 +7,45 @@ import {createNamedLogger} from "./shared_logging_setup";
 import ChatCompletionMessageParam = OpenAI.ChatCompletionMessageParam;
 import ChatCompletionContentPart = OpenAI.ChatCompletionContentPart;
 
+/**
+ * @description Options for generating a completion from the OpenAI API using the OpenAiEngine
+ */
+export interface GenerateOptions {
+    /**
+     * system prompt, prompt for planning the next action,
+     *  prompt for identifying the specific next element to interact with next,
+     *  and alternative prompt for deciding on an element-independent action
+     */
+    prompts: LmmPrompts;
+    /**
+     * the 0-based index of the current query in the preparation for the current step's action
+     *  0 means we're asking the model to analyze situation and plan next move
+     *  1 means we're asking the model to identify the specific element to interact with next
+     */
+    turnInStep: 0 | 1;
+    /**
+     * a data url containing a base-64 encoded image to be used as input to the model
+     */
+    imgDataUrl?: string;
+    /**
+     * the output from the previous turn in the preparation for the current step's action
+     */
+    priorTurnOutput?: string;
+    /**
+     * the maximum number of tokens to generate in this turn
+     */
+    maxNewTokens?: number;
+    /**
+     * the temperature to use when sampling from the model
+     *  (optional, by default uses the temperature set in the engine's constructor)
+     */
+    temp?: number;
+    /**
+     * the model to use for this completion  (optional, by default uses the model set in the engine's constructor)
+     */
+    model?: string;
+}
+
 export class OpenAiEngine {
     static readonly NO_API_KEY_ERR = "must pass on the api_key or set OPENAI_API_KEY in the environment";
 
@@ -86,11 +125,9 @@ export class OpenAiEngine {
      *               (optional, by default uses the model set in the constructor)
      * @return the model's response for the current query
      */
-    generate = async (prompts: LmmPrompts, turnInStep: 0 | 1, imgDataUrl?: string, priorTurnOutput?: string,
-                      maxNewTokens: number = 4096, temp?: number, model?: string): Promise<string> => {
-        //todo eventually create options object/type for all optional parameters of generate(), currently hard to read or use
-        // then reuse that as part of the params of generateWithRetry()
-        // !!before sending to Prof Su!
+    generate = async ({prompts, turnInStep, imgDataUrl, priorTurnOutput,
+                      maxNewTokens= 4096, temp = this.temperature, model = this.model}: GenerateOptions):
+        Promise<string> => {
 
         this.currKeyIdx = (this.currKeyIdx + 1) % this.apiKeys.length;
         //todo unit test and implement rate-limit-respecting sleep code if Boyuan confirms it's still desired
@@ -105,9 +142,6 @@ export class OpenAiEngine {
          */
         this.openAi.apiKey = this.apiKeys[this.currKeyIdx];
 
-        const tempToUse = temp ?? this.temperature;
-        const modelToUse = model ?? this.model;
-
         const messages: Array<ChatCompletionMessageParam> = [
             {role: "system", content: prompts.sysPrompt},
             {role: "user", content: [{type: "text", text: prompts.queryPrompt}]}
@@ -120,7 +154,7 @@ export class OpenAiEngine {
         let respStr: string | undefined | null;
         if (turnInStep === 0) {
             const response = await this.openAi.chat.completions.create(
-                {messages: messages, model: modelToUse, temperature: tempToUse, max_tokens: maxNewTokens});
+                {messages: messages, model: model, temperature: temp, max_tokens: maxNewTokens});
             respStr = response.choices?.[0].message?.content;
             //confer with Boyuan- should this log warning with response object if respStr null? or throw error?
             // feedback - don't worry about the api being that weird/unreliable
@@ -139,7 +173,7 @@ export class OpenAiEngine {
             }
 
             const response = await this.openAi.chat.completions.create(
-                {messages: messages, model: modelToUse, temperature: tempToUse, max_tokens: maxNewTokens});
+                {messages: messages, model: model, temperature: temp, max_tokens: maxNewTokens});
             respStr = response.choices?.[0].message?.content;
             //confer with Boyuan- should this log warning with response object if respStr null? or throw error?
             // feedback - don't worry about the api being that weird/unreliable
@@ -156,13 +190,13 @@ export class OpenAiEngine {
 
     /**
      * {@link generate} with retry logic
+     * @param options the options for the generate call
      * @param backoffBaseDelay the base delay in ms for the exponential backoff algorithm
      * @param backoffMaxTries maximum number of attempts for the exponential backoff algorithm
      */
-    generateWithRetry = async (prompts: LmmPrompts, turnInStep: 0 | 1, imgDataUrl?: string, priorTurnOutput?: string,
-                               maxNewTokens: number = 4096, temp?: number, model?: string,
+    generateWithRetry = async (options: GenerateOptions,
                                backoffBaseDelay: number = 100, backoffMaxTries: number = 10): Promise<string> => {
-        const generateCall = async () => this.generate(prompts, turnInStep, imgDataUrl, priorTurnOutput, maxNewTokens, temp, model);
+        const generateCall = async () => this.generate(options);
 
         return await retryAsync(generateCall, {
             delay: (parameter: { currentTry: number, maxTry: number, lastDelay?: number, lastResult?: string }) => {

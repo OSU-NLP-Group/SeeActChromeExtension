@@ -96,7 +96,9 @@ describe('OpenAiEngine.generate', () => {
 
         const req0Temp = 0.1;
         const req0MaxTokens = 8192;
-        const result0 = await engine.generate(prompts, 0, dummyImgDataUrl, undefined, req0MaxTokens, req0Temp);
+        const result0 = await engine.generate({
+            prompts: prompts, turnInStep: 0, imgDataUrl: dummyImgDataUrl, maxNewTokens: req0MaxTokens, temp: req0Temp
+        });
         expect(engine.currKeyIdx).toEqual(1);
         expect(engine.nextAvailTime).toEqual([0, 0, 0]);
         expect(mockOpenAi.apiKey).toEqual(dummyApiKeys[1]);
@@ -116,7 +118,9 @@ describe('OpenAiEngine.generate', () => {
         } as ChatCompletion);
 
         const req1Model = "gpt-4-vision-preview-alt";
-        const result1 = await engine.generate(prompts, 1, dummyImgDataUrl, t0RespTxt, undefined, undefined, req1Model);
+        const result1 = await engine.generate({
+            prompts: prompts, turnInStep: 1, imgDataUrl: dummyImgDataUrl, priorTurnOutput: t0RespTxt, model: req1Model
+        });
         expect(engine.currKeyIdx).toEqual(2);
         expect(engine.nextAvailTime).toEqual([0, 0, 0]);
         expect(mockOpenAi.apiKey).toEqual(dummyApiKeys[2]);
@@ -138,9 +142,11 @@ describe('OpenAiEngine.generate', () => {
     it('should error if given no previous turn input for turn 1', async () => {
         await expect(() => new OpenAiEngine(exampleModel, "key1")
             .generate({
-                sysPrompt: "sys", queryPrompt: "query", groundingPrompt: "referring",
-                elementlessActionPrompt: "elementless action prompt"
-            }, 1, dummyImgDataUrl)).rejects
+                prompts: {
+                    sysPrompt: "sys", queryPrompt: "query", groundingPrompt: "referring",
+                    elementlessActionPrompt: "elementless action prompt"
+                }, turnInStep: 1, imgDataUrl: dummyImgDataUrl
+            })).rejects
             .toThrow("priorTurnOutput must be provided for turn 1")
     });
 
@@ -157,7 +163,7 @@ describe('OpenAiEngine.generate', () => {
             ]
         } as ChatCompletion);
 
-        const result0 = await engine.generate(prompts, 0, dummyImgDataUrl);
+        const result0 = await engine.generate({prompts: prompts, turnInStep: 0, imgDataUrl: dummyImgDataUrl});
         expect(result0).toEqual(t0RespTxt);
         // @ts-expect-error testing, will fail if create not called
         const request0Body = mockCompletions.create.mock.lastCall[0];
@@ -169,7 +175,8 @@ describe('OpenAiEngine.generate', () => {
                 {message: {content: t1RespTxt}, index: 0, finish_reason: "stop"} as ChatCompletion.Choice
             ]
         } as ChatCompletion);
-        const result1 = await engine.generate(prompts, 1, dummyImgDataUrl, t0RespTxt);
+        const result1 = await engine.generate(
+            {prompts: prompts, turnInStep: 1, imgDataUrl: dummyImgDataUrl, priorTurnOutput: t0RespTxt});
         expect(result1).toEqual(t1RespTxt);
 
         //@ts-expect-error testing, will fail if create not called
@@ -185,7 +192,8 @@ describe('OpenAiEngine.generateWithRetry', () => {
 
     const prompts: LmmPrompts = {
         sysPrompt: "some sys prompt", queryPrompt: "some query prompt", groundingPrompt: "some referring prompt",
-        elementlessActionPrompt: onlineElementlessActionPrompt};
+        elementlessActionPrompt: onlineElementlessActionPrompt
+    };
 
     let mockOpenAi: Mock<OpenAI>;
     let mockCompletions: Mock<OpenAI.Chat.Completions>;
@@ -214,8 +222,8 @@ describe('OpenAiEngine.generateWithRetry', () => {
         const increasedBaseBackoffDelay = 500;
 
         const req0Start = Date.now();
-        const result0 = await engine.generateWithRetry(prompts, 0, dummyImgDataUrl,
-            undefined, undefined, undefined, undefined, increasedBaseBackoffDelay);
+        const result0 = await engine.generateWithRetry(
+            {prompts: prompts, turnInStep: 0, imgDataUrl: dummyImgDataUrl}, increasedBaseBackoffDelay);
         const req0Time = Date.now() - req0Start;
         expect(req0Time).toBeLessThan(increasedBaseBackoffDelay);
         expect(result0).toEqual(t0RespTxt);
@@ -230,7 +238,8 @@ describe('OpenAiEngine.generateWithRetry', () => {
         } as ChatCompletion);
 
         const req1Start = Date.now();
-        const result1 = await engine.generateWithRetry(prompts, 1, dummyImgDataUrl, t0RespTxt);
+        const result1 = await engine.generateWithRetry(
+            {prompts: prompts, turnInStep: 1, imgDataUrl: dummyImgDataUrl, priorTurnOutput: t0RespTxt});
         const req1Time = Date.now() - req1Start;
         expect(req1Time).toBeLessThan(increasedBaseBackoffDelay);
         expect(result1).toEqual(t1RespTxt);
@@ -260,7 +269,8 @@ describe('OpenAiEngine.generateWithRetry', () => {
             } as ChatCompletion);
 
         const req0Start = Date.now();
-        const result0 = await engine.generateWithRetry(prompts, 0, dummyImgDataUrl, undefined, undefined, undefined, undefined, 100);
+        const result0 = await engine.generateWithRetry(
+            {prompts: prompts, turnInStep: 0, imgDataUrl: dummyImgDataUrl}, 100);
         const req0Time = Date.now() - req0Start;
         expect(req0Time).toBeGreaterThan(100 + 300 + 900);
         expect(req0Time).toBeLessThan(100 + 300 + 900 + 2700);
@@ -291,7 +301,8 @@ describe('OpenAiEngine.generateWithRetry', () => {
             } as ChatCompletion);
 
         const req1Start = Date.now();
-        const result1 = await engine.generateWithRetry(prompts, 1, dummyImgDataUrl, t0RespTxt, undefined, undefined, undefined, 10);
+        const result1 = await engine.generateWithRetry(
+            {prompts: prompts, turnInStep: 1, imgDataUrl: dummyImgDataUrl, priorTurnOutput: t0RespTxt}, 10);
         const req1Time = Date.now() - req1Start;
         expect(req1Time).toBeGreaterThan(10 + 30 + 90 + 270 + 810);
         expect(req1Time).toBeLessThan(10 + 30 + 90 + 270 + 810 + 2430);
@@ -315,7 +326,8 @@ describe('OpenAiEngine.generateWithRetry', () => {
                 throw finalError;
             });
         await expect(async () => {
-            await engine.generateWithRetry(prompts, 0, dummyImgDataUrl, undefined, undefined, undefined, undefined, undefined, 3)
+            await engine.generateWithRetry(
+                {prompts: prompts, turnInStep: 0, imgDataUrl: dummyImgDataUrl}, undefined, 3)
         }).rejects.toThrow(finalError);
     });
 
@@ -331,8 +343,8 @@ describe('OpenAiEngine.generateWithRetry', () => {
         const increasedBaseBackoffDelay = 500;
         const start = Date.now();
         await expect(async () => {
-            await engine.generateWithRetry(prompts, 0, dummyImgDataUrl, undefined,
-                undefined, undefined, undefined, increasedBaseBackoffDelay)
+            await engine.generateWithRetry(
+                {prompts: prompts, turnInStep: 0, imgDataUrl: dummyImgDataUrl}, increasedBaseBackoffDelay)
         })
             .rejects.toThrow(authenticationError);
         const time = Date.now() - start;
