@@ -87,15 +87,15 @@ export class AgentController {
     /**
      * max number of total operations (successful or not) allowed in a task
      */
-    maxOpsLimit: number = 10;//todo increase this after confirming that max op count limit is enforced
+    maxOpsLimit: number = 20;
     /**
      * max number of total noops allowed in a task before it is terminated
      */
-    maxNoopLimit: number = 3;
+    maxNoopLimit: number = 4;
     /**
      * max number of total failed operations allowed in a task before it is terminated
      */
-    maxFailureLimit: number = 3;
+    maxFailureLimit: number = 5;
     /**
      * max length of streak of noops and/or failures allowed in a task before it is terminated
      */
@@ -119,6 +119,7 @@ export class AgentController {
         this.chromeWrapper = chromeWrapper ?? new ChromeWrapper();
 
         this.logger = createNamedLogger('agent-controller', true);
+        this.logger.debug(`max ops limit: ${this.maxOpsLimit}, max noop limit: ${this.maxNoopLimit}, max failure limit: ${this.maxFailureLimit}, max failure-or-noop streak limit: ${this.maxFailureOrNoopStreakLimit}`);
     }
 
 
@@ -369,10 +370,10 @@ export class AgentController {
             return;
         }
         if (this.noopCount > this.maxNoopLimit) {
-            this.logger.warn(`task terminated due to reaching the maximum noop limit of ${this.maxNoopLimit}`);
+            this.logger.warn(`task terminated due to exceeding the maximum noop limit of ${this.maxNoopLimit}`);
             this.terminateTask();
         } else if (this.failureOrNoopStreak > this.maxFailureOrNoopStreakLimit) {
-            this.logger.warn(`task terminated due to reaching the maximum failure-or-noop streak limit of ${this.maxFailureOrNoopStreakLimit}`);
+            this.logger.warn(`task terminated due to exceeding the maximum failure-or-noop streak limit of ${this.maxFailureOrNoopStreakLimit}`);
             this.terminateTask();
         }
     }
@@ -413,32 +414,10 @@ export class AgentController {
             }
         }
 
-        this.actionsSoFar.push({actionDesc: actionDesc, success: wasSuccessful});
-        this.tentativeActionInfo = undefined;
-
-        this.opsCount++;
-        if (wasSuccessful) {
-            this.failureOrNoopStreak = 0;//failure-or-noop streak can only be broken by successfully _completed_ action
-        } else {
-            this.failureCount++;
-            this.failureOrNoopStreak++;
-        }
-
-        if (this.failureOrNoopStreak > this.maxFailureOrNoopStreakLimit) {
-            this.logger.warn(`task terminated due to reaching the maximum failure-or-noop streak limit of ${this.maxFailureOrNoopStreakLimit}`);
-            this.terminateTask();
-            return;
-        } else if (this.failureCount > this.maxFailureLimit) {
-            this.logger.warn(`task terminated due to reaching the maximum failure limit of ${this.maxFailureLimit}`);
-            this.terminateTask();
-            return;
-        } else if (this.opsCount > this.maxOpsLimit) {
-            this.logger.warn(`task terminated due to reaching the maximum operations limit of ${this.maxOpsLimit}`);
-            this.terminateTask();
-            return;
-        }
-
-        if (wasPageNav) {
+        const shouldAbort = this.updateActionHistory(actionDesc, wasSuccessful);
+        if (shouldAbort) {
+            this.logger.info("task terminated due to exceeding a limit on operations, noops, or failures");
+        } else if (wasPageNav) {
             this.logger.info("tab id changed after action was performed, so killing connection to " +
                 "old tab and injecting content script in new tab " + tab?.title);
             this.killPageConnection(port);
@@ -461,6 +440,46 @@ export class AgentController {
                 }
             }
         }
+    }
+
+    /**
+     * @description Processes the result of an action that was attempted, updating the controller's record of actions
+     * and its counters for operations, failures, and failure/noop streaks;
+     * it then enforces the limits on those counters (aborting the task if any of them are exceeded)
+     *
+     * @param actionDesc description of the action that was attempted
+     * @param wasSuccessful whether the action was successful
+     * @return whether the task should be aborted; indicates whether the action-completion-handler function which called
+     *          this should proceed with setting things in motion for the next step of the task
+     */ //todo write at least skeleton of unit test suite for this
+    updateActionHistory(actionDesc: string, wasSuccessful: boolean) {
+        let shouldAbort: boolean = false;
+        this.actionsSoFar.push({actionDesc: actionDesc, success: wasSuccessful});
+        this.tentativeActionInfo = undefined;
+
+        this.opsCount++;
+        if (wasSuccessful) {
+            this.failureOrNoopStreak = 0;//failure-or-noop streak can only be broken by successfully _completed_ action
+        } else {
+            this.failureCount++;
+            this.failureOrNoopStreak++;
+        }
+        this.logger.debug(`current ops count is ${this.opsCount}, noop count is ${this.noopCount}, failure count is ${this.failureCount}, failure-or-noop streak is ${this.failureOrNoopStreak}`)
+
+        if (this.failureOrNoopStreak > this.maxFailureOrNoopStreakLimit) {
+            this.logger.warn(`task terminated due to exceeding the maximum failure-or-noop streak limit of ${this.maxFailureOrNoopStreakLimit}`);
+            this.terminateTask();
+            shouldAbort = true;
+        } else if (this.failureCount > this.maxFailureLimit) {
+            this.logger.warn(`task terminated due to exceeding the maximum failure limit of ${this.maxFailureLimit}`);
+            this.terminateTask();
+            shouldAbort = true;
+        } else if (this.opsCount > this.maxOpsLimit) {
+            this.logger.warn(`task terminated due to exceeding the maximum operations limit of ${this.maxOpsLimit}`);
+            this.terminateTask();
+            shouldAbort = true;
+        }
+        return shouldAbort;
     }
 
     /**
@@ -504,25 +523,27 @@ export class AgentController {
             //give the browser time to ensure that the new page is ready for scripts to be injected into it
             await sleep(500);
         } else {
-            this.logger.warn("!!! service worker's connection to content script was lost while performing an action, " +
-                "but the action was not expected to cause page navigation; this is unexpected !!!");
+            this.logger.error("service worker's connection to content script was lost while performing an action, " +
+                "but the action was not expected to cause page navigation; this is unexpected");
         }
 
         const tab = await this.getActiveTab();
         if (tab.id !== this.currTaskTabId) {
-            this.logger.warn("!!! tab changed after action and yet the connection to the old tab's " +
-                "content script was lost (before the controller could terminate it); this is unexpected!!!")
+            this.logger.error("tab changed after action and yet the connection to the old tab's " +
+                "content script was lost (before the controller could terminate it); this is unexpected")
         }
         const actionDesc = buildGenericActionDesc(this.tentativeActionInfo.action, this.tentativeActionInfo.elementData,
             this.tentativeActionInfo.value) + `; this caused page navigation to ${tab.title}`;
 
-        this.actionsSoFar.push({actionDesc: actionDesc, success: this.mightNextActionCausePageNav});
-        this.tentativeActionInfo = undefined;
-
-        await this.injectPageActorScript(false);
-        //only resetting this after script injection because script injection needs to know whether it's ok that the
-        // tab id might've changed
-        this.mightNextActionCausePageNav = false;
+        //marking action as failure if it _accidentally_ caused page navigation or otherwise caused the page connection
+        // to fail
+        const shouldAbort = this.updateActionHistory(actionDesc, this.mightNextActionCausePageNav);
+        if (!shouldAbort) {
+            await this.injectPageActorScript(false);
+            //only resetting this after script injection because script injection needs to know whether it's ok that the
+            // tab id might've changed
+            this.mightNextActionCausePageNav = false;
+        }
     }
 
     /**
@@ -588,7 +609,9 @@ export class AgentController {
         this.state = AgentControllerState.IDLE;
         this.tentativeActionInfo = undefined;
         this.mightNextActionCausePageNav = false;
+        this.logger.info("action history for task: " + JSON.stringify(this.actionsSoFar));
         this.actionsSoFar = [];
+        this.logger.info(`summary of actions in task: ${this.opsCount} operations, ${this.noopCount} no-ops, ${this.failureCount} failures; at end of task, the length of the failure-or-noop streak was ${this.failureOrNoopStreak} (this is not the length of the longest such streak during the task)`)
         this.opsCount = 0;
         this.noopCount = 0;
         this.failureCount = 0;
