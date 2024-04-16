@@ -9,7 +9,7 @@ import {
     Action, Background2PagePortMsgType, buildGenericActionDesc, expectedMsgForPortDisconnection, sleep,
     Page2BackgroundPortMsgType
 } from "./misc";
-import {formatChoices, generatePrompt, postProcessActionLlm, StrQuartet, StrTriple} from "./format_prompts";
+import {formatChoices, generatePrompt, LmmPrompts, postProcessActionLlm, StrTriple} from "./format_prompts";
 import {getIndexFromOptionName} from "./format_prompt_utils";
 import {ChromeWrapper} from "./ChromeWrapper";
 
@@ -266,7 +266,7 @@ export class AgentController {
 
         while (this.noopCount <= this.maxNoopLimit && this.failureOrNoopStreak <= this.maxFailureOrNoopStreakLimit) {
 
-            const prompts: StrQuartet = generatePrompt(this.taskSpecification,
+            const prompts: LmmPrompts = generatePrompt(this.taskSpecification,
                 this.actionsSoFar.map(entry => `${entry.success ? "SUCCEEDED" : "FAILED"}-${entry.actionDesc}`), interactiveChoices);
             this.logger.debug("prompts:", prompts);
             let planningOutput: string;

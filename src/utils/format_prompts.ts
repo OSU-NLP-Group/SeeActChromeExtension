@@ -20,7 +20,13 @@ export const _processString = (input: string): string => {
 }
 
 export type StrTriple = [string, string, string];
-export type StrQuartet = [string, string, string, string];
+
+export interface LmmPrompts {
+    sysPrompt: string;
+    queryPrompt: string;
+    groundingPrompt: string;
+    elementlessActionPrompt: string;
+}
 
 /**
  * @description format a list of choices for elements that might be interacted with
@@ -204,11 +210,12 @@ export const elementlessActionPrompt = "Based on your prior planning, the next a
  * @param choices describes the elements which might be interacted with; each entry in the top-level list is a length-2
  *                 list, with the first entry being the string version of the choice's index and the second entry
  *                 being an abbreviated version of the element's html
- * @return three prompts for the language model: 1) a system prompt (used with both of the other prompts);
+ * @return four prompts for the language model: 1) a system prompt (used with both of the other prompts);
  *          2) a prompt for the model planning its next step; and
  *          3) a prompt for the model identifying the element to interact with and how to interact with it
+ *          4) a prompt for the model to choose an action when there is no specific element to interact with
  */
-export const generatePrompt = (task: string, previousActions: Array<string>, choices: Array<StrPair>): StrQuartet => {
+export const generatePrompt = (task: string, previousActions: Array<string>, choices: Array<StrPair>): LmmPrompts => {
     const [sysPrompt, queryPrompt] = generateNewQueryPrompt(onlineSystemPrompt, task, previousActions, onlineQuestionDesc);
     let groundingPrompt: string = onlineReferringPromptDesc + "\n\n";
     if (choices) {
@@ -216,8 +223,9 @@ export const generatePrompt = (task: string, previousActions: Array<string>, cho
     }
     groundingPrompt += onlineElementFormat + "\n\n" + onlineActionFormat + "\n\n" + onlineValueFormat;
 
-    //todo!!! make an object-type type alias or interface for this rather than a fixed-length array, much more readable
-    // !! before send to Prof Su!
-    return [sysPrompt, queryPrompt, groundingPrompt, elementlessActionPrompt];
+    return {
+        sysPrompt: sysPrompt, queryPrompt: queryPrompt, groundingPrompt: groundingPrompt,
+        elementlessActionPrompt: elementlessActionPrompt
+    };
 }
 

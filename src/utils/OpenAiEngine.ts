@@ -1,4 +1,4 @@
-import {StrQuartet} from "./format_prompts";
+import {LmmPrompts} from "./format_prompts";
 import OpenAI from "openai";
 import {APIConnectionError, APIConnectionTimeoutError, InternalServerError, RateLimitError} from "openai/error";
 import {retryAsync} from "ts-retry";
@@ -71,8 +71,9 @@ export class OpenAiEngine {
 
     /**
      * @description Generate a completion from the OpenAI API
-     * @param prompts system prompt, prompt for planning the next action, and
-     *                  prompt for identifying the specific next element to interact with next
+     * @param prompts system prompt, prompt for planning the next action,
+     *                  prompt for identifying the specific next element to interact with next,
+     *                  and alternative prompt for deciding on an element-independent action
      * @param turnInStep the 0-based index of the current query in the preparation for the current step's action
      *                      0 means we're asking the model to analyze situation and plan next move
      *                      1 means we're asking the model to identify the specific element to interact with next
@@ -85,7 +86,7 @@ export class OpenAiEngine {
      *               (optional, by default uses the model set in the constructor)
      * @return the model's response for the current query
      */
-    generate = async (prompts: StrQuartet, turnInStep: 0 | 1, imgDataUrl?: string, priorTurnOutput?: string,
+    generate = async (prompts: LmmPrompts, turnInStep: 0 | 1, imgDataUrl?: string, priorTurnOutput?: string,
                       maxNewTokens: number = 4096, temp?: number, model?: string): Promise<string> => {
         //todo eventually create options object/type for all optional parameters of generate(), currently hard to read or use
         // then reuse that as part of the params of generateWithRetry()
@@ -108,8 +109,8 @@ export class OpenAiEngine {
         const modelToUse = model ?? this.model;
 
         const messages: Array<ChatCompletionMessageParam> = [
-            {role: "system", content: prompts[0]},
-            {role: "user", content: [{type: "text", text: prompts[1]}]}
+            {role: "system", content: prompts.sysPrompt},
+            {role: "user", content: [{type: "text", text: prompts.queryPrompt}]}
         ];
         if (imgDataUrl) {
             (messages[1].content as Array<ChatCompletionContentPart>)
@@ -132,9 +133,10 @@ export class OpenAiEngine {
             }
 
             if (priorTurnOutput.includes("SKIP_ELEMENT_SELECTION")) {
-                messages.push({role: "user", content: prompts[3]});
+                //todo unit test this branch
+                messages.push({role: "user", content: prompts.elementlessActionPrompt});
             } else {
-                messages.push({role: "user", content: prompts[2]});
+                messages.push({role: "user", content: prompts.groundingPrompt});
             }
 
             const response = await this.openAi.chat.completions.create(
@@ -158,7 +160,7 @@ export class OpenAiEngine {
      * @param backoffBaseDelay the base delay in ms for the exponential backoff algorithm
      * @param backoffMaxTries maximum number of attempts for the exponential backoff algorithm
      */
-    generateWithRetry = async (prompts: StrQuartet, turnInStep: 0 | 1, imgDataUrl?: string, priorTurnOutput?: string,
+    generateWithRetry = async (prompts: LmmPrompts, turnInStep: 0 | 1, imgDataUrl?: string, priorTurnOutput?: string,
                                maxNewTokens: number = 4096, temp?: number, model?: string,
                                backoffBaseDelay: number = 100, backoffMaxTries: number = 10): Promise<string> => {
         const generateCall = async () => this.generate(prompts, turnInStep, imgDataUrl, priorTurnOutput, maxNewTokens, temp, model);
