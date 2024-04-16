@@ -334,47 +334,47 @@ describe('PageActor.performScrollAction', () => {
         actionOutcome = { success: false, result: "" };
     });
 
-    it('should report failure if SCROLL_UP but already at top of window', () => {
+    it('should report failure if SCROLL_UP but already at top of window', async () => {
         domWrapper.getVertScrollPos = jest.fn().mockReturnValueOnce(0).mockReturnValueOnce(0);
         domWrapper.scrollBy = jest.fn();
         const baseActionResult = "Performed element-independent action SCROLL_UP";
         actionOutcome.result = baseActionResult;
-        pageActor.performScrollAction(Action.SCROLL_UP, actionOutcome);
+        await pageActor.performScrollAction(Action.SCROLL_UP, actionOutcome);
         expect(domWrapper.scrollBy).toHaveBeenCalledWith(0, -375);
         expect(actionOutcome.success).toBe(false);
-        expect(actionOutcome.result).toEqual(baseActionResult + "; scroll action failed to move the viewport's vertical position");
+        expect(actionOutcome.result).toEqual(baseActionResult + "; scroll action failed to move the viewport's vertical position from 0px");
     });
 
-    it('should report success if SCROLL_UP and not at top of window', () => {
+    it('should report success if SCROLL_UP and not at top of window', async () => {
         domWrapper.getVertScrollPos = jest.fn().mockReturnValueOnce(374).mockReturnValueOnce(0)
             .mockReturnValueOnce(0);
         domWrapper.scrollBy = jest.fn();
         const baseActionResult = "Performed element-independent action SCROLL_UP";
         actionOutcome.result = baseActionResult;
-        pageActor.performScrollAction(Action.SCROLL_UP, actionOutcome);
+        await pageActor.performScrollAction(Action.SCROLL_UP, actionOutcome);
         expect(domWrapper.scrollBy).toHaveBeenCalledWith(0, -375);
         expect(actionOutcome.success).toBe(true);
         expect(actionOutcome.result).toEqual(baseActionResult + "; scrolled page by 374px up");
     });
 
-    it('should report failure if SCROLL_DOWN but already at bottom of window', () => {
+    it('should report failure if SCROLL_DOWN but already at bottom of window', async () => {
         domWrapper.getVertScrollPos = jest.fn().mockReturnValueOnce(1500).mockReturnValueOnce(1500);
         domWrapper.scrollBy = jest.fn();
         const baseActionResult = "Performed element-independent action SCROLL_DOWN";
         actionOutcome.result = baseActionResult;
-        pageActor.performScrollAction(Action.SCROLL_DOWN, actionOutcome);
+        await pageActor.performScrollAction(Action.SCROLL_DOWN, actionOutcome);
         expect(domWrapper.scrollBy).toHaveBeenCalledWith(0, 375);
         expect(actionOutcome.success).toBe(false);
-        expect(actionOutcome.result).toEqual(baseActionResult + "; scroll action failed to move the viewport's vertical position");
+        expect(actionOutcome.result).toEqual(baseActionResult + "; scroll action failed to move the viewport's vertical position from 1500px");
     });
 
-    it('should report success if SCROLL_DOWN and not at bottom of window', () => {
+    it('should report success if SCROLL_DOWN and not at bottom of window', async () => {
         domWrapper.getVertScrollPos = jest.fn().mockReturnValueOnce(1125).mockReturnValueOnce(1500)
             .mockReturnValueOnce(1500);
         domWrapper.scrollBy = jest.fn();
         const baseActionResult = "Performed element-independent action SCROLL_DOWN";
         actionOutcome.result = baseActionResult;
-        pageActor.performScrollAction(Action.SCROLL_DOWN, actionOutcome);
+        await pageActor.performScrollAction(Action.SCROLL_DOWN, actionOutcome);
         expect(domWrapper.scrollBy).toHaveBeenCalledWith(0, 375);
         expect(actionOutcome.success).toBe(true);
         expect(actionOutcome.result).toEqual(baseActionResult + "; scrolled page by 375px down");

@@ -1,4 +1,4 @@
-import {StrTriple} from "./format_prompts";
+import {StrQuartet} from "./format_prompts";
 import OpenAI from "openai";
 import {APIConnectionError, APIConnectionTimeoutError, InternalServerError, RateLimitError} from "openai/error";
 import {retryAsync} from "ts-retry";
@@ -85,7 +85,7 @@ export class OpenAiEngine {
      *               (optional, by default uses the model set in the constructor)
      * @return the model's response for the current query
      */
-    generate = async (prompts: StrTriple, turnInStep: 0 | 1, imgDataUrl?: string, priorTurnOutput?: string,
+    generate = async (prompts: StrQuartet, turnInStep: 0 | 1, imgDataUrl?: string, priorTurnOutput?: string,
                       maxNewTokens: number = 4096, temp?: number, model?: string): Promise<string> => {
         //todo eventually create options object/type for all optional parameters of generate(), currently hard to read or use
         // then reuse that as part of the params of generateWithRetry()
@@ -131,7 +131,11 @@ export class OpenAiEngine {
                 throw new Error("priorTurnOutput must be provided for turn 1");
             }
 
-            messages.push({role: "user", content: prompts[2]});
+            if (priorTurnOutput.includes("SKIP_ELEMENT_SELECTION")) {
+                messages.push({role: "user", content: prompts[3]});
+            } else {
+                messages.push({role: "user", content: prompts[2]});
+            }
 
             const response = await this.openAi.chat.completions.create(
                 {messages: messages, model: modelToUse, temperature: tempToUse, max_tokens: maxNewTokens});
@@ -154,7 +158,7 @@ export class OpenAiEngine {
      * @param backoffBaseDelay the base delay in ms for the exponential backoff algorithm
      * @param backoffMaxTries maximum number of attempts for the exponential backoff algorithm
      */
-    generateWithRetry = async (prompts: StrTriple, turnInStep: 0 | 1, imgDataUrl?: string, priorTurnOutput?: string,
+    generateWithRetry = async (prompts: StrQuartet, turnInStep: 0 | 1, imgDataUrl?: string, priorTurnOutput?: string,
                                maxNewTokens: number = 4096, temp?: number, model?: string,
                                backoffBaseDelay: number = 100, backoffMaxTries: number = 10): Promise<string> => {
         const generateCall = async () => this.generate(prompts, turnInStep, imgDataUrl, priorTurnOutput, maxNewTokens, temp, model);

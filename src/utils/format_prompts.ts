@@ -1,4 +1,4 @@
-import {generateNewQueryPrompt, generateNewReferringPrompt, StrPair} from "./format_prompt_utils";
+import {_formatOptions, generateNewQueryPrompt, StrPair} from "./format_prompt_utils";
 import {Action} from "./misc";
 
 
@@ -20,6 +20,7 @@ export const _processString = (input: string): string => {
 }
 
 export type StrTriple = [string, string, string];
+export type StrQuartet = [string, string, string, string];
 
 /**
  * @description format a list of choices for elements that might be interacted with
@@ -167,7 +168,13 @@ Then, based on your analysis, in conjunction with human web browsing habits and 
 To be successful, it is important to follow the following rules: 
 1. You should only issue a valid action given the current observation. 
 2. You should only issue one action at a time
-3. For handling the select dropdown elements on the webpage, it's not necessary for you to provide completely accurate options right now. The full list of options for these elements will be supplied later.`;
+3. For handling the select dropdown elements on the webpage, it's not necessary for you to provide completely accurate options right now. The full list of options for these elements will be supplied later.
+
+Sometimes the action won't require a target element: SCROLL_UP, SCROLL_DOWN, TERMINATE, or NONE; PRESS_ENTER also qualifies if your last action was TYPE.
+In such a case, it is important that you include the exact string SKIP_ELEMENT_SELECTION in your planning output. DO NOT include it if you want to do something else first (e.g. TYPE before PRESS_ENTER).`;
+//todo ask Boyuan about changing the action space- it keeps getting confused or doing things wrong related to the
+// sequence "TYPE on one step then PRESS ENTER on next step"; why don't we just make 2 actions TYPE and TYPE_THEN_ENTER?
+// and get rid of the PRESS_ENTER stand-alone action unless/until it becomes clear that it's needed?
 export const onlineReferringPromptDesc = `(Reiteration)
 First, reiterate your next target element, its detailed location, and the corresponding operation.
 
@@ -182,6 +189,12 @@ ELEMENT: The uppercase letter of your choice. (No need for PRESS_ENTER, SCROLL_U
 export const onlineActionFormat = "ACTION: Choose an action from {CLICK, SELECT, TYPE, PRESS_ENTER, SCROLL_UP, SCROLL_DOWN, TERMINATE, NONE}.";
 export const onlineValueFormat = "VALUE: Provide additional input based on ACTION.\n\nThe VALUE means:\nIf ACTION == TYPE, specify the text to be typed.\nIf ACTION == SELECT, indicate the option to be chosen. Revise the selection value to align with the available options within the element.\nIf ACTION == CLICK, PRESS_ENTER, SCROLL_UP, SCROLL_DOWN, TERMINATE or NONE, write \"None\".";
 
+export const elementlessActionPrompt = "Based on your prior planning, the next action is not specific to " +
+    "an element. \nPlease pick from the following actions: SCROLL_UP, SCROLL_DOWN, PRESS_ENTER, TERMINATE, or " +
+    "NONE.\nSimply print a single line starting with \nACTION: \nfollowed by one of the options above on the " +
+    "same line.\nEnsure your answer is strictly adhering to the format provided above. Please do not leave any " +
+    "explanation in your answers of the final standardized format part, and this final part should be clear and certain";
+
 /**
  * @description generate the prompts for the web agent for the current step of the task
  * This was originally in src/prompts.py, but I put it here because almost everything from prompts.py was irrelevant
@@ -195,9 +208,16 @@ export const onlineValueFormat = "VALUE: Provide additional input based on ACTIO
  *          2) a prompt for the model planning its next step; and
  *          3) a prompt for the model identifying the element to interact with and how to interact with it
  */
-export const generatePrompt = (task: string, previousActions: Array<string>, choices: Array<StrPair>): StrTriple => {
+export const generatePrompt = (task: string, previousActions: Array<string>, choices: Array<StrPair>): StrQuartet => {
     const [sysPrompt, queryPrompt] = generateNewQueryPrompt(onlineSystemPrompt, task, previousActions, onlineQuestionDesc);
-    const referringPrompt = generateNewReferringPrompt(onlineReferringPromptDesc, onlineElementFormat, onlineActionFormat, onlineValueFormat, choices);
-    return [sysPrompt, queryPrompt, referringPrompt];
+    let groundingPrompt: string = onlineReferringPromptDesc + "\n\n";
+    if (choices) {
+        groundingPrompt += _formatOptions(choices);
+    }
+    groundingPrompt += onlineElementFormat + "\n\n" + onlineActionFormat + "\n\n" + onlineValueFormat;
+
+    //todo!!! make an object-type type alias or interface for this rather than a fixed-length array, much more readable
+    // !! before send to Prof Su!
+    return [sysPrompt, queryPrompt, groundingPrompt, elementlessActionPrompt];
 }
 

@@ -1,5 +1,5 @@
 import {
-    _processString,
+    _processString, elementlessActionPrompt,
     formatChoices,
     generatePrompt,
     onlineActionFormat,
@@ -11,7 +11,7 @@ import {
     postProcessActionLlm,
     StrTriple
 } from "../../src/utils/format_prompts";
-import {generateNewQueryPrompt, generateNewReferringPrompt, StrPair} from "../../src/utils/format_prompt_utils";
+import {_formatOptions, generateNewQueryPrompt, StrPair} from "../../src/utils/format_prompt_utils";
 
 
 describe('_processString', () => {
@@ -172,11 +172,12 @@ describe('generatePrompt', () => {
             ["5", "button type=\"button\" id=\"5\">Product</button>"]
         ];
         const [expectedSysPrompt, expectedQueryPrompt] = generateNewQueryPrompt(onlineSystemPrompt, task, previousActions, onlineQuestionDesc);
-        const expectedReferringPrompt = generateNewReferringPrompt(onlineReferringPromptDesc, onlineElementFormat, onlineActionFormat, onlineValueFormat, choices);
+        const expectedReferringPrompt = onlineReferringPromptDesc + "\n\n" + _formatOptions(choices) +  onlineElementFormat + "\n\n" + onlineActionFormat + "\n\n" +  onlineValueFormat;
 
-        const [actualSysPrompt, actualQueryPrompt, actualReferringPrompt] = generatePrompt(task, previousActions, choices);
+        const [actualSysPrompt, actualQueryPrompt, actualReferringPrompt, actualElementlessActionPrompt] = generatePrompt(task, previousActions, choices);
         expect(actualSysPrompt).toEqual(expectedSysPrompt);
         expect(actualQueryPrompt).toEqual(expectedQueryPrompt);
         expect(actualReferringPrompt).toEqual(expectedReferringPrompt);
+        expect(actualElementlessActionPrompt).toEqual(elementlessActionPrompt);
     });
 });

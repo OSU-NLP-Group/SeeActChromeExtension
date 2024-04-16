@@ -199,24 +199,26 @@ export class PageActor {
      * @param actionOutcome pass-by-reference for the nested success and result variables in the main
      *                       performActionFromController method
      */
-    performScrollAction = (actionToPerform: Action, actionOutcome: ActionOutcome): void => {
+    performScrollAction = async (actionToPerform: Action, actionOutcome: ActionOutcome): Promise<void> => {
         const docElement = this.domWrapper.getDocumentElement();
         const viewportHeight = docElement.clientHeight;
         //todo make scroll increment fraction configurable in options menu? if so, that config option would
         // also need to affect the relevant sentence of the system prompt (about magnitude of scrolling actions)
         const scrollAmount = viewportHeight * 0.75;
         const scrollVertOffset = actionToPerform === Action.SCROLL_UP ? -scrollAmount : scrollAmount;
-        this.logger.trace(`scrolling page by ${scrollVertOffset}px`);
         const priorVertScrollPos = this.domWrapper.getVertScrollPos();
+        this.logger.trace(`scrolling page by ${scrollVertOffset}px from starting vertical position ${priorVertScrollPos}px`);
         this.domWrapper.scrollBy(0, scrollVertOffset);
-        if (priorVertScrollPos != this.domWrapper.getVertScrollPos()) {
+        await sleep(500);//don't want to measure the post-scroll position before the scroll animation concludes
+        const postVertScrollPos = this.domWrapper.getVertScrollPos();
+        if (priorVertScrollPos != postVertScrollPos) {
             actionOutcome.success = true;
-            const actualVertOffset = this.domWrapper.getVertScrollPos() - priorVertScrollPos;
+            const actualVertOffset = postVertScrollPos - priorVertScrollPos;
             actionOutcome.result +=
                 `; scrolled page by ${Math.abs(actualVertOffset)}px ${actualVertOffset < 0 ? "up" : "down"}`;
         } else {
-            this.logger.warn("scroll action failed to move the viewport's vertical position")
-            actionOutcome.result += `; scroll action failed to move the viewport's vertical position`;
+            this.logger.warn(`scroll action failed to move the viewport's vertical position from ${priorVertScrollPos}px`)
+            actionOutcome.result += `; scroll action failed to move the viewport's vertical position from ${priorVertScrollPos}px`;
         }
     }
 
@@ -316,7 +318,7 @@ export class PageActor {
 
         } else {
             if (actionToPerform === Action.SCROLL_UP || actionToPerform === Action.SCROLL_DOWN) {
-                this.performScrollAction(actionToPerform, actionOutcome);
+                await this.performScrollAction(actionToPerform, actionOutcome);
             } else if (actionToPerform === Action.PRESS_ENTER) {
                 await this.performPressEnterAction(actionOutcome, "whatever element had focus in the tab")
                 //todo open question for chrome.debugger api: how to handle the case where the tab is already being

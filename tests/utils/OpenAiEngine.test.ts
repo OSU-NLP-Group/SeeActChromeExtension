@@ -3,7 +3,7 @@ import {OpenAiEngine} from "../../src/utils/OpenAiEngine";
 import OpenAI, {AuthenticationError} from "openai";
 import {Mock, mock} from "ts-jest-mocker";
 import {ChatCompletion} from "openai/resources";
-import {StrTriple} from "../../src/utils/format_prompts";
+import {elementlessActionPrompt, StrQuartet} from "../../src/utils/format_prompts";
 import {APIConnectionError, InternalServerError, RateLimitError} from "openai/error";
 import log from "loglevel";
 import {origLoggerFactory} from "../../src/utils/shared_logging_setup";
@@ -68,10 +68,9 @@ describe('OpenAiEngine.generate', () => {
         mockOpenAi.chat.completions = mockCompletions;
     });
 
-
     it('should generate turn 0 and turn 1 completions with 3 keys', async () => {
         const dummyApiKeys = ["key1", "key2", "key3"];
-        const prompts: StrTriple = ["some sys prompt", "some query prompt", "some referring prompt"];
+        const prompts: StrQuartet = ["some sys prompt", "some query prompt", "some referring prompt", elementlessActionPrompt];
 
         const baseTemp = 0.7;
         const engine = new OpenAiEngine(exampleModel, dummyApiKeys, mockOpenAi, "\n\n", -1, baseTemp, testLogger);
@@ -134,7 +133,7 @@ describe('OpenAiEngine.generate', () => {
 
     it('should error if given no previous turn input for turn 1', async () => {
         await expect(() => new OpenAiEngine(exampleModel, "key1")
-            .generate(["sys", "query", "referring"], 1, dummyImgDataUrl)).rejects
+            .generate(["sys", "query", "referring", "elementless action prompt"], 1, dummyImgDataUrl)).rejects
             .toThrow("priorTurnOutput must be provided for turn 1")
     });
 
@@ -144,7 +143,7 @@ describe('OpenAiEngine.generate', () => {
 
 describe('OpenAiEngine.generateWithRetry', () => {
 
-    const prompts: StrTriple = ["some sys prompt", "some query prompt", "some referring prompt"];
+    const prompts: StrQuartet = ["some sys prompt", "some query prompt", "some referring prompt", elementlessActionPrompt];
 
     let mockOpenAi: Mock<OpenAI>;
     let mockCompletions: Mock<OpenAI.Chat.Completions>;

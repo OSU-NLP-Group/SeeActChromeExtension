@@ -3,7 +3,6 @@ import {
     _generateOptionName,
     basicPromptIntro,
     generateNewQueryPrompt,
-    generateNewReferringPrompt,
     getIndexFromOptionName,
     noPrevActions,
     prevActionsIntro,
@@ -129,28 +128,6 @@ describe('_formatOptions', () => {
         expect(resultStr.indexOf(expectedOptionC)).toBeLessThan(resultStr.lastIndexOf(expectedOptionD));
     });
 
-});
-
-describe('generateNewReferringPrompt', () => {
-    it('should return proper referring prompt if all valid provided', () => {
-        const referringDescription: string = "some referring description";
-        const elementFormat: string = "some element format";
-        const actionFormat: string = "some action format";
-        const valueFormat: string = "some value format";
-        const choices: Array<StrPair> = [
-            ["0", "<a id=\"0\">Skip to content</a>"],
-            ["1", "<a id=\"1\">Skip to navigation</a>"],
-            ["5", "button type=\"button\" id=\"5\">Product</button>"]
-        ];
-        const expectedOptionsStr = _formatOptions(choices);
-        const expectedPrompt = referringDescription + "\n\n" +
-            expectedOptionsStr +
-            elementFormat + "\n\n" +
-            actionFormat + "\n\n" +
-            valueFormat;
-        expect(generateNewReferringPrompt(
-            referringDescription, elementFormat, actionFormat, valueFormat, choices)).toBe(expectedPrompt);
-    });
 });
 
 describe('getIndexFromOptionName', () => {

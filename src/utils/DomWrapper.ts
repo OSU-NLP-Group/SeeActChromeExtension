@@ -92,7 +92,7 @@ export class DomWrapper {
      *                      positive values scroll down, negative values scroll up
      */
     scrollBy = (horizOffset: number, vertOffset: number): void => {
-        this.window.scrollBy(horizOffset, vertOffset);
+        this.window.scrollBy({left: horizOffset, top: vertOffset, behavior: "smooth"});
     }
 
 
