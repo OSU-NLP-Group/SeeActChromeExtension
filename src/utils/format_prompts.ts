@@ -1,4 +1,4 @@
-import {_formatOptions, generateNewQueryPrompt, StrPair} from "./format_prompt_utils";
+import {_formatOptions, generateNewQueryPrompt} from "./format_prompt_utils";
 import {Action} from "./misc";
 
 
@@ -38,12 +38,10 @@ export interface LmmPrompts {
  *                  1st piece is string containing the element's tag name and potentially its role and/or type attributes
  *                  2nd piece is string containing just the element's tag name
  * @param candidateIds the indices of the elements to be included in the formatted list
- * @return a list of pairs of strings, where
- *        the first string in each pair is the index of the element from the original list of elements
- *        and the second string is an abbreviated version of the element's html
+ * @return an array of strings, where each string is an abbreviated version of the element's html
  *          (abbreviated start tag, some description, and end tag)
  */
-export const formatChoices = (elements: Array<StrTriple>, candidateIds: Array<number>): Array<StrPair> => {
+export const formatChoices = (elements: Array<StrTriple>, candidateIds: Array<number>): Array<string> => {
     const badCandidateIds = candidateIds.filter((id) => id < 0 || id >= elements.length);
     if (badCandidateIds.length > 0) {
         throw new Error(`out of the candidate id's [${candidateIds}], the id's [${badCandidateIds}] were out of range`);
@@ -63,9 +61,7 @@ export const formatChoices = (elements: Array<StrTriple>, candidateIds: Array<nu
         if ("select" !== tagName && descriptionSplit.length >= 30) {
             possiblyAbbrevDesc = descriptionSplit.slice(0, 29).join(" ") + "...";
         }
-
-        const abbreviatedHtml = `<${tagAndRoleType} id="${id}">${possiblyAbbrevDesc}</${tagName}>`;
-        return [`${id}`, abbreviatedHtml];
+        return `<${tagAndRoleType} id="${id}">${possiblyAbbrevDesc}</${tagName}>`;
     });
 }
 
@@ -195,7 +191,7 @@ ELEMENT: The uppercase letter of your choice. (No need for PRESS_ENTER, SCROLL_U
 export const onlineActionFormat = "ACTION: Choose an action from {CLICK, SELECT, TYPE, PRESS_ENTER, SCROLL_UP, SCROLL_DOWN, TERMINATE, NONE}.";
 export const onlineValueFormat = "VALUE: Provide additional input based on ACTION.\n\nThe VALUE means:\nIf ACTION == TYPE, specify the text to be typed.\nIf ACTION == SELECT, indicate the option to be chosen. Revise the selection value to align with the available options within the element.\nIf ACTION == CLICK, PRESS_ENTER, SCROLL_UP, SCROLL_DOWN, TERMINATE or NONE, write \"None\".";
 
-export const elementlessActionPrompt = "Based on your prior planning, the next action is not specific to " +
+export const onlineElementlessActionPrompt = "Based on your prior planning, the next action is not specific to " +
     "an element. \nPlease pick from the following actions: SCROLL_UP, SCROLL_DOWN, PRESS_ENTER, TERMINATE, or " +
     "NONE.\nSimply print a single line starting with \nACTION: \nfollowed by one of the options above on the " +
     "same line.\nEnsure your answer is strictly adhering to the format provided above. Please do not leave any " +
@@ -215,7 +211,7 @@ export const elementlessActionPrompt = "Based on your prior planning, the next a
  *          3) a prompt for the model identifying the element to interact with and how to interact with it
  *          4) a prompt for the model to choose an action when there is no specific element to interact with
  */
-export const generatePrompt = (task: string, previousActions: Array<string>, choices: Array<StrPair>): LmmPrompts => {
+export const generatePrompt = (task: string, previousActions: Array<string>, choices: Array<string>): LmmPrompts => {
     const [sysPrompt, queryPrompt] = generateNewQueryPrompt(onlineSystemPrompt, task, previousActions, onlineQuestionDesc);
     let groundingPrompt: string = onlineReferringPromptDesc + "\n\n";
     if (choices) {
@@ -225,7 +221,7 @@ export const generatePrompt = (task: string, previousActions: Array<string>, cho
 
     return {
         sysPrompt: sysPrompt, queryPrompt: queryPrompt, groundingPrompt: groundingPrompt,
-        elementlessActionPrompt: elementlessActionPrompt
+        elementlessActionPrompt: onlineElementlessActionPrompt
     };
 }
 

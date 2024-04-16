@@ -5,8 +5,7 @@ import {
     generateNewQueryPrompt,
     getIndexFromOptionName,
     noPrevActions,
-    prevActionsIntro,
-    StrPair
+    prevActionsIntro
 } from "../../src/utils/format_prompt_utils";
 
 
@@ -98,18 +97,15 @@ describe('_generateOptionName', () => {
 
 describe('_formatOptions', () => {
     it('should return a string containing a none of the above option if given an empty array', () => {
-        const emptyChoices: Array<StrPair> = [];
+        const emptyChoices: Array<string> = [];
         const resultStr = _formatOptions(emptyChoices);
         expect(resultStr).toContain('If none of these elements match your target element, '
             + 'please select A. None of the other options match the correct element.\n'
             + 'A. None of the other options match the correct element');
     });
     it('should return a string containing the options and a none of the above option if given a non-empty array', () => {
-        const realChoices: Array<StrPair> = [
-            ["0", "<a id=\"0\">Skip to content</a>"],
-            ["1", "<a id=\"1\">Skip to navigation</a>"],
-            ["5", "button type=\"button\" id=\"5\">Product</button>"]
-        ];
+        const realChoices: Array<string> = ["<a id=\"0\">Skip to content</a>", "<a id=\"1\">Skip to navigation</a>",
+            "button type=\"button\" id=\"5\">Product</button>"];
         const resultStr = _formatOptions(realChoices);
         const expectedHeader = 'If none of these elements match your target element, '
             + 'please select D. None of the other options match the correct element.\n';

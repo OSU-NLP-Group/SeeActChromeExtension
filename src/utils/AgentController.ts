@@ -35,6 +35,15 @@ enum NoopType {
 }
 
 /**
+ * allows simplification of the method that consults the LLM to determine the next action based on a new page state
+ */
+enum LmmOutputReaction {
+    ABORT_TASK,
+    PROCEED_WITH_ACTION,
+    TRY_REPROMPT
+}
+
+/**
  * used to store information about the current AI-suggested action, so that the controller can later make decisions,
  * logs, and records based on detailed information if the action fails
  */
@@ -232,8 +241,6 @@ export class AgentController {
         }
     }
 
-    //todo later, look for ways to break this up
-    // !! before sending to Prof Su!
     /**
      * given page information (e.g. interactive elements) from the page actor in the content script, determine via LLM
      * what the next step should be and then send a request for that action to the page actor
@@ -251,13 +258,13 @@ export class AgentController {
 
         this.state = AgentControllerState.ACTIVE;
         const interactiveElements = message.interactiveElements as SerializableElementData[];
+        const candidateIds = interactiveElements.map((element, index) => {
+            return (element.centerCoords[0] != 0 && element.centerCoords[1] != 0) ? index : undefined;
+        }).filter(Boolean) as number[];//ts somehow too dumb to realize that filter(Boolean) removes undefined elements
 
         const interactiveChoiceDetails = interactiveElements.map<StrTriple>((element) => {
             return [element.description, element.tagHead, element.tagName];
         });
-        const candidateIds = interactiveElements.map((element, index) => {
-            return (element.centerCoords[0] != 0 && element.centerCoords[1] != 0) ? index : undefined;
-        }).filter(Boolean) as number[];//ts somehow too dumb to realize that filter(Boolean) removes undefined elements
         const interactiveChoices = formatChoices(interactiveChoiceDetails, candidateIds);
 
         //todo? try catch for error when trying to get screenshot, if that fails, then terminate task
@@ -265,97 +272,19 @@ export class AgentController {
         this.logger.debug("screenshot data url (truncated): " + screenshotDataUrl.slice(0, 100) + "...");
 
         while (this.noopCount <= this.maxNoopLimit && this.failureOrNoopStreak <= this.maxFailureOrNoopStreakLimit) {
-
-            const prompts: LmmPrompts = generatePrompt(this.taskSpecification,
-                this.actionsSoFar.map(entry => `${entry.success ? "SUCCEEDED" : "FAILED"}-${entry.actionDesc}`), interactiveChoices);
-            this.logger.debug("prompts:", prompts);
-            let planningOutput: string;
-            let groundingOutput: string;
-            const aiApiBaseDelay = 1_000;
-            //todo maybe increase temperature and/or add more to prompt if previous action was a noop
-            // e.g. warn that ai should try to think out of the box if prev action choice was NONE; or that it should be
-            // more careful about element selection if element name was invalid; or, if prev action was element
-            // dependent and they chose 'none of the above' for element, they must either choose element-independent
-            // action or choose a valid element action or else provide a valid element
-            // The "add to prompt" part might be redundant with the additions to actionsSoFar when noop detected,
-            // depending on model cleverness
-            try {
-                planningOutput = await this.aiEngine.generateWithRetry(prompts, 0, screenshotDataUrl, undefined, undefined, undefined, undefined, aiApiBaseDelay);
-                this.logger.info("planning output: " + planningOutput);
-                //todo add prompt details and logic here to skip element selection part of grounding step if the ai suggests a scroll, terminate, or press-enter-without-specific-element action
-                // feedback- Boyuan thinks this is good idea
-
-                groundingOutput = await this.aiEngine.generateWithRetry(prompts, 1, screenshotDataUrl, planningOutput, undefined, undefined, undefined, aiApiBaseDelay);
-                //todo low priority per Boyuan, but experiment with json output mode specifically for the grounding api call
-            } catch (error) {
-                this.logger.error(`error getting next step from ai; terminating task; error: ${error}, jsonified: ${JSON.stringify(error)}`);
-                this.terminateTask();
+            const reactionToLmmOutput = await this.queryLmmAndProcessResponsesForAction(interactiveChoices,
+                screenshotDataUrl, candidateIds, interactiveElements);
+            if (reactionToLmmOutput === LmmOutputReaction.ABORT_TASK) {
                 return;
-            }
-            this.logger.info("grounding output: " + groundingOutput);
-            const [elementName, actionName, value] = postProcessActionLlm(groundingOutput);
-            this.logger.debug(`suggested action: ${actionName}; value: ${value}`);
-
-            if (actionName === Action.TERMINATE) {
-                this.logger.info("Task completed!");
-                this.terminateTask();
-                return;
-            } else if (actionName === Action.NONE) {
-                this.logger.warn("ai selected NONE action, counting as noop action and reprompting");
-                this.noopCount++;
-                this.failureOrNoopStreak++;
-                this.actionsSoFar.push({
-                    actionDesc: `NOOP: ai selected NONE action type`,
-                    success: false, noopType: NoopType.AI_SELECTED_NONE_ACTION
-                });
+            } else if (reactionToLmmOutput === LmmOutputReaction.TRY_REPROMPT) {
                 continue;
             }
-            const actionNeedsNoElement = actionName === Action.SCROLL_UP || actionName === Action.SCROLL_DOWN
-                || actionName === Action.PRESS_ENTER;
-
-            let chosenCandidateIndex = getIndexFromOptionName(elementName);
-
-            if ((!chosenCandidateIndex || chosenCandidateIndex > candidateIds.length) && !actionNeedsNoElement) {
-                this.logger.warn(`ai selected invalid option ${elementName} ` + (chosenCandidateIndex
-                    ? `(was parsed as candidate index ${chosenCandidateIndex}, but the candidates list only had ${candidateIds.length} entries)`
-                    : `(cannot be parsed into an index)`) + ", counting as noop action and reprompting");
-                this.noopCount++;
-                this.failureOrNoopStreak++;
-                this.actionsSoFar.push({
-                    actionDesc: `NOOP: ai selected invalid option ${elementName}`,
-                    success: false, noopType: NoopType.INVALID_ELEMENT
-                });
-                continue;
-            } else if (chosenCandidateIndex === candidateIds.length && !actionNeedsNoElement) {
-                this.logger.info("ai selected 'none of the above' option for element selection when action targets specific element, marking action as noop");
-                this.noopCount++;
-                this.failureOrNoopStreak++;
-                this.actionsSoFar.push({
-                    actionDesc: `NOOP: ai selected 'none of the above' option for element selection when action ${actionName} targets specific element`,
-                    success: false, noopType: NoopType.ACTION_INCOMPATIBLE_WITH_NONE_OF_ABOVE_ELEMENT
-                });
-                continue;
-            }
-
-            if (chosenCandidateIndex && chosenCandidateIndex >= candidateIds.length && actionNeedsNoElement) {
-                chosenCandidateIndex = undefined;
-            }
-
-            const chosenElementIndex: number | undefined = chosenCandidateIndex ? candidateIds[chosenCandidateIndex] : undefined;
-            this.logger.debug(`acting on the ${chosenCandidateIndex} entry from the candidates list; which is the ${chosenElementIndex} element of the original interactiveElements list`);
-
-            this.tentativeActionInfo = {
-                elementIndex: chosenElementIndex, action: actionName, value: value,
-                elementData: chosenElementIndex ? interactiveElements[chosenElementIndex] : undefined
-            };
-            //can add TYPE and SELECT here if I ever see or get reports of such actions causing page navigation
-            this.mightNextActionCausePageNav = (actionName === Action.PRESS_ENTER || actionName === Action.CLICK);
 
             this.state = AgentControllerState.WAITING_FOR_ACTION;
             try {
                 port.postMessage({
-                    msg: Background2PagePortMsgType.REQ_ACTION, elementIndex: chosenElementIndex, action: actionName,
-                    value: value
+                    msg: Background2PagePortMsgType.REQ_ACTION, elementIndex: this.tentativeActionInfo?.elementIndex,
+                    action: this.tentativeActionInfo?.action, value: this.tentativeActionInfo?.value
                 });
             } catch (error: any) {
                 if ('message' in error && error.message === expectedMsgForPortDisconnection) {
@@ -367,7 +296,8 @@ export class AgentController {
                     this.terminateTask();
                 }
             }
-            return;
+            return;//not doing break here b/c no point doing the noop checks if it successfully chose an action which
+            // was sent to the content script
         }
         if (this.noopCount > this.maxNoopLimit) {
             this.logger.warn(`task terminated due to exceeding the maximum noop limit of ${this.maxNoopLimit}`);
@@ -377,6 +307,110 @@ export class AgentController {
             this.terminateTask();
         }
     }
+
+    //todo ask Boyuan if he wants me to break this up even further- I'm on the fence as to whether it would actually
+    // improve code readability
+    /**
+     * @description Queries the LLM for the next action to take based on the current state of the page and the actions
+     * so far, then processes the response and (if there is a chosen action) stores the chosen action in
+     * this.tentativeActionInfo
+     * @param interactiveChoices brief descriptions of the interactive elements on the page (starting and ending with the appropriate html tag)
+     * @param screenshotDataUrl the data URL of the screenshot of the current page
+     * @param candidateIds the indices of the interactive elements that are candidates for the next action
+     * @param interactiveElements the full data about the interactive elements on the page
+     * @return indicator of what the main "processPageStateFromActor" function should do next based on the LLM response
+     *         (e.g. whether to try reprompting, proceed with the action, or abort the task)
+     */
+    private queryLmmAndProcessResponsesForAction = async (
+        interactiveChoices: string[], screenshotDataUrl: string, candidateIds: number[],
+        interactiveElements: SerializableElementData[]): Promise<LmmOutputReaction> => {
+        const prompts: LmmPrompts = generatePrompt(this.taskSpecification,
+            this.actionsSoFar.map(entry => `${entry.success ? "SUCCEEDED" : "FAILED"}-${entry.actionDesc}`), interactiveChoices);
+        this.logger.debug("prompts:", prompts);
+        let planningOutput: string;
+        let groundingOutput: string;
+        const aiApiBaseDelay = 1_000;
+        //todo maybe increase temperature and/or add more to prompt if previous action was a noop
+        // e.g. warn that ai should try to think out of the box if prev action choice was NONE; or that it should be
+        // more careful about element selection if element name was invalid; or, if prev action was element
+        // dependent and they chose 'none of the above' for element, they must either choose element-independent
+        // action or choose a valid element action or else provide a valid element
+        // The "add to prompt" part might be redundant with the additions to actionsSoFar when noop detected,
+        // depending on model cleverness
+        try {
+            planningOutput = await this.aiEngine.generateWithRetry(prompts, 0, screenshotDataUrl, undefined, undefined, undefined, undefined, aiApiBaseDelay);
+            this.logger.info("planning output: " + planningOutput);
+
+            groundingOutput = await this.aiEngine.generateWithRetry(prompts, 1, screenshotDataUrl, planningOutput, undefined, undefined, undefined, aiApiBaseDelay);
+            //todo low priority per Boyuan, but experiment with json output mode specifically for the grounding api call
+        } catch (error) {
+            this.logger.error(`error getting next step from ai; terminating task; error: ${error}, jsonified: ${JSON.stringify(error)}`);
+            this.terminateTask();
+            return LmmOutputReaction.ABORT_TASK;
+        }
+        this.logger.info("grounding output: " + groundingOutput);
+        const [elementName, actionName, value] = postProcessActionLlm(groundingOutput);
+        this.logger.debug(`suggested action: ${actionName}; value: ${value}`);
+
+        if (actionName === Action.TERMINATE) {
+            this.logger.info("Task completed!");
+            this.terminateTask();
+            return LmmOutputReaction.ABORT_TASK;
+        } else if (actionName === Action.NONE) {
+            this.logger.warn("ai selected NONE action, counting as noop action and reprompting");
+            this.noopCount++;
+            this.failureOrNoopStreak++;
+            this.actionsSoFar.push({
+                actionDesc: `NOOP: ai selected NONE action type`,
+                success: false, noopType: NoopType.AI_SELECTED_NONE_ACTION
+            });
+            return LmmOutputReaction.TRY_REPROMPT;
+        }
+        const actionNeedsNoElement = actionName === Action.SCROLL_UP || actionName === Action.SCROLL_DOWN
+            || actionName === Action.PRESS_ENTER;
+
+        let chosenCandidateIndex = getIndexFromOptionName(elementName);
+
+        if ((!chosenCandidateIndex || chosenCandidateIndex > candidateIds.length) && !actionNeedsNoElement) {
+            this.logger.warn(`ai selected invalid option ${elementName} ` + (chosenCandidateIndex
+                ? `(was parsed as candidate index ${chosenCandidateIndex}, but the candidates list only had ${candidateIds.length} entries)`
+                : `(cannot be parsed into an index)`) + ", counting as noop action and reprompting");
+            this.noopCount++;
+            this.failureOrNoopStreak++;
+            this.actionsSoFar.push({
+                actionDesc: `NOOP: ai selected invalid option ${elementName}`,
+                success: false, noopType: NoopType.INVALID_ELEMENT
+            });
+            return LmmOutputReaction.TRY_REPROMPT;
+        } else if (chosenCandidateIndex === candidateIds.length && !actionNeedsNoElement) {
+            this.logger.info("ai selected 'none of the above' option for element selection when action targets specific element, marking action as noop");
+            this.noopCount++;
+            this.failureOrNoopStreak++;
+            this.actionsSoFar.push({
+                actionDesc: `NOOP: ai selected 'none of the above' option for element selection when action ${actionName} targets specific element`,
+                success: false, noopType: NoopType.ACTION_INCOMPATIBLE_WITH_NONE_OF_ABOVE_ELEMENT
+            });
+            return LmmOutputReaction.TRY_REPROMPT;
+        }
+
+        if (chosenCandidateIndex && chosenCandidateIndex >= candidateIds.length && actionNeedsNoElement) {
+            chosenCandidateIndex = undefined;
+        }
+
+        const chosenElementIndex: number | undefined = chosenCandidateIndex ? candidateIds[chosenCandidateIndex] : undefined;
+        this.logger.debug(`acting on the ${chosenCandidateIndex} entry from the candidates list; which is the ${chosenElementIndex} element of the original interactiveElements list`);
+
+        this.tentativeActionInfo = {
+            elementIndex: chosenElementIndex, action: actionName, value: value,
+            elementData: chosenElementIndex ? interactiveElements[chosenElementIndex] : undefined
+        };
+        //can add TYPE and SELECT here if I ever see or get reports of such actions causing page navigation
+        this.mightNextActionCausePageNav = (actionName === Action.PRESS_ENTER || actionName === Action.CLICK);
+
+
+        return LmmOutputReaction.PROCEED_WITH_ACTION;
+    }
+
 
     /**
      * @description Processes the confirmation from the content script that an action was performed, and then requests

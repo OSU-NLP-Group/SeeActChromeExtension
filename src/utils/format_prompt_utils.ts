@@ -92,9 +92,6 @@ export const getIndexFromOptionName = (optName: string): number|undefined => {
     return index;
 }
 
-
-export type StrPair = [string, string];
-
 /**
  * Only exported for use in white-box-type unit tests. Do not reference in application code outside this module.
  * @description convert a list of choices to a string, with an introduction at the start and
@@ -104,11 +101,11 @@ export type StrPair = [string, string];
  *                 and the string describing the option
  * @return a string representation of the choices, with a 'none of the above' option added at the end
  */
-export const _formatOptions = (choices: Array<StrPair>): string => {
+export const _formatOptions = (choices: Array<string>): string => {
     const noneOfAboveOptionName: string = _generateOptionName(choices.length);
 
     return `If none of these elements match your target element, please select ${noneOfAboveOptionName}. ` +
         'None of the other options match the correct element.\n' +
-        choices.map((value, index) => `${_generateOptionName(index)}. ${value[1]}\n`).join('') +
+        choices.map((value, index) => `${_generateOptionName(index)}. ${value}\n`).join('') +
         `${noneOfAboveOptionName}. None of the other options match the correct element\n\n`;
 }

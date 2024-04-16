@@ -1,5 +1,5 @@
 import {
-    _processString, elementlessActionPrompt,
+    _processString, onlineElementlessActionPrompt,
     formatChoices,
     generatePrompt,
     onlineActionFormat,
@@ -11,7 +11,7 @@ import {
     postProcessActionLlm,
     StrTriple
 } from "../../src/utils/format_prompts";
-import {_formatOptions, generateNewQueryPrompt, StrPair} from "../../src/utils/format_prompt_utils";
+import {_formatOptions, generateNewQueryPrompt} from "../../src/utils/format_prompt_utils";
 
 
 describe('_processString', () => {
@@ -73,8 +73,8 @@ describe('formatChoices', () => {
                 ['title="Share"', "button", "button"],
                 ['aria-label="Clear"', 'div role="button"', "div"]];
             const candidateIds: Array<number> = [0, 2];
-            expect(formatChoices(elements, candidateIds)).toEqual([["0", '<a id="0">Gmail</a>'],
-                ["2", '<div role="button" id="2">aria-label="Clear"</div>']]);
+            expect(formatChoices(elements, candidateIds)).toEqual(['<a id="0">Gmail</a>',
+                '<div role="button" id="2">aria-label="Clear"</div>']);
         });
 
     it("shouldn't truncate the description of a select element with 29 whitespace-separated segments in the description string", () => {
@@ -85,8 +85,8 @@ describe('formatChoices', () => {
             [hugeSelectDescWith29Segments, "select", "select"]
         ];
         const candidateIds: Array<number> = [1];
-        expect(formatChoices(elements, candidateIds)).toEqual([["1",
-            '<select id="1">' + hugeSelectDescWith29Segments + '</select>']]);
+        expect(formatChoices(elements, candidateIds)).toEqual(
+            ['<select id="1">' + hugeSelectDescWith29Segments + '</select>']);
     });
 
     it("shouldn't truncate the description of a select element with 30 whitespace-separated segments in the description string", () => {
@@ -97,8 +97,8 @@ describe('formatChoices', () => {
             [hugeSelectDescWith30Segments, "select", "select"]
         ];
         const candidateIds: Array<number> = [1];
-        expect(formatChoices(elements, candidateIds)).toEqual([["1",
-            '<select id="1">' + hugeSelectDescWith30Segments + '</select>']]);
+        expect(formatChoices(elements, candidateIds)).toEqual(
+            ['<select id="1">' + hugeSelectDescWith30Segments + '</select>']);
     });
 
 
@@ -109,8 +109,8 @@ describe('formatChoices', () => {
         const elements: Array<StrTriple> = [['Gmail', "a", "a"],
             [hugeInputDescWith29Segments, 'input type="text"', 'input']];
         const candidateIds: Array<number> = [0, 1];
-        expect(formatChoices(elements, candidateIds)).toEqual([["0", '<a id="0">Gmail</a>'],
-            ["1", '<input type="text" id="1">' + hugeInputDescWith29Segments + '</input>']]);
+        expect(formatChoices(elements, candidateIds)).toEqual(['<a id="0">Gmail</a>',
+            '<input type="text" id="1">' + hugeInputDescWith29Segments + '</input>']);
     });
 
     it("should truncate the description of a non-select element with 30 whitespace-separated segments in the description string", () => {
@@ -119,10 +119,10 @@ describe('formatChoices', () => {
             '(by City, Location, Zip Code, Name, County, Township, Borough, or School District)"';
         const elements: Array<StrTriple> = [[hugeInputDescWith30Segments, 'input type="text"', 'input']];
         const candidateIds: Array<number> = [0];
-        expect(formatChoices(elements, candidateIds)).toEqual([["0", '<input type="text" id="0">input ' +
+        expect(formatChoices(elements, candidateIds)).toEqual(['<input type="text" id="0">input ' +
         'value="Some Search String with an improbable ' +
         'number of words in it in total" parent_node: SEARCH name="keyword" placeholder="Search (by City, ' +
-        'Location, Zip Code, Name, County, Township, Borough, or School...</input>']]);
+        'Location, Zip Code, Name, County, Township, Borough, or School...</input>']);
     });
 });
 
@@ -166,18 +166,15 @@ describe('generatePrompt', () => {
         const task = "some task";
         const previousActions = ["previous action 1 description", "previous action 2 description",
             "previous action 3 description"];
-        const choices: Array<StrPair> = [
-            ["0", "<a id=\"0\">Skip to content</a>"],
-            ["1", "<a id=\"1\">Skip to navigation</a>"],
-            ["5", "button type=\"button\" id=\"5\">Product</button>"]
-        ];
+        const choices: Array<string> = ["<a id=\"0\">Skip to content</a>", "<a id=\"1\">Skip to navigation</a>",
+            "button type=\"button\" id=\"5\">Product</button>"];
         const [expectedSysPrompt, expectedQueryPrompt] = generateNewQueryPrompt(onlineSystemPrompt, task, previousActions, onlineQuestionDesc);
-        const expectedReferringPrompt = onlineReferringPromptDesc + "\n\n" + _formatOptions(choices) +  onlineElementFormat + "\n\n" + onlineActionFormat + "\n\n" +  onlineValueFormat;
+        const expectedGroundingPrompt = onlineReferringPromptDesc + "\n\n" + _formatOptions(choices) +  onlineElementFormat + "\n\n" + onlineActionFormat + "\n\n" +  onlineValueFormat;
 
-        const [actualSysPrompt, actualQueryPrompt, actualReferringPrompt, actualElementlessActionPrompt] = generatePrompt(task, previousActions, choices);
-        expect(actualSysPrompt).toEqual(expectedSysPrompt);
-        expect(actualQueryPrompt).toEqual(expectedQueryPrompt);
-        expect(actualReferringPrompt).toEqual(expectedReferringPrompt);
-        expect(actualElementlessActionPrompt).toEqual(elementlessActionPrompt);
+        const {sysPrompt, queryPrompt, groundingPrompt, elementlessActionPrompt} = generatePrompt(task, previousActions, choices);
+        expect(sysPrompt).toEqual(expectedSysPrompt);
+        expect(queryPrompt).toEqual(expectedQueryPrompt);
+        expect(groundingPrompt).toEqual(expectedGroundingPrompt);
+        expect(elementlessActionPrompt).toEqual(onlineElementlessActionPrompt);
     });
 });

@@ -3,7 +3,7 @@ import {OpenAiEngine} from "../../src/utils/OpenAiEngine";
 import OpenAI, {AuthenticationError} from "openai";
 import {Mock, mock} from "ts-jest-mocker";
 import {ChatCompletion} from "openai/resources";
-import {elementlessActionPrompt, LmmPrompts} from "../../src/utils/format_prompts";
+import {onlineElementlessActionPrompt, LmmPrompts} from "../../src/utils/format_prompts";
 import {APIConnectionError, InternalServerError, RateLimitError} from "openai/error";
 import log from "loglevel";
 import {origLoggerFactory} from "../../src/utils/shared_logging_setup";
@@ -63,7 +63,7 @@ describe('OpenAiEngine.generate', () => {
 
     const prompts: LmmPrompts = {
         sysPrompt: "some sys prompt", queryPrompt: "some query prompt", groundingPrompt: "some referring prompt",
-        elementlessActionPrompt: elementlessActionPrompt
+        elementlessActionPrompt: onlineElementlessActionPrompt
     };
 
     beforeEach(() => {
@@ -174,7 +174,7 @@ describe('OpenAiEngine.generate', () => {
 
         //@ts-expect-error testing, will fail if create not called
         const request1Body = mockCompletions.create.mock.lastCall[0];
-        expect(request1Body.messages[3].content).toEqual(elementlessActionPrompt);
+        expect(request1Body.messages[3].content).toEqual(onlineElementlessActionPrompt);
     });
 
 
@@ -185,7 +185,7 @@ describe('OpenAiEngine.generateWithRetry', () => {
 
     const prompts: LmmPrompts = {
         sysPrompt: "some sys prompt", queryPrompt: "some query prompt", groundingPrompt: "some referring prompt",
-        elementlessActionPrompt: elementlessActionPrompt};
+        elementlessActionPrompt: onlineElementlessActionPrompt};
 
     let mockOpenAi: Mock<OpenAI>;
     let mockCompletions: Mock<OpenAI.Chat.Completions>;

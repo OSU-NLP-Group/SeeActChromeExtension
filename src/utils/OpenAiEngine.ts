@@ -133,7 +133,6 @@ export class OpenAiEngine {
             }
 
             if (priorTurnOutput.includes("SKIP_ELEMENT_SELECTION")) {
-                //todo unit test this branch
                 messages.push({role: "user", content: prompts.elementlessActionPrompt});
             } else {
                 messages.push({role: "user", content: prompts.groundingPrompt});
