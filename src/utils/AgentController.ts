@@ -25,8 +25,30 @@ export enum AgentControllerState {
     PENDING_RECONNECT//content script disconnected, but waiting for new connection to be established when the onDisconnect listener gets to run
 }
 
+/**
+ * distinguishes between different types of no-op actions
+ */
+enum NoopType {
+    INVALID_ELEMENT,//ai gave invalid element name
+    ACTION_INCOMPATIBLE_WITH_NONE_OF_ABOVE_ELEMENT,//ai chose 'none of the above' option for element but also chose an action that requires a target element
+    AI_SELECTED_NONE_ACTION//ai selected the NONE action
+}
+
+/**
+ * used to store information about the current AI-suggested action, so that the controller can later make decisions,
+ * logs, and records based on detailed information if the action fails
+ */
 type ActionInfo = { elementIndex?: number, elementData?: SerializableElementData, action: Action, value?: string };
 
+/**
+ * used to store information about an action that was performed, so that the controller can give the AI a clear history
+ * of what actions have been tried and what the results were
+ */
+type ActionRecord = { actionDesc: string, success: boolean, noopType?: NoopType };
+
+//todo explore whether it might be possible to break this into multiple classes, or at least if there are
+// pure/non-state-affecting helper functions that could be extracted from existing code and then moved to
+// controller_utils file
 /**
  * @description Controller for the agent that completes tasks for the user in their browser
  */
@@ -41,7 +63,44 @@ export class AgentController {
     private tentativeActionInfo: ActionInfo | undefined;
     private mightNextActionCausePageNav: boolean = false;
 
-    private actionsSoFar: { actionDesc: string, success: boolean }[] = [];
+    private actionsSoFar: ActionRecord[] = [];
+
+    /**
+     * total number of operations (successful or not) within current task (excluding noops)
+     */
+    opsCount: number = 0;
+    /**
+     * total number of noops within current task
+     */
+    noopCount: number = 0;
+    /**
+     * total number of failed actions within current task
+     */
+    failureCount: number = 0;
+    /**
+     * length of current streak of noops and/or failures
+     */
+    failureOrNoopStreak: number = 0;
+
+    //todo get below limits from chrome.storage rather than hard-coding (when/where to do that retrieval? constructor?)
+    // that would also involve setting those limits via options menu
+    /**
+     * max number of total operations (successful or not) allowed in a task
+     */
+    maxOpsLimit: number = 10;//todo increase this after confirming that max op count limit is enforced
+    /**
+     * max number of total noops allowed in a task before it is terminated
+     */
+    maxNoopLimit: number = 3;
+    /**
+     * max number of total failed operations allowed in a task before it is terminated
+     */
+    maxFailureLimit: number = 3;
+    /**
+     * max length of streak of noops and/or failures allowed in a task before it is terminated
+     */
+    maxFailureOrNoopStreakLimit: number = 2;
+
 
     state: AgentControllerState = AgentControllerState.IDLE;
 
@@ -86,7 +145,7 @@ export class AgentController {
         }
         tabId = tab.id;
         if (!tabId) {
-            this.logger.error("Can't inject agent script into chrome:// URLs for security reasons; " + isStartOfTask ? "please only try to start the agent on a regular web page." : "please don't switch to a chrome:// URL while the agent is running");
+            this.logger.warn("Can't inject agent script into chrome:// URLs for security reasons; " + isStartOfTask ? "please only try to start the agent on a regular web page." : "please don't switch to a chrome:// URL while the agent is running");
             this.terminateTask();
             sendResponse?.({success: false, message: "Can't inject script in a chrome:// URL"});
         } else {
@@ -177,6 +236,7 @@ export class AgentController {
     /**
      * given page information (e.g. interactive elements) from the page actor in the content script, determine via LLM
      * what the next step should be and then send a request for that action to the page actor
+     * My apologies for the severely nonlinear control flow. Looking out for ways to rework it to be less convoluted
      * @param message the message from the content script containing the page state information
      * @param port the port object representing the connection between the service worker and the content script
      */
@@ -198,99 +258,122 @@ export class AgentController {
             return (element.centerCoords[0] != 0 && element.centerCoords[1] != 0) ? index : undefined;
         }).filter(Boolean) as number[];//ts somehow too dumb to realize that filter(Boolean) removes undefined elements
         const interactiveChoices = formatChoices(interactiveChoiceDetails, candidateIds);
-        //todo maybe also include the prior actions' success/failure in the prompt
-        const prompts = generatePrompt(this.taskSpecification, this.actionsSoFar.map(entry => entry.actionDesc), interactiveChoices);
-        this.logger.debug("prompts:", prompts);
+
         //todo? try catch for error when trying to get screenshot, if that fails, then terminate task
         const screenshotDataUrl: string = await this.chromeWrapper.fetchVisibleTabScreenshot();
         this.logger.debug("screenshot data url (truncated): " + screenshotDataUrl.slice(0, 100) + "...");
-        let planningOutput: string;
-        let groundingOutput: string;
-        const aiApiBaseDelay = 1_000;
-        try {
-            planningOutput = await this.aiEngine.generateWithRetry(prompts, 0, screenshotDataUrl, undefined, undefined, undefined, undefined, aiApiBaseDelay);
-            this.logger.info("planning output: " + planningOutput);
-            //todo add prompt details and logic here to skip element selection part of grounding step if the ai suggests a scroll, terminate, or press-enter-without-specific-element action
-            // feedback- Boyuan thinks this is good idea
 
-            groundingOutput = await this.aiEngine.generateWithRetry(prompts, 1, screenshotDataUrl, planningOutput, undefined, undefined, undefined, aiApiBaseDelay);
-            //todo low priority per Boyuan, but experiment with json output mode specifically for the grounding api call
-        } catch (error) {
-            this.logger.error(`error getting next step from ai; terminating task; error: ${error}, jsonified: ${JSON.stringify(error)}`);
-            this.terminateTask();
-            return;
-        }
-        this.logger.info("grounding output: " + groundingOutput);
-        const [elementName, actionName, value] = postProcessActionLlm(groundingOutput);
-        this.logger.debug(`suggested action: ${actionName}; value: ${value}`);
+        while (this.noopCount <= this.maxNoopLimit && this.failureOrNoopStreak <= this.maxFailureOrNoopStreakLimit) {
 
-        if (actionName === Action.TERMINATE) {
-            this.logger.info("Task completed!");
-            this.terminateTask();
-            return;
-        } else if (actionName === Action.NONE) {
-            //todo remove this temp hacky patch
-            this.logger.warn("ai selected NONE action, terminating task as dead-ended");
-            this.terminateTask();
-            return;
-            //todo need to properly handle NONE actionName (which means the AI couldn't come up with a valid action)
-            // not simply kill the task
-            // maybe increase temperature on next api call? and/or add more to prompt
-        }
-        const actionNeedsNoElement = actionName === Action.SCROLL_UP || actionName === Action.SCROLL_DOWN
-            || actionName === Action.PRESS_ENTER;
+            const prompts = generatePrompt(this.taskSpecification,
+                this.actionsSoFar.map(entry => `${entry.success ? "SUCCEEDED" : "FAILED"}-${entry.actionDesc}`), interactiveChoices);
+            this.logger.debug("prompts:", prompts);
+            let planningOutput: string;
+            let groundingOutput: string;
+            const aiApiBaseDelay = 1_000;
+            //todo maybe increase temperature and/or add more to prompt if previous action was a noop
+            // e.g. warn that ai should try to think out of the box if prev action choice was NONE; or that it should be
+            // more careful about element selection if element name was invalid; or, if prev action was element
+            // dependent and they chose 'none of the above' for element, they must either choose element-independent
+            // action or choose a valid element action or else provide a valid element
+            // The "add to prompt" part might be redundant with the additions to actionsSoFar when noop detected,
+            // depending on model cleverness
+            try {
+                planningOutput = await this.aiEngine.generateWithRetry(prompts, 0, screenshotDataUrl, undefined, undefined, undefined, undefined, aiApiBaseDelay);
+                this.logger.info("planning output: " + planningOutput);
+                //todo add prompt details and logic here to skip element selection part of grounding step if the ai suggests a scroll, terminate, or press-enter-without-specific-element action
+                // feedback- Boyuan thinks this is good idea
 
-        let chosenCandidateIndex = getIndexFromOptionName(elementName);
-
-        if ((!chosenCandidateIndex || chosenCandidateIndex > candidateIds.length) && !actionNeedsNoElement) {
-            //todo remove this temp hacky patch
-            this.logger.warn(`ai selected invalid option ${elementName} ` + (chosenCandidateIndex
-                ? `(was parsed as candidate index ${chosenCandidateIndex}, but the candidates list only had ${candidateIds.length} entries)`
-                : `(cannot be parsed into an index)`) + ", terminating task as dead-ended");
-            this.terminateTask();
-            return;
-
-            //todo increment noop counter
-            //todo reprompt the ai??
-
-        } else if (chosenCandidateIndex === candidateIds.length && !actionNeedsNoElement) {
-            //todo remove this temp hacky patch
-            this.logger.warn("ai selected 'none of the above' option, terminating task as dead-ended");
-            this.terminateTask();
-            return;
-
-            //todo increment noop counter
-            //todo how to handle this?
-        }
-        if (chosenCandidateIndex && chosenCandidateIndex >= candidateIds.length && actionNeedsNoElement) {
-            chosenCandidateIndex = undefined;
-        }
-
-        const chosenElementIndex: number | undefined = chosenCandidateIndex ? candidateIds[chosenCandidateIndex] : undefined;
-        this.logger.debug(`acting on the ${chosenCandidateIndex} entry from the candidates list; which is the ${chosenElementIndex} element of the original interactiveElements list`);
-
-        this.tentativeActionInfo = {
-            elementIndex: chosenElementIndex, action: actionName, value: value,
-            elementData: chosenElementIndex ? interactiveElements[chosenElementIndex] : undefined
-        };
-        //todo add TYPE and SELECT here if I ever see or get reports of such actions causing page navigation
-        this.mightNextActionCausePageNav = (actionName === Action.PRESS_ENTER || actionName === Action.CLICK);
-
-        this.state = AgentControllerState.WAITING_FOR_ACTION;
-        try {
-            port.postMessage({
-                msg: Background2PagePortMsgType.REQ_ACTION, elementIndex: chosenElementIndex, action: actionName,
-                value: value
-            });
-        } catch (error: any) {
-            if ('message' in error && error.message === expectedMsgForPortDisconnection) {
-                this.logger.info("content script disconnected from service worker while processing interactive elements and before trying to request an action; task will resume after new content script connection is established");
-                this.state = AgentControllerState.PENDING_RECONNECT;
-                this.tentativeActionInfo = undefined;
-            } else {
-                this.logger.error(`unexpected error while processing interactive elements and before trying to request an action; terminating task; error: ${error}, jsonified: ${JSON.stringify(error)}`);
+                groundingOutput = await this.aiEngine.generateWithRetry(prompts, 1, screenshotDataUrl, planningOutput, undefined, undefined, undefined, aiApiBaseDelay);
+                //todo low priority per Boyuan, but experiment with json output mode specifically for the grounding api call
+            } catch (error) {
+                this.logger.error(`error getting next step from ai; terminating task; error: ${error}, jsonified: ${JSON.stringify(error)}`);
                 this.terminateTask();
+                return;
             }
+            this.logger.info("grounding output: " + groundingOutput);
+            const [elementName, actionName, value] = postProcessActionLlm(groundingOutput);
+            this.logger.debug(`suggested action: ${actionName}; value: ${value}`);
+
+            if (actionName === Action.TERMINATE) {
+                this.logger.info("Task completed!");
+                this.terminateTask();
+                return;
+            } else if (actionName === Action.NONE) {
+                this.logger.warn("ai selected NONE action, counting as noop action and reprompting");
+                this.noopCount++;
+                this.failureOrNoopStreak++;
+                this.actionsSoFar.push({
+                    actionDesc: `NOOP: ai selected NONE action type`,
+                    success: false, noopType: NoopType.AI_SELECTED_NONE_ACTION
+                });
+                continue;
+            }
+            const actionNeedsNoElement = actionName === Action.SCROLL_UP || actionName === Action.SCROLL_DOWN
+                || actionName === Action.PRESS_ENTER;
+
+            let chosenCandidateIndex = getIndexFromOptionName(elementName);
+
+            if ((!chosenCandidateIndex || chosenCandidateIndex > candidateIds.length) && !actionNeedsNoElement) {
+                this.logger.warn(`ai selected invalid option ${elementName} ` + (chosenCandidateIndex
+                    ? `(was parsed as candidate index ${chosenCandidateIndex}, but the candidates list only had ${candidateIds.length} entries)`
+                    : `(cannot be parsed into an index)`) + ", counting as noop action and reprompting");
+                this.noopCount++;
+                this.failureOrNoopStreak++;
+                this.actionsSoFar.push({
+                    actionDesc: `NOOP: ai selected invalid option ${elementName}`,
+                    success: false, noopType: NoopType.INVALID_ELEMENT
+                });
+                continue;
+            } else if (chosenCandidateIndex === candidateIds.length && !actionNeedsNoElement) {
+                this.logger.info("ai selected 'none of the above' option for element selection when action targets specific element, marking action as noop");
+                this.noopCount++;
+                this.failureOrNoopStreak++;
+                this.actionsSoFar.push({
+                    actionDesc: `NOOP: ai selected 'none of the above' option for element selection when action ${actionName} targets specific element`,
+                    success: false, noopType: NoopType.ACTION_INCOMPATIBLE_WITH_NONE_OF_ABOVE_ELEMENT
+                });
+                continue;
+            }
+
+            if (chosenCandidateIndex && chosenCandidateIndex >= candidateIds.length && actionNeedsNoElement) {
+                chosenCandidateIndex = undefined;
+            }
+
+            const chosenElementIndex: number | undefined = chosenCandidateIndex ? candidateIds[chosenCandidateIndex] : undefined;
+            this.logger.debug(`acting on the ${chosenCandidateIndex} entry from the candidates list; which is the ${chosenElementIndex} element of the original interactiveElements list`);
+
+            this.tentativeActionInfo = {
+                elementIndex: chosenElementIndex, action: actionName, value: value,
+                elementData: chosenElementIndex ? interactiveElements[chosenElementIndex] : undefined
+            };
+            //can add TYPE and SELECT here if I ever see or get reports of such actions causing page navigation
+            this.mightNextActionCausePageNav = (actionName === Action.PRESS_ENTER || actionName === Action.CLICK);
+
+            this.state = AgentControllerState.WAITING_FOR_ACTION;
+            try {
+                port.postMessage({
+                    msg: Background2PagePortMsgType.REQ_ACTION, elementIndex: chosenElementIndex, action: actionName,
+                    value: value
+                });
+            } catch (error: any) {
+                if ('message' in error && error.message === expectedMsgForPortDisconnection) {
+                    this.logger.info("content script disconnected from service worker while processing interactive elements and before trying to request an action; task will resume after new content script connection is established");
+                    this.state = AgentControllerState.PENDING_RECONNECT;
+                    this.tentativeActionInfo = undefined;
+                } else {
+                    this.logger.error(`unexpected error while processing interactive elements and before trying to request an action; terminating task; error: ${error}, jsonified: ${JSON.stringify(error)}`);
+                    this.terminateTask();
+                }
+            }
+            return;
+        }
+        if (this.noopCount > this.maxNoopLimit) {
+            this.logger.warn(`task terminated due to reaching the maximum noop limit of ${this.maxNoopLimit}`);
+            this.terminateTask();
+        } else if (this.failureOrNoopStreak > this.maxFailureOrNoopStreakLimit) {
+            this.logger.warn(`task terminated due to reaching the maximum failure-or-noop streak limit of ${this.maxFailureOrNoopStreakLimit}`);
+            this.terminateTask();
         }
     }
 
@@ -330,12 +413,30 @@ export class AgentController {
             }
         }
 
-        //todo keep track of number of unsuccessful operations
-        // maybe terminate task after too many (total or in a row) unsuccessful operations
-        // maaaybe also add more feedback or warnings to prompt after unsuccessful operation
-
         this.actionsSoFar.push({actionDesc: actionDesc, success: wasSuccessful});
         this.tentativeActionInfo = undefined;
+
+        this.opsCount++;
+        if (wasSuccessful) {
+            this.failureOrNoopStreak = 0;//failure-or-noop streak can only be broken by successfully _completed_ action
+        } else {
+            this.failureCount++;
+            this.failureOrNoopStreak++;
+        }
+
+        if (this.failureOrNoopStreak > this.maxFailureOrNoopStreakLimit) {
+            this.logger.warn(`task terminated due to reaching the maximum failure-or-noop streak limit of ${this.maxFailureOrNoopStreakLimit}`);
+            this.terminateTask();
+            return;
+        } else if (this.failureCount > this.maxFailureLimit) {
+            this.logger.warn(`task terminated due to reaching the maximum failure limit of ${this.maxFailureLimit}`);
+            this.terminateTask();
+            return;
+        } else if (this.opsCount > this.maxOpsLimit) {
+            this.logger.warn(`task terminated due to reaching the maximum operations limit of ${this.maxOpsLimit}`);
+            this.terminateTask();
+            return;
+        }
 
         if (wasPageNav) {
             this.logger.info("tab id changed after action was performed, so killing connection to " +
@@ -473,7 +574,6 @@ export class AgentController {
     }
 
 
-
     //todo b4 release, make this take an error message param and make it show an alert so the user doesn't need to look
     // at the extension's dev console to see why the actions stopped (if param null, alert would just say task completed)
     /**
@@ -489,6 +589,10 @@ export class AgentController {
         this.tentativeActionInfo = undefined;
         this.mightNextActionCausePageNav = false;
         this.actionsSoFar = [];
+        this.opsCount = 0;
+        this.noopCount = 0;
+        this.failureCount = 0;
+        this.failureOrNoopStreak = 0;
         if (this.currPortToContentScript) {
             this.logger.info("terminating task while content script connection may still be open, attempting to close it")
             this.killPageConnection(this.currPortToContentScript);
