@@ -141,6 +141,19 @@ function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (r
                 sendResponse({success: false, message: `Error sending Enter key press: ${error}`});
             });
         }
+    } else if (request.reqType === PageRequestType.HOVER) {
+        if (!agentController) {
+            sendResponse({success: false, message: "Cannot hover when agent controller is not initialized"});
+        } else if (agentController.currTaskTabId === undefined) {
+            sendResponse({success: false, message: "No active tab to hover in"});
+        } else {
+            agentController.hoverOnElem(agentController.currTaskTabId, request.x, request.y).then(() => {
+                sendResponse({success: true, message: `Hovered over element at ${request.x}, ${request.y}`});
+            }, (error) => {
+                centralLogger.error(`error performing mouse hover; error: ${error}, jsonified: ${JSON.stringify(error)}`);
+                sendResponse({success: false, message: `Error performing mouse hover: ${error}`});
+            });
+        }
     } else {
         centralLogger.error("unrecognized request type:", request.reqType);
     }

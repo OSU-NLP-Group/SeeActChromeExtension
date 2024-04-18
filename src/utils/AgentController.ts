@@ -241,6 +241,10 @@ export class AgentController {
         }
     }
 
+    //note for later- fetching interactive elements seems to involve maybe 50ms, so probably not worth big changes
+    // to control flow in order to be able to skip it when the ai's planning output indicates that it wants to do an
+    // element-independent action like scrolling
+
     /**
      * given page information (e.g. interactive elements) from the page actor in the content script, determine via LLM
      * what the next step should be and then send a request for that action to the page actor
@@ -326,7 +330,7 @@ export class AgentController {
         interactiveElements: SerializableElementData[]): Promise<LmmOutputReaction> => {
         const prompts: LmmPrompts = generatePrompt(this.taskSpecification,
             this.actionsSoFar.map(entry => `${entry.success ? "SUCCEEDED" : "FAILED"}-${entry.actionDesc}`), interactiveChoices);
-        this.logger.debug("prompts:", prompts);
+        this.logger.debug("prompts: " + JSON.stringify(prompts));
         let planningOutput: string;
         let groundingOutput: string;
         const aiApiBaseDelay = 1_000;
@@ -341,7 +345,6 @@ export class AgentController {
             planningOutput = await this.aiEngine.generateWithRetry(
                 {prompts: prompts, turnInStep: 0, imgDataUrl: screenshotDataUrl}, aiApiBaseDelay);
             this.logger.info("planning output: " + planningOutput);
-
             groundingOutput = await this.aiEngine.generateWithRetry(
                 {prompts: prompts, turnInStep: 1, imgDataUrl: screenshotDataUrl, priorTurnOutput: planningOutput},
                 aiApiBaseDelay);
@@ -701,20 +704,52 @@ export class AgentController {
         // handle strings of other characters; in that case, want to do testing to see if windowsVirtualKeyCode is needed or
         // if text (and?/or? unmodifiedText) is enough (or something else)
         await this.chromeWrapper.attachDebugger({tabId: tabId}, "1.3");
-        this.logger.debug(`chrome.debugger attached to the tab ${tabId} to send an Enter key press`)
+        this.logger.debug(`chrome.debugger attached to the tab ${tabId} to send an Enter key press`);
         //thanks to @activeliang https://github.com/ChromeDevTools/devtools-protocol/issues/45#issuecomment-850953391
         await this.chromeWrapper.sendCommand({tabId: tabId}, "Input.dispatchKeyEvent",
             {"type": "rawKeyDown", "windowsVirtualKeyCode": 13, "unmodifiedText": "\r", "text": "\r"});
-        this.logger.debug(`chrome.debugger sent key-down keyevent for Enter/CR key to tab ${tabId}`)
+        this.logger.debug(`chrome.debugger sent key-down keyevent for Enter/CR key to tab ${tabId}`);
         await this.chromeWrapper.sendCommand({tabId: tabId}, "Input.dispatchKeyEvent",
             {"type": "char", "windowsVirtualKeyCode": 13, "unmodifiedText": "\r", "text": "\r"});
-        this.logger.debug(`chrome.debugger sent char keyevent for Enter/CR key to tab ${tabId}`)
+        this.logger.debug(`chrome.debugger sent char keyevent for Enter/CR key to tab ${tabId}`);
         await this.chromeWrapper.sendCommand({tabId: tabId}, "Input.dispatchKeyEvent",
             {"type": "keyUp", "windowsVirtualKeyCode": 13, "unmodifiedText": "\r", "text": "\r"});
-        this.logger.debug(`chrome.debugger sent keyup keyevent for Enter/CR key to tab ${tabId}`)
+        this.logger.debug(`chrome.debugger sent keyup keyevent for Enter/CR key to tab ${tabId}`);
         await this.chromeWrapper.detachDebugger({tabId: tabId});
-        this.logger.debug(`chrome.debugger detached from the tab ${tabId} after sending an Enter key press`)
+        this.logger.debug(`chrome.debugger detached from the tab ${tabId} after sending an Enter key press`);
     }
+
+    /**
+     * @description simulate the user hovering over an element (so that something will pop up or be displayed)
+     * current impl: Sends a mouse 'moved' event to the tab with the given id to say that the mouse pointer is now at
+     * the given coordinates.
+     * @param tabId the id of the tab to hover over the element in
+     * @param x the number of css pixels from the left edge of the viewport to the position on the element which
+     *           the mouse pointer should be hovering over
+     * @param y the number of css pixels from the top edge of the viewport to the position on the element which
+     *           the mouse pointer should be hovering over
+     */
+    hoverOnElem = async (tabId: number, x: number, y: number): Promise<void> => {
+        this.logger.debug(`chrome.debugger about to attach to the tab ${tabId} to hover over an element at ${x}, ${y}`);
+        await this.chromeWrapper.attachDebugger({tabId: tabId}, "1.3");
+        this.logger.debug(`chrome.debugger attached to the tab ${tabId} to hover over an element at ${x}, ${y}`);
+
+        await this.chromeWrapper.sendCommand({tabId: tabId}, "Input.dispatchMouseEvent",
+            {"type": "mouseMoved", "x": x, "y": y});
+
+        await this.chromeWrapper.detachDebugger({tabId: tabId});
+        this.logger.debug(`chrome.debugger detached from the tab ${tabId} after hovering over an element at ${x}, ${y}`);
+    }
+
+
+    /*
+     * the below is sufficient for nearly-real clicking on an element via debugger (as opposed to js click)
+     * await this.chromeWrapper.sendCommand({tabId: tabId}, "Input.dispatchMouseEvent",
+            {"type": "mousePressed", "x": x, "y": y, "button": "left", "clickCount": 1});
+        await sleep(2000);
+        await this.chromeWrapper.sendCommand({tabId: tabId}, "Input.dispatchMouseEvent",
+            {"type": "mouseReleased", "x": x, "y": y, "button": "left", "clickCount": 1});
+     */
 
 
 }

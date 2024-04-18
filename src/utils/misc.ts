@@ -10,7 +10,8 @@ export enum PageRequestType {
     LOG = "log",
     START_TASK = "startTask",
     END_TASK = "endTask",
-    PRESS_ENTER = "pressEnter"
+    PRESS_ENTER = "pressEnter",
+    HOVER = "hover"
 }
 
 /**
@@ -47,6 +48,8 @@ export enum Action {
     TERMINATE = "TERMINATE",
     NONE = "NONE"
 }
+//todo user docs must warn that HOVER only works if they keep their actual mouse cursor outside of the browser window
+
 
 /**
  * @description Builds a description of an action (which may have been performed on an element)

@@ -152,7 +152,10 @@ export const postProcessActionLlm = (llmText: string): [string, Action, string] 
 //todo ask Boyuan about changing system prompt to stop referring to playwright
 // Boyu feedback - still need to include up-to-date information explaining exactly what the different action names mean
 //todo figure out how to write appropriate new detailed explanation for click/type/select/press-enter options
-export const onlineSystemPrompt = "Imagine that you are imitating humans doing web navigation for a task step by step. At each stage, you can see the webpage like humans by a screenshot and know the previous actions before the current step decided by yourself through recorded history. You need to decide on the first following action to take. You can click on an element with the mouse, select an option, type text, press Enter with the keyboard, scroll up by 3/4 of the current viewport height, or scroll down by 3/4 of the current viewport height. One next step means one operation within the 6. Unlike humans, for typing (e.g., in text areas, text boxes) and selecting (e.g., from dropdown menus or <select> elements), you should try directly typing the input or selecting the choice, bypassing the need for an initial click. You should not attempt to create accounts, log in or do the final submission. Terminate when you deem the task complete or if it requires potentially harmful actions.";
+export const onlineSystemPrompt = "Imagine that you are imitating humans doing web navigation for a task step by step. At each stage, you can see the webpage like humans by a screenshot and know the previous actions before the current step decided by yourself through recorded history. You need to decide on the first following action to take. You can click on an element with the mouse, select an option, type text, press Enter with the keyboard, scroll up by 3/4 of the current viewport height, scroll down by 3/4 of the current viewport height, or hover over an element. One next step means one operation within the 6. Unlike humans, for typing (e.g., in text areas, text boxes) and selecting (e.g., from dropdown menus or <select> elements), you should try directly typing the input or selecting the choice, bypassing the need for an initial click. You should not attempt to create accounts, log in or do the final submission. Terminate when you deem the task complete or if it requires potentially harmful actions.";
+
+//note - the model seems terrible at noticing that a previous attempted action didn't do what it was supposed to.
+// is it worth fiddling with the prompt to encourage that sort of critical reflection?
 export const onlineQuestionDesc = `The screenshot below shows the webpage you see. Follow the following guidance to think step by step before outlining the next action step at the current stage:
 
 (Current Webpage Identification)
@@ -188,7 +191,7 @@ Finally, conclude your answer using the format below. Ensure your answer is stri
 Format:
 
 ELEMENT: The uppercase letter of your choice. (No need for PRESS_ENTER, SCROLL_UP, or SCROLL_DOWN)`;
-export const onlineActionFormat = "ACTION: Choose an action from {CLICK, SELECT, TYPE, PRESS_ENTER, SCROLL_UP, SCROLL_DOWN, TERMINATE, NONE}.";
+export const onlineActionFormat = "ACTION: Choose an action from {CLICK, SELECT, TYPE, PRESS_ENTER, SCROLL_UP, SCROLL_DOWN, HOVER, TERMINATE, NONE}.";
 export const onlineValueFormat = "VALUE: Provide additional input based on ACTION.\n\nThe VALUE means:\nIf ACTION == TYPE, specify the text to be typed.\nIf ACTION == SELECT, indicate the option to be chosen. Revise the selection value to align with the available options within the element.\nIf ACTION == CLICK, PRESS_ENTER, SCROLL_UP, SCROLL_DOWN, TERMINATE or NONE, write \"None\".";
 
 export const onlineElementlessActionPrompt = "Based on your prior planning, the next action is not specific to " +

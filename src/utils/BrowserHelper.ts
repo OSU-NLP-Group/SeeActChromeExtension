@@ -119,6 +119,7 @@ export class BrowserHelper {
 
     //todo once receive clearance to rework this (after SeeAct main loop is working and we can confirm
     // whether rework introduces regression in e2e test), refactor this to just have 1 return point instead of 5-6
+
     /**
      * @description Get a one-line description of an element, with special logic for certain types of elements
      * and some ability to fall back on information from parent element or first child element
@@ -297,6 +298,9 @@ export class BrowserHelper {
         //todo ask Boyuan about also checking for readonly attribute if element is input or textarea (or select? or others??)
     }
 
+    //is it possible to make this work even when there are shadow dom's?? and iframes?
+    // is it worth working on that?
+
     /**
      * @description Get interactive elements in the DOM, including links, buttons, inputs, selects, textareas, and elements with certain roles
      * @return data about the interactive elements
@@ -304,7 +308,7 @@ export class BrowserHelper {
     getInteractiveElements = (): ElementData[] => {
         const interactiveElementSelectors = ['a', 'button', 'input', 'select', 'textarea', 'adc-tab',
             '[role="button"]', '[role="radio"]', '[role="option"]', '[role="combobox"]', '[role="textbox"]',
-            '[role="listbox"]', '[role="menu"]', '[type="button"]', '[type="radio"]', '[type="combobox"]',
+            '[role="listbox"]', '[role="menu"]', '[role="link"]', '[type="button"]', '[type="radio"]', '[type="combobox"]',
             '[type="textbox"]', '[type="listbox"]', '[type="menu"]', '[tabindex]:not([tabindex="-1"])',
             '[contenteditable]:not([contenteditable="false"])', '[onclick]', '[onfocus]', '[onkeydown]',
             '[onkeypress]', '[onkeyup]', "[checkbox]", '[aria-disabled="false"],[data-link]'];

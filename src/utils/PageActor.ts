@@ -247,6 +247,34 @@ export class PageActor {
     }
 
     /**
+     * Method that hovers over the element at the given x,y coordinates in the page.
+     * @param actionOutcome pass-by-reference for the nested success and result variables in the main
+     *                       performActionFromController method
+     * @param xOfElem the x-coordinate of the element to hover over (css pixels from left edge of view port)
+     *                  usually the center of the element's bounding box
+     * @param yOfElem the y-coordinate of the element to hover over (css pixels from top of viewport)
+     *                  usually the center of the element's bounding box
+     */
+    performHoverAction = async (actionOutcome: ActionOutcome, xOfElem: number, yOfElem: number): Promise<void> => {
+        this.logger.trace(`about to hover over element at ${xOfElem},${yOfElem}`);
+        try {
+            const resp = await this.chromeWrapper.sendMessageToServiceWorker(
+                {reqType: PageRequestType.HOVER, x: xOfElem, y: yOfElem});
+            if (resp.success) {
+                this.logger.trace(`hovered over element at ${xOfElem},${yOfElem}`);
+                actionOutcome.success = true;
+            } else {
+                actionOutcome.result += "; " + resp.message;
+                actionOutcome.success = false;
+            }
+        } catch (error: any) {
+            actionOutcome.success = false;
+            actionOutcome.result += `; error while asking service worker to hover over element at ${xOfElem},${yOfElem}: ${error}`;
+        }
+    }
+
+
+    /**
      * Method that performs the action specified in the message received from the background script, then notifies
      * the background script of the outcome of the action (unless the action caused a page navigation in the current
      * tab, in which case the current page's content script would be terminated before it could send the outcome,
@@ -307,6 +335,11 @@ export class PageActor {
                 await this.performPressEnterAction(actionOutcome, "a particular element");
             } else if (actionToPerform === Action.SELECT) {
                 this.performSelectAction(valueForAction, elementToActOn, actionOutcome);
+            } else if (actionToPerform === Action.HOVER) {
+                const elemBox = elementToActOnData.boundingBox;
+                const elemCenterX: number = (elemBox.tLx + elemBox.bRx) / 2;
+                const elemCenterY: number = (elemBox.tLy + elemBox.bRy) / 2;
+                await this.performHoverAction(actionOutcome, elemCenterX, elemCenterY);
             } else {
                 this.logger.warn("unknown action type: " + actionToPerform);
                 actionOutcome.result += "; unknown action type: " + actionToPerform;
