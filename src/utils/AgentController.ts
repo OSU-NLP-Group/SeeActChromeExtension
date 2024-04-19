@@ -62,6 +62,8 @@ type ActionRecord = { actionDesc: string, success: boolean, noopType?: NoopType 
  * @description Controller for the agent that completes tasks for the user in their browser
  */
 export class AgentController {
+    terminationSignal: boolean = false;//this is the only piece of state that should be accessed without the mutex
+
     readonly mutex = new Mutex();
 
     taskId: string | undefined = undefined;
@@ -271,6 +273,13 @@ export class AgentController {
         });
         const interactiveChoices = formatChoices(interactiveChoiceDetails, candidateIds);
 
+        //todo? idea for later refinement- store previous round's screenshot, then do stuff with it
+        // (e.g. querying ai at least some of the time with both current and prior screenshots)
+        // to check for actions being silently ineffectual, with no error message and the content script having
+        // judged the action as successful
+        // Maybe could limit this to only some action types that are particularly prone to being ineffectual, or
+        // use a non-ML software tool to check for the two images being too close to identical
+
         //todo? try catch for error when trying to get screenshot, if that fails, then terminate task
         const screenshotDataUrl: string = await this.chromeWrapper.fetchVisibleTabScreenshot();
         this.logger.debug("screenshot data url (truncated): " + screenshotDataUrl.slice(0, 100) + "...");
@@ -284,6 +293,13 @@ export class AgentController {
                 continue;
             }
 
+            if (this.terminationSignal) {
+                this.logger.info("received termination signal while processing interactive elements; terminating task")
+                //the task termination will be handled by the terminateTask method being called by the message handler
+                // in background.ts once this method ends and the controller's mutex is released
+                // This prevents the agent from performing a final action after the user presses the terminate button
+                return;
+            }
             this.state = AgentControllerState.WAITING_FOR_ACTION;
             try {
                 port.postMessage({
@@ -454,8 +470,8 @@ export class AgentController {
             }
         }
 
-        const shouldAbort = this.updateActionHistory(actionDesc, wasSuccessful);
-        if (shouldAbort) {
+        const aborted = this.updateActionHistory(actionDesc, wasSuccessful);
+        if (aborted) {
             this.logger.info("task terminated due to exceeding a limit on operations, noops, or failures");
         } else if (wasPageNav) {
             this.logger.info("tab id changed after action was performed, so killing connection to " +
@@ -577,8 +593,8 @@ export class AgentController {
 
         //marking action as failure if it _accidentally_ caused page navigation or otherwise caused the page connection
         // to fail
-        const shouldAbort = this.updateActionHistory(actionDesc, this.mightNextActionCausePageNav);
-        if (!shouldAbort) {
+        const aborted = this.updateActionHistory(actionDesc, this.mightNextActionCausePageNav);
+        if (!aborted) {
             await this.injectPageActorScript(false);
             //only resetting this after script injection because script injection needs to know whether it's ok that the
             // tab id might've changed
@@ -667,6 +683,7 @@ export class AgentController {
         // completely certain that any nested groups get escaped when the task ends, even if things went really wrong with
         // exception handling and control flow expectations wrt group management
         // If groupEnd throws when there's no group to escape, use a try catch and the catch block would break the loop
+        this.terminationSignal = false;
     }
 
     /**

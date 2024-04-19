@@ -256,6 +256,11 @@ export class PageActor {
      *                  usually the center of the element's bounding box
      */
     performHoverAction = async (actionOutcome: ActionOutcome, xOfElem: number, yOfElem: number): Promise<void> => {
+        //todo add functionality to this class which always keeps track of the current position of the user's cursor
+        // (see beginning of this post https://stackoverflow.com/a/6486344/10808625)
+        // and then this code can test whether the mouse cursor is within the viewport. if so, it should log a warning,
+        // skip the message-sending, and set actionOutcome.success to false
+
         this.logger.trace(`about to hover over element at ${xOfElem},${yOfElem}`);
         try {
             const resp = await this.chromeWrapper.sendMessageToServiceWorker(

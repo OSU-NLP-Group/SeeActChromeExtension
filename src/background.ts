@@ -117,10 +117,12 @@ function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (r
                 message: "Agent controller is not initialized; please do not press 'Terminate Task' unless there is an ongoing task "
             });
         } else {
+            agentController.terminationSignal = true;
             agentController.mutex.runExclusive(() => {
                 if (agentController?.taskId === undefined) {
                     centralLogger.warn("No task in progress to end");
                     sendResponse({success: false, message: "No task in progress to end"});
+                    if (agentController) { agentController.terminationSignal = false; }
                 } else {
                     const terminatedTaskId = agentController.taskId;
                     agentController.terminateTask();
