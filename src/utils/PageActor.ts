@@ -349,8 +349,8 @@ export class PageActor {
                 const elemCenterY: number = (elemBox.tLy + elemBox.bRy) / 2;
                 await this.performHoverAction(actionOutcome, elemCenterX, elemCenterY);
             } else {
-                this.logger.warn("unknown action type: " + actionToPerform);
-                actionOutcome.result += "; unknown action type: " + actionToPerform;
+                this.logger.warn("action type not supported for a specific element: " + actionToPerform);
+                actionOutcome.result += "; action type not supported for a specific element: " + actionToPerform;
             }
 
 

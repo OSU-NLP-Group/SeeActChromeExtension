@@ -8,9 +8,11 @@ import {createMockPort, fixHtmlElementContentEditable} from "../test_utils";
 import {ChromeWrapper} from "../../src/utils/ChromeWrapper";
 import {
     Action,
-    Background2PagePortMsgType, buildGenericActionDesc,
+    Background2PagePortMsgType,
+    buildGenericActionDesc,
     expectedMsgForPortDisconnection,
-    Page2BackgroundPortMsgType, PageRequestType
+    Page2BackgroundPortMsgType,
+    PageRequestType
 } from "../../src/utils/misc";
 
 
@@ -464,6 +466,7 @@ describe('PageActor.performActionFromController', () => {
         testWindow = new JSDOM(`<!DOCTYPE html><body></body>`).window;
         testDom = testWindow.document;
         domWrapper = new DomWrapper(testWindow);
+        domWrapper.scrollBy = jest.fn();
         browserHelper = new BrowserHelper(domWrapper, testLogger);
         pageActor = new PageActor(mockPort, browserHelper, testLogger, chromeWrapper, domWrapper);
 
@@ -563,17 +566,77 @@ describe('PageActor.performActionFromController', () => {
             });
     });
 
-    //todo 1 case where specific element given but unknown action for that context (e.g. SCROLL_DOWN)
+    it('should handle unknown action for a specific element', async () => {
+        const message = {msg: Background2PagePortMsgType.REQ_ACTION, action: Action.SCROLL_DOWN, elementIndex: 0};
+        pageActor.currInteractiveElements = interactiveElems;
+        await pageActor.performActionFromController(message);
+        expect(mockPort.postMessage).toHaveBeenCalledWith(
+            {
+                msg: Page2BackgroundPortMsgType.ACTION_DONE, success: false,
+                result: buildGenericActionDesc(Action.SCROLL_DOWN, interactiveElems[0]) + "; action type not supported for a specific element: SCROLL_DOWN"
+            });
+    });
 
-    //todo 1 case where no specific element given and SCROLL_UP
+    it('should handle SCROLL_UP action without a specific element', async () => {
+        const message = {msg: Background2PagePortMsgType.REQ_ACTION, action: Action.SCROLL_UP};
+        pageActor.currInteractiveElements = interactiveElems;
+        domWrapper.getVertScrollPos = jest.fn().mockReturnValueOnce(374).mockReturnValueOnce(0)
+            .mockReturnValueOnce(0);
+        await pageActor.performActionFromController(message);
+        expect(mockPort.postMessage).toHaveBeenCalledWith(
+            {
+                msg: Page2BackgroundPortMsgType.ACTION_DONE, success: true,
+                result: "Performed element-independent action SCROLL_UP; scrolled page by 374px up"
+            });
+    });
 
-    //todo 1 case where no specific element given and PRESS_ENTER
+    it('should handle PRESS_ENTER action without a specific element', async () => {
+        const message = {msg: Background2PagePortMsgType.REQ_ACTION, action: Action.PRESS_ENTER};
+        pageActor.currInteractiveElements = interactiveElems;
+        chromeWrapper.sendMessageToServiceWorker = jest.fn().mockResolvedValue({success: true});
+        await pageActor.performActionFromController(message);
+        expect(mockPort.postMessage).toHaveBeenCalledWith(
+            {
+                msg: Page2BackgroundPortMsgType.ACTION_DONE, success: true,
+                result: "Performed element-independent action PRESS_ENTER"
+            });
+    });
 
-    //todo 1 case where no specific element given but unknown action for that context (e.g. SELECT)
+    it('should handle unknown action without a specific element', async () => {
+        const message = {msg: Background2PagePortMsgType.REQ_ACTION, action: Action.SELECT};
+        pageActor.currInteractiveElements = interactiveElems;
+        await pageActor.performActionFromController(message);
+        expect(mockPort.postMessage).toHaveBeenCalledWith(
+            {
+                msg: Page2BackgroundPortMsgType.ACTION_DONE, success: false,
+                result: buildGenericActionDesc(Action.SELECT) + "; no element index provided in message from background script; can't perform action SELECT"
+            }
+        );
+    });
 
-    //todo 1 case for standard port disconnected error when sending confirmation to controller
+    it('should handle standard port disconnected error when sending confirmation to controller', async () => {
+        const message =
+            {msg: Background2PagePortMsgType.REQ_ACTION, action: Action.TYPE, elementIndex: 0, value: "some string"};
+        pageActor.currInteractiveElements = interactiveElems;
+        mockPort.postMessage = jest.fn().mockImplementation(
+            () => {throw new Error(expectedMsgForPortDisconnection);});
+        jest.spyOn(testLogger, 'info');
+        await pageActor.performActionFromController(message);
+        expect(testLogger.info)
+            .toHaveBeenCalledWith("service worker disconnected from content script while content script was performing action (task was probably terminated by user)");
+    });
 
-    //todo 1 case for unexpected error when sending confirmation to controller
+    it('should handle unexpected error when sending confirmation to controller', async () => {
+        const message = {msg: Background2PagePortMsgType.REQ_ACTION, action: Action.CLICK, elementIndex: 2};
+        pageActor.currInteractiveElements = interactiveElems;
+        mockPort.postMessage = jest.fn().mockImplementation(
+            () => {throw new Error("some strange chrome error");});
+        jest.spyOn(testLogger, 'error');
+        await pageActor.performActionFromController(message);
+        expect(testLogger.error)
+            .toHaveBeenCalledWith("unexpected error in content script while notifying service worker about performed action; error: Error: some strange chrome error, jsonified: {}");
+    });
+
 
 });
 
