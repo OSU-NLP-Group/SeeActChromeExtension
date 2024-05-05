@@ -85,8 +85,7 @@ export class BrowserHelper {
         console.timeEnd("timeFor_selectOptionFuzzyStringCompares");
         selectElem.selectedIndex = bestOptIndex;
         this.logger.trace("sending change event to select element");
-        const changeEvent = new Event('change', { bubbles: true });
-        selectElem.dispatchEvent(changeEvent);
+        selectElem.dispatchEvent(new Event('change', {bubbles: true}));
 
         return bestOptVal;
     }

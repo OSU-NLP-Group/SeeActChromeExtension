@@ -2,11 +2,16 @@ import log from "loglevel";
 import {origLoggerFactory} from "../../src/utils/shared_logging_setup";
 import {DomWrapper} from "../../src/utils/DomWrapper";
 import {BrowserHelper, ElementData, SerializableElementData} from "../../src/utils/BrowserHelper";
-import {JSDOM, DOMWindow} from "jsdom";
+import {DOMWindow, JSDOM} from "jsdom";
 import {ActionOutcome, PageActor} from "../../src/utils/PageActor";
 import {createMockPort, fixHtmlElementContentEditable} from "../test_utils";
 import {ChromeWrapper} from "../../src/utils/ChromeWrapper";
-import {Action, expectedMsgForPortDisconnection, Page2BackgroundPortMsgType} from "../../src/utils/misc";
+import {
+    Action,
+    Background2PagePortMsgType, buildGenericActionDesc,
+    expectedMsgForPortDisconnection,
+    Page2BackgroundPortMsgType, PageRequestType
+} from "../../src/utils/misc";
 
 
 const testLogger = log.getLogger("page-actor-test");
@@ -15,7 +20,7 @@ testLogger.setLevel("warn");
 testLogger.rebuild();
 
 let testWindow: DOMWindow;
-let document: Document;
+let testDom: Document;
 let domWrapper: DomWrapper;
 let browserHelper: BrowserHelper;
 let chromeWrapper: ChromeWrapper;
@@ -23,6 +28,18 @@ let pageActor: PageActor;
 let mockPort: chrome.runtime.Port;
 
 let actionOutcome: ActionOutcome;
+
+function resetGlobalVars() {
+    testWindow = undefined as any;
+    testDom = undefined as any;
+    domWrapper = undefined as any;
+    browserHelper = undefined as any;
+    chromeWrapper = undefined as any;
+    pageActor = undefined as any;
+    mockPort = undefined as any;
+    actionOutcome = undefined as any;
+}
+
 
 describe("PageActor.getPageInfoForController", () => {
 
@@ -64,6 +81,8 @@ describe("PageActor.getPageInfoForController", () => {
         }];
 
     });
+
+    afterEach(() => {resetGlobalVars();});
 
     it("should send interactive elements to controller when they can be found", () => {
         browserHelper.getInteractiveElements = jest.fn().mockReturnValue(interactElems);
@@ -119,18 +138,20 @@ describe('PageActor.typeIntoElement', () => {
     beforeEach(() => {
         testWindow = new JSDOM(`<!DOCTYPE html><body></body>`).window;
         fixHtmlElementContentEditable(testWindow);
-        document = testWindow.document;
+        testDom = testWindow.document;
         mockPort = createMockPort();
         domWrapper = new DomWrapper(testWindow);
         browserHelper = new BrowserHelper(domWrapper, testLogger);
         chromeWrapper = new ChromeWrapper();
         pageActor = new PageActor(mockPort, browserHelper, testLogger, chromeWrapper, domWrapper);
 
-        actionOutcome = { success: false, result: "" };
+        actionOutcome = {success: false, result: ""};
     });
 
+    afterEach(() => {resetGlobalVars();});
+
     it('should type into an input element', () => {
-        const inputElem = document.createElement('input');
+        const inputElem = testDom.createElement('input');
         jest.spyOn(inputElem, 'focus');
         const baseActResult = "[input] some description -> TYPE with value: " + testStr;
         actionOutcome.result = baseActResult;
@@ -142,7 +163,7 @@ describe('PageActor.typeIntoElement', () => {
     });
 
     it('should type into a textarea element', () => {
-        const textareaElem: HTMLTextAreaElement = document.createElement('textarea');
+        const textareaElem: HTMLTextAreaElement = testDom.createElement('textarea');
         jest.spyOn(textareaElem, 'focus');
         const baseActResult = "[textarea] some description -> TYPE with value: " + testStr;
         actionOutcome.result = baseActResult;
@@ -175,19 +196,20 @@ describe('PageActor.typeIntoElement', () => {
     });
 
     it('should report its inability to type into a non-input, non-textarea, non-contenteditable element', () => {
-        const divElem = document.createElement('div');
+        const divElem = testDom.createElement('div');
         jest.spyOn(divElem, 'click');
         const baseActResult = "[div] some description -> TYPE with value: " + testStr;
         actionOutcome.result = baseActResult;
         expect(pageActor.typeIntoElement(divElem, "test", actionOutcome)).toBeNull();
         expect(divElem.textContent).toBe("");
         expect(actionOutcome.success).toBe(false);
-        expect(actionOutcome.result).toEqual(baseActResult + "; element is not an input, textarea, or contenteditable element; can't type in it. Tried clicking with js instead");
+        expect(actionOutcome.result)
+            .toEqual(baseActResult + "; element is not an input, textarea, or contenteditable element; can't type in it. Tried clicking with js instead");
         expect(divElem.click).toHaveBeenCalled();
     });
 
     it('should handle undefined value for TYPE action', () => {
-        const inputElem = document.createElement('input');
+        const inputElem = testDom.createElement('input');
         inputElem.value = "some initial value";
         jest.spyOn(inputElem, 'focus');
         const baseActResult = "[input] some description -> TYPE with value: " + testStr;
@@ -200,7 +222,7 @@ describe('PageActor.typeIntoElement', () => {
     });
 
     it('should handle element already having the desired text', () => {
-        const inputElem = document.createElement('input');
+        const inputElem = testDom.createElement('input');
         jest.spyOn(inputElem, 'focus');
         inputElem.value = testStr;
         const baseActResult = "[input] some description -> TYPE with value: " + testStr;
@@ -213,7 +235,7 @@ describe('PageActor.typeIntoElement', () => {
     });
 
     it('should handle element text not being changed by typing', () => {
-        const textareaElem = document.createElement('textarea');
+        const textareaElem = testDom.createElement('textarea');
         const initialValue = "some existing text";
         textareaElem.value = initialValue;
         jest.spyOn(textareaElem, 'focus');
@@ -222,14 +244,15 @@ describe('PageActor.typeIntoElement', () => {
         actionOutcome.result = baseActResult;
         expect(pageActor.typeIntoElement(textareaElem, testStr, actionOutcome)).toEqual(initialValue);
         expect(actionOutcome.success).toBe(false);
-        expect(actionOutcome.result).toEqual(`${baseActResult}; element text [<${initialValue}>] not changed by typing`);
+        expect(actionOutcome.result)
+            .toEqual(`${baseActResult}; element text [<${initialValue}>] not changed by typing`);
         expect(textareaElem.focus).toHaveBeenCalled();
     });
 
     it('should handle element text after typing not exactly matching requested value', () => {
-        const inputElem = document.createElement('input');
-        inputElem.type= "number";
-        inputElem.value="8";
+        const inputElem = testDom.createElement('input');
+        inputElem.type = "number";
+        inputElem.value = "8";
         jest.spyOn(inputElem, 'focus');
         const crazyInputStr = "inappropriate input string 9";
         const actualResultStr = "";
@@ -239,7 +262,8 @@ describe('PageActor.typeIntoElement', () => {
         expect(pageActor.typeIntoElement(inputElem, crazyInputStr, actionOutcome)).toEqual(actualResultStr);
         expect(inputElem.value).toEqual(actualResultStr);
         expect(actionOutcome.success).toBe(false);
-        expect(actionOutcome.result).toEqual(`${baseActResult}; after typing, element text: [<${actualResultStr}>] still doesn't match desired value`);
+        expect(actionOutcome.result)
+            .toEqual(`${baseActResult}; after typing, element text: [<${actualResultStr}>] still doesn't match desired value`);
         expect(inputElem.focus).toHaveBeenCalled();
     });
 });
@@ -249,37 +273,41 @@ describe('PageActor.performSelectAction', () => {
 
     beforeEach(() => {
         testWindow = new JSDOM(`<!DOCTYPE html><body></body>`).window;
-        document = testWindow.document;
+        testDom = testWindow.document;
         mockPort = createMockPort();
         domWrapper = new DomWrapper(testWindow);
         browserHelper = new BrowserHelper(domWrapper, testLogger);
         chromeWrapper = new ChromeWrapper();
         pageActor = new PageActor(mockPort, browserHelper, testLogger, chromeWrapper, domWrapper);
 
-        actionOutcome = { success: false, result: "" };
+        actionOutcome = {success: false, result: ""};
     });
 
+    afterEach(() => {resetGlobalVars();});
+
     it('should reject if value undefined', () => {
-        const selectElem = document.createElement('select');
+        const selectElem = testDom.createElement('select');
         const baseActResult = "[select] some description -> SELECT with value: undefined";
         actionOutcome.result = baseActResult;
         expect(pageActor.performSelectAction(undefined, selectElem, actionOutcome)).toBeUndefined();
         expect(actionOutcome.success).toBe(false);
-        expect(actionOutcome.result).toEqual(baseActResult + "; no value provided for SELECT action, so cannot perform it");
+        expect(actionOutcome.result)
+            .toEqual(baseActResult + "; no value provided for SELECT action, so cannot perform it");
     });
 
     it('should reject if element is not a select element', () => {
-        const divElem = document.createElement('div');
+        const divElem = testDom.createElement('div');
         const baseActResult = "[div] some description -> SELECT with value: test";
         actionOutcome.result = baseActResult;
         expect(pageActor.performSelectAction("test", divElem, actionOutcome)).toBeUndefined();
         expect(actionOutcome.success).toBe(false);
-        expect(actionOutcome.result).toEqual(baseActResult + "; SELECT action given for non <select> element, so cannot perform it");
+        expect(actionOutcome.result)
+            .toEqual(baseActResult + "; SELECT action given for non <select> element, so cannot perform it");
     });
 
     it('should report success if exact match between value and some option', () => {
-        const selectElem = document.createElement('select');
-        const optionElem = document.createElement('option');
+        const selectElem = testDom.createElement('select');
+        const optionElem = testDom.createElement('option');
         optionElem.value = "test";
         selectElem.appendChild(optionElem);
         browserHelper.selectOption = jest.fn().mockReturnValue("test");
@@ -291,8 +319,8 @@ describe('PageActor.performSelectAction', () => {
     });
 
     it('should report success if partial match between value and some option', () => {
-        const selectElem = document.createElement('select');
-        const optionElem = document.createElement('option');
+        const selectElem = testDom.createElement('select');
+        const optionElem = testDom.createElement('option');
         optionElem.value = "test";
         selectElem.appendChild(optionElem);
         browserHelper.selectOption = jest.fn().mockReturnValue("test");
@@ -304,13 +332,14 @@ describe('PageActor.performSelectAction', () => {
     });
 
     it('should reject if no match between value and any option', () => {
-        const selectElem = document.createElement('select');
+        const selectElem = testDom.createElement('select');
         browserHelper.selectOption = jest.fn().mockReturnValue(undefined);
         const baseActResult = "[select] some description -> SELECT with value: wrong";
         actionOutcome.result = baseActResult;
         expect(pageActor.performSelectAction("wrong", selectElem, actionOutcome)).toBeUndefined();
         expect(actionOutcome.success).toBe(false);
-        expect(actionOutcome.result).toEqual(baseActResult + "; failed to select any option similar to the given value");
+        expect(actionOutcome.result)
+            .toEqual(baseActResult + "; failed to select any option similar to the given value");
     });
 })
 
@@ -318,21 +347,23 @@ describe('PageActor.performScrollAction', () => {
 
     beforeEach(() => {
         testWindow = new JSDOM(`<!DOCTYPE html><body></body>`).window;
-        document = testWindow.document;
+        testDom = testWindow.document;
         mockPort = createMockPort();
         domWrapper = new DomWrapper(testWindow);
         browserHelper = new BrowserHelper(domWrapper, testLogger);
         chromeWrapper = new ChromeWrapper();
         pageActor = new PageActor(mockPort, browserHelper, testLogger, chromeWrapper, domWrapper);
         const fakeDocumentElement = {
-            ...document.documentElement,
+            ...testDom.documentElement,
             clientHeight: 500,
             scrollHeight: 1500
         }
         domWrapper.getDocumentElement = jest.fn().mockReturnValue(fakeDocumentElement);
 
-        actionOutcome = { success: false, result: "" };
+        actionOutcome = {success: false, result: ""};
     });
+
+    afterEach(() => {resetGlobalVars();});
 
     it('should report failure if SCROLL_UP but already at top of window', async () => {
         domWrapper.getVertScrollPos = jest.fn().mockReturnValueOnce(0).mockReturnValueOnce(0);
@@ -342,7 +373,8 @@ describe('PageActor.performScrollAction', () => {
         await pageActor.performScrollAction(Action.SCROLL_UP, actionOutcome);
         expect(domWrapper.scrollBy).toHaveBeenCalledWith(0, -375);
         expect(actionOutcome.success).toBe(false);
-        expect(actionOutcome.result).toEqual(baseActionResult + "; scroll action failed to move the viewport's vertical position from 0px");
+        expect(actionOutcome.result)
+            .toEqual(baseActionResult + "; scroll action failed to move the viewport's vertical position from 0px");
     });
 
     it('should report success if SCROLL_UP and not at top of window', async () => {
@@ -365,7 +397,8 @@ describe('PageActor.performScrollAction', () => {
         await pageActor.performScrollAction(Action.SCROLL_DOWN, actionOutcome);
         expect(domWrapper.scrollBy).toHaveBeenCalledWith(0, 375);
         expect(actionOutcome.success).toBe(false);
-        expect(actionOutcome.result).toEqual(baseActionResult + "; scroll action failed to move the viewport's vertical position from 1500px");
+        expect(actionOutcome.result)
+            .toEqual(baseActionResult + "; scroll action failed to move the viewport's vertical position from 1500px");
     });
 
     it('should report success if SCROLL_DOWN and not at bottom of window', async () => {
@@ -382,27 +415,153 @@ describe('PageActor.performScrollAction', () => {
 });
 
 describe('PageActor.performPressEnterAction', () => {
-    //todo setup
+    let targetElementDesc: string;
 
-    //todo 1 case where resp says success
+    beforeEach(() => {
+        actionOutcome = {success: false, result: ""};
+        targetElementDesc = "some description";
+        chromeWrapper = new ChromeWrapper();
+        const mockPort = createMockPort();
+        testWindow = new JSDOM(`<!DOCTYPE html><body></body>`).window;
+        const domWrapper = new DomWrapper(testWindow);
+        const browserHelper = new BrowserHelper(domWrapper, testLogger);
+        pageActor = new PageActor(mockPort, browserHelper, testLogger, chromeWrapper, domWrapper);
+    });
 
-    //todo 1 case where resp says failure
+    afterEach(() => {resetGlobalVars();});
 
-    //todo 1 case where await ends in error
+    it('should report success if service worker responds with success', async () => {
+        chromeWrapper.sendMessageToServiceWorker = jest.fn().mockResolvedValue({success: true});
+        await pageActor.performPressEnterAction(actionOutcome, targetElementDesc);
+        expect(actionOutcome.success).toBe(true);
+    });
+
+    it('should report failure if service worker responds with failure', async () => {
+        const errorMessage = "service worker failure";
+        chromeWrapper.sendMessageToServiceWorker = jest.fn().mockResolvedValue({success: false, message: errorMessage});
+        await pageActor.performPressEnterAction(actionOutcome, targetElementDesc);
+        expect(actionOutcome.success).toBe(false);
+        expect(actionOutcome.result).toContain(errorMessage);
+    });
+
+    it('should handle error when asking service worker to press enter', async () => {
+        const errorMessage = "some error";
+        chromeWrapper.sendMessageToServiceWorker = jest.fn().mockRejectedValue(new Error(errorMessage));
+        await pageActor.performPressEnterAction(actionOutcome, targetElementDesc);
+        expect(actionOutcome.success).toBe(false);
+        expect(actionOutcome.result)
+            .toContain(`error while asking service worker to press enter: Error: ${errorMessage}`);
+    });
 });
 
 describe('PageActor.performActionFromController', () => {
-    //todo setup
+    let interactiveElems: ElementData[] = [];
 
-    //todo 1 case where currInteractiveElements is undefined
+    beforeEach(() => {
+        actionOutcome = {success: false, result: ""};
+        chromeWrapper = new ChromeWrapper();
+        mockPort = createMockPort();
+        testWindow = new JSDOM(`<!DOCTYPE html><body></body>`).window;
+        testDom = testWindow.document;
+        domWrapper = new DomWrapper(testWindow);
+        browserHelper = new BrowserHelper(domWrapper, testLogger);
+        pageActor = new PageActor(mockPort, browserHelper, testLogger, chromeWrapper, domWrapper);
 
-    //todo 1 case where specific element should be clicked
+        const inputElem = testDom.createElement('input');
+        inputElem.dispatchEvent = jest.fn();//jsdom doesn't support
+        const selectElem = testDom.createElement('select');
+        selectElem.dispatchEvent = jest.fn();//jsdom doesn't support
+        const optionElem = testDom.createElement('option');
+        optionElem.value = "option1";
+        selectElem.appendChild(optionElem);
+        domWrapper.getInnerText = jest.fn().mockReturnValue("option1");
+        const linkElem = testDom.createElement("a");
+        interactiveElems = [
+            {
+                element: inputElem, tagHead: "input", description: "some input elem",
+                centerCoords: [15, 100],
+                boundingBox: {tLx: 10, tLy: 85, bRx: 20, bRy: 115},
+                tagName: "input"
+            },
+            {
+                element: selectElem, tagHead: "select", description: "some select elem",
+                centerCoords: [325, 460],
+                boundingBox: {tLx: 300, tLy: 410, bRx: 350, bRy: 510},
+                tagName: "select"
+            },
+            {
+                element: linkElem, tagHead: "a", description: "some link elem",
+                centerCoords: [150, 20],
+                boundingBox: {tLx: 100, tLy: 5, bRx: 200, bRy: 35},
+                tagName: "a"
+            }
+        ];
 
-    //todo 1 case where specific element should be typed into
+    });
 
-    //todo 1 case where specific element should be selected
+    afterEach(() => {resetGlobalVars();});
 
-    //todo 1 case where Enter should be pressed on a particular element
+    it('should handle currInteractiveElements being undefined', async () => {
+        const message = {msg: Background2PagePortMsgType.REQ_ACTION, action: Action.CLICK, elementIndex: 0};
+        await pageActor.performActionFromController(message);
+        expect(mockPort.postMessage).toHaveBeenCalledWith(
+            {msg: Page2BackgroundPortMsgType.TERMINAL, error: "no interactive elements stored to be acted on"});
+    });
+
+    it('should type into a specific element', async () => {
+        const typingVal = "test";
+        const message =
+            {msg: Background2PagePortMsgType.REQ_ACTION, action: Action.TYPE, elementIndex: 0, value: typingVal};
+        pageActor.currInteractiveElements = interactiveElems;
+        await pageActor.performActionFromController(message);
+        expect((interactiveElems[0].element as HTMLInputElement).value).toEqual(typingVal);
+        expect(mockPort.postMessage).toHaveBeenCalledWith(
+            {
+                msg: Page2BackgroundPortMsgType.ACTION_DONE, success: true,
+                result: buildGenericActionDesc(Action.TYPE, interactiveElems[0], typingVal)
+            });
+    });
+
+    it('should click a specific element', async () => {
+        const message = {msg: Background2PagePortMsgType.REQ_ACTION, action: Action.CLICK, elementIndex: 2};
+        pageActor.currInteractiveElements = interactiveElems;
+        const clickSpy = jest.spyOn(interactiveElems[2].element, 'click');
+        await pageActor.performActionFromController(message);
+        expect(clickSpy).toHaveBeenCalled();
+        expect(mockPort.postMessage).toHaveBeenCalledWith(
+            {
+                msg: Page2BackgroundPortMsgType.ACTION_DONE, success: true,
+                result: buildGenericActionDesc(Action.CLICK, interactiveElems[2]) + "; clicked element with js"
+            });
+    });
+
+    it('should select a specific option in a select element', async () => {
+        const selectVal = "option1";
+        const message =
+            {msg: Background2PagePortMsgType.REQ_ACTION, action: Action.SELECT, elementIndex: 1, value: selectVal};
+        pageActor.currInteractiveElements = interactiveElems;
+        await pageActor.performActionFromController(message);
+        expect(mockPort.postMessage).toHaveBeenCalledWith(
+            {
+                msg: Page2BackgroundPortMsgType.ACTION_DONE, success: true,
+                result: buildGenericActionDesc(Action.SELECT, interactiveElems[1], selectVal) + "; select succeeded"
+            });
+    });
+
+    it('should press enter on a specific element', async () => {
+        const message =
+            {msg: Background2PagePortMsgType.REQ_ACTION, action: Action.PRESS_ENTER, elementIndex: 0};
+        pageActor.currInteractiveElements = interactiveElems;
+        const mockOfSendMsgToServWorker = jest.fn().mockResolvedValue({success: true});
+        chromeWrapper.sendMessageToServiceWorker = mockOfSendMsgToServWorker;
+        await pageActor.performActionFromController(message);
+        expect(mockOfSendMsgToServWorker).toHaveBeenCalledWith({reqType: PageRequestType.PRESS_ENTER});
+        expect(mockPort.postMessage).toHaveBeenCalledWith(
+            {
+                msg: Page2BackgroundPortMsgType.ACTION_DONE, success: true,
+                result: buildGenericActionDesc(Action.PRESS_ENTER, interactiveElems[0])
+            });
+    });
 
     //todo 1 case where specific element given but unknown action for that context (e.g. SCROLL_DOWN)
 
@@ -419,15 +578,39 @@ describe('PageActor.performActionFromController', () => {
 });
 
 describe('PageActor.handleRequestFromAgentController', () => {
-    //todo setup
 
-    //todo 1 case where request is for page state
+    beforeEach(() => {
+        mockPort = createMockPort();
+        testWindow = new JSDOM(`<!DOCTYPE html><body></body>`).window;
+        domWrapper = new DomWrapper(testWindow);
+        browserHelper = new BrowserHelper(domWrapper, testLogger);
+        chromeWrapper = new ChromeWrapper();
+        pageActor = new PageActor(mockPort, browserHelper, testLogger, chromeWrapper, domWrapper);
+    });
 
-    //todo 1 case where request is for a specific action
+    afterEach(() => {resetGlobalVars();});
 
-    //todo 1 case where request doesn't contain a recognized type of message
+    it('should handle request for page state', async () => {
+        const message = {msg: Background2PagePortMsgType.REQ_PAGE_STATE};
+        pageActor.getPageInfoForController = jest.fn();
+        await pageActor.handleRequestFromAgentController(message);
+        expect(pageActor.getPageInfoForController).toHaveBeenCalled();
+    });
 
+    it('should handle request for a specific action', async () => {
+        const message = {msg: Background2PagePortMsgType.REQ_ACTION, action: Action.CLICK, elementIndex: 0};
+        pageActor.performActionFromController = jest.fn();
+        await pageActor.handleRequestFromAgentController(message);
+        expect(pageActor.performActionFromController).toHaveBeenCalledWith(message);
+    });
+
+    it('should handle request with unrecognized message type', async () => {
+        const message = {msg: 'UNRECOGNIZED'};
+        jest.spyOn(testLogger, 'warn');
+        await pageActor.handleRequestFromAgentController(message);
+        expect(testLogger.warn)
+            .toHaveBeenCalledWith("unknown message from background script: " + JSON.stringify(message));
+    });
 });
-
 
 

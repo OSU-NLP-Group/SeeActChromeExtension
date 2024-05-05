@@ -2,8 +2,13 @@ import {Logger} from "loglevel";
 import {BrowserHelper, ElementData, SerializableElementData} from "./BrowserHelper";
 import {createNamedLogger} from "./shared_logging_setup";
 import {
-    Action, Background2PagePortMsgType, buildGenericActionDesc, expectedMsgForPortDisconnection, PageRequestType,
-    Page2BackgroundPortMsgType, sleep
+    Action,
+    Background2PagePortMsgType,
+    buildGenericActionDesc,
+    expectedMsgForPortDisconnection,
+    Page2BackgroundPortMsgType,
+    PageRequestType,
+    sleep
 } from "./misc";
 import {ChromeWrapper} from "./ChromeWrapper";
 import {DomWrapper} from "./DomWrapper";
@@ -130,9 +135,7 @@ export class PageActor {
             elementToActOn.click();
             actionOutcome.result += "; element is not an input, textarea, or contenteditable element; can't type in it. Tried clicking with js instead";
         }
-        //possibly relevant thing for getting page to notice that you changed an element's text:
-        // https://stackoverflow.com/questions/61190078/simulating-keypress-into-an-input-field-javascript#comment134037565_61192160
-        // also possibly https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/change_event
+        elementToActOn.dispatchEvent(new Event('change', {bubbles: true}));
 
         if (actionOutcome.success) {
             this.logger.debug("element focused status after typing: " + (document.activeElement === elementToActOn));
@@ -296,24 +299,24 @@ export class PageActor {
         const actionToPerform: Action = message.action;
         const valueForAction: string | undefined = message.value;
 
+        const elementIndexValid = message.elementIndex !== undefined && message.elementIndex < this.currInteractiveElements.length;
         const actionOutcome: ActionOutcome = {
             success: false, result: buildGenericActionDesc(actionToPerform,
-                message.elementIndex ? this.currInteractiveElements[message.elementIndex] : undefined, valueForAction)
+                elementIndexValid ? this.currInteractiveElements[message.elementIndex] : undefined, valueForAction)
         };
 
-        if (message.elementIndex) {
+        if (elementIndexValid) {
             const elementToActOnData = this.currInteractiveElements[message.elementIndex];
             const elementToActOn = elementToActOnData.element;
             /*
             todo consider implementing in js a conditional polling/wait for 'stability'
              https://playwright.dev/docs/actionability#stable
-            todo might also need to implement a 'receives events' polling check
+            todo might also need to implement a 'receives events' polling check (no idea how this would be implemented in js)
              https://playwright.dev/docs/actionability#receives-events
             todo note that a given action type would only need some of the actionability checks
              https://playwright.dev/docs/actionability#introduction
             todo above goals for conditional polling/waiting could be one (or a few) helper methods
              */
-
             //good modern-approach starting point for conditional polling/waiting:
             // https://stackoverflow.com/a/56399194/10808625 (it only checks for existence, but shouldn't be too hard to extend the logic)
 
@@ -350,9 +353,6 @@ export class PageActor {
                 actionOutcome.result += "; unknown action type: " + actionToPerform;
             }
 
-            //todo HOVER
-            // maybe use this https://chromedevtools.github.io/devtools-protocol/1-3/Input/#method-dispatchMouseEvent
-            // with type "mouseMoved"
 
         } else {
             if (actionToPerform === Action.SCROLL_UP || actionToPerform === Action.SCROLL_DOWN) {

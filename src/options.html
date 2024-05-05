@@ -22,13 +22,6 @@
     If this is -1, the Fixed-Choice Batch Size will be used instead.</span>
 
 
-<!--todo make it so by default this only uses activeTab permission and then the user has to manually opt into the
-     <all_urls> permission if they want buttons that open in a new tab to work?
-     turning on that second thing would also require changes in the agent controller, which currently assumes that the tab
-     id changing means the user interfered by switching the tab and the task should be aborted;
-     maybe it could set a flag before anything that would conceivably open a new tab, then if a tab id change was
-     detected, it would be tolerated if that flag was on but otherwise would be taken as sign of user tampering-->
-
 
 <div id="status"></div>
 

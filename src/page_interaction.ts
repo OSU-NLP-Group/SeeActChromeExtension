@@ -15,6 +15,10 @@ const pageActor = new PageActor(portToBackground);
 portToBackground.onMessage.addListener(pageActor.handleRequestFromAgentController);
 
 
+//todo use window.onload listener instead of dumb 5sec wait
+// but still have the wait-and-conditionally-poll-the-backend, just in case we run this (including attachng an onload
+// listener) after the page has already finished loading
+
 (async () => {
     //todo! wait here until page is loaded/stable!
     await sleep(5000);
