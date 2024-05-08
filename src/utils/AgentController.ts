@@ -14,7 +14,7 @@ import {getIndexFromOptionName} from "./format_prompt_utils";
 import {ChromeWrapper} from "./ChromeWrapper";
 
 /**
- * states for the agent controller FSM
+ * states for the agent controller Finite State Machine
  */
 export enum AgentControllerState {
     IDLE,//i.e. no active task

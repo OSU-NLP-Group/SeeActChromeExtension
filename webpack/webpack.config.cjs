@@ -18,6 +18,7 @@ module.exports = {
         background: path.resolve(root, "src", "background.ts"),
         popup: path.resolve(root, "src", "popup.ts"),
         page_interaction: path.resolve(root, "src", "page_interaction.ts"),
+        options: path.resolve(root, "src", "options.ts")
     },
     devtool: "source-map",
     output: {
@@ -56,7 +57,7 @@ module.exports = {
         new HtmlWebpackPlugin({
             template: path.resolve(root, "src", "options.html"),
             filename: "options.html",
-            // chunks: ["todo"],
+            chunks: ["options"],
             showErrors: true,
             inject: false
         })

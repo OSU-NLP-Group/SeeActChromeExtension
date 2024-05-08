@@ -79,6 +79,9 @@ export class OpenAiEngine {
         const apiKeyInputUseless = apiKey == undefined ||
             (Array.isArray(apiKey) && apiKey.length == 0);
         if (apiKeyInputUseless) {
+            //todo environment variable is mostly irrelevant in browser extension context. replace this with
+            // use of chrome.storage.local and the setup of a listener for chrome.storage.local.onchanged
+            // to update the api key in use if that was changed via the options menu
             const envApiKey = process.env.OPENAI_API_KEY;
             if (envApiKey == undefined) {
                 throw new Error(OpenAiEngine.NO_API_KEY_ERR);
@@ -92,6 +95,7 @@ export class OpenAiEngine {
                 apiKeys = apiKey;
             }
         }
+
         this.apiKeys = apiKeys;
         //only a person's own api key will be used, within their own browser instance, so it isn't dangerous
         // for this Chrome extension to use an api key in the browser

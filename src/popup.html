@@ -7,25 +7,36 @@
         #status {
             display: none;
         }
+        body {
+            width: 800px;  /* Set the width of the popup */
+            height: 600px; /* Set the height of the popup */
+        }
+        #task-spec {
+            width: 100%;
+            height: 50%;
+            font-size: 16px;
+        }
+        #task-spec-label {
+            font-size: 24px;
+        }
     </style>
 </head>
 <body>
 
-<label id="task-spec-label" for="task-spec" style="font-size: 24px;">Agent Task Specification</label>
+<label id="task-spec-label" for="task-spec" title="the task should be completable when starting from the website which is loaded in the current tab"
+>Agent Task Specification</label>
 <br>
-<span>the task should be completable when starting from the website which is loaded in the current tab</span>
+<span></span>
 <input type="text" id="task-spec"
        placeholder="Enter a task specification for the SeeAct agent">
 
 <button id="startAgent">Start Agent</button>
 
 <div id="status"></div>
-
+<br>
 <button id="endTask">Terminate Task</button>
 
-
 <button id="options">Options</button>
-<!--todo js code for link to options page-->
 
 </body>
 </html>

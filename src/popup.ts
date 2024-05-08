@@ -15,6 +15,8 @@ if (!statusDiv) throw new Error('status div not found');
 const killButton = document.getElementById('endTask');
 if (!killButton) throw new Error('endTask button not found');
 
+const optionsButton = document.getElementById('options');
+if (!optionsButton) throw new Error('options button not found');
 
 startButton.addEventListener('click', async () => {
     logger.trace('startAgent button clicked');
@@ -62,4 +64,19 @@ killButton.addEventListener('click', async () => {
         statusDiv.style.display = 'none';
         statusDiv.textContent = '';
     }, 10000);
+});
+
+optionsButton.addEventListener('click', () => {
+    logger.trace('options button clicked');
+
+    if (chrome.runtime.openOptionsPage) {
+        chrome.runtime.openOptionsPage().then(() => {
+            logger.trace('options page opened');
+        }, (err) => {
+            logger.error('error while opening options page:', err);
+        });
+    } else {
+        logger.trace('chrome.runtime.openOptionsPage() not available, opening options.html directly');
+        window.open(chrome.runtime.getURL('src/options.html'));
+    }
 });

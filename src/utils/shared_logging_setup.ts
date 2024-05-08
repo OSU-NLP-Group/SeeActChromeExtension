@@ -1,4 +1,4 @@
-import log, {LogLevelNames} from "loglevel";
+import log, {LogLevelNames, LogLevel} from "loglevel";
 import {PageRequestType} from "./misc";
 
 export const origLoggerFactory = log.methodFactory;
@@ -39,10 +39,28 @@ export const createNamedLogger = (loggerName: string, inServiceWorker: boolean):
         };
     }
 
-    //todo change this to info or warn before release, and ideally make it configurable from advanced part of options menu
-    newLogger.setLevel("trace");
+    newLogger.setLevel("TRACE");
     newLogger.rebuild();
 
+    if (chrome?.storage?.local) {
+        chrome.storage.local.get("logLevel", (items) => {
+            newLogger.setLevel(items.logLevel || "TRACE");//todo change this to WARN before release
+            newLogger.rebuild();
+        });
+        //todo unit testing this? maybe create a function that takes a logger and returns a "local storage changes handler" function, then just unit test that
+
+        chrome.storage.local.onChanged.addListener((changes: {[p: string]: chrome.storage.StorageChange}) => {
+            if (changes.logLevel) {
+                const newLogLevel: keyof LogLevel = changes.logLevel.newValue;
+                const existingLogLevel = LogLevelDict[newLogger.getLevel()];
+                if (newLogLevel !== existingLogLevel) {
+                    newLogger.debug(`log level changed from ${existingLogLevel} to ${newLogLevel}`)
+                    newLogger.setLevel(newLogLevel);
+                    newLogger.rebuild();
+                }
+            }
+        });
+    }
 
     return newLogger;
 }
@@ -94,3 +112,23 @@ export function assertIsValidLogLevelName(logLevelName: unknown | undefined): as
     }
 }
 
+
+// Create an object that maps the names of the log levels to their numeric values
+const LogLevelValues = {
+    TRACE: log.levels.TRACE,
+    DEBUG: log.levels.DEBUG,
+    INFO: log.levels.INFO,
+    WARN: log.levels.WARN,
+    ERROR: log.levels.ERROR,
+    SILENT: log.levels.SILENT,
+};
+
+// Create a mapping object that maps from the numeric values of the log levels to their names
+export const LogLevelDict: { [K in typeof LogLevelValues[keyof typeof LogLevelValues]]: keyof LogLevel } = {
+    [LogLevelValues.TRACE]: "TRACE",
+    [LogLevelValues.DEBUG]: "DEBUG",
+    [LogLevelValues.INFO]: "INFO",
+    [LogLevelValues.WARN]: "WARN",
+    [LogLevelValues.ERROR]: "ERROR",
+    [LogLevelValues.SILENT]: "SILENT",
+};

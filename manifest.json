@@ -4,7 +4,7 @@
     "version": "1.0",
     "description": "Allows the user to invoke the SeeAct web agent to perform tasks in the current browser tab/window.",
     "permissions": [
-        "tabCapture", "scripting", "debugger", "tabs", "debugger"
+        "tabCapture", "scripting", "debugger", "tabs", "debugger", "storage"
     ],
     "host_permissions": [
         "<all_urls>"
