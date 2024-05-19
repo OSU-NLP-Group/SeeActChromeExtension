@@ -47,8 +47,8 @@ export const createNamedLogger = (loggerName: string, inServiceWorker: boolean):
             newLogger.setLevel(items.logLevel || "TRACE");//todo change this to WARN before release
             newLogger.rebuild();
         });
-        //todo unit testing this? maybe create a function that takes a logger and returns a "local storage changes handler" function, then just unit test that
 
+        //todo unit testing this? maybe create a function that takes a logger and returns a "local storage changes handler" function, then just unit test that
         chrome.storage.local.onChanged.addListener((changes: {[p: string]: chrome.storage.StorageChange}) => {
             if (changes.logLevel) {
                 const newLogLevel: keyof LogLevel = changes.logLevel.newValue;

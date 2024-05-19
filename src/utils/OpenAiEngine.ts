@@ -61,6 +61,8 @@ export class OpenAiEngine {
     nextAvailTime: Array<number>;
     currKeyIdx: number;
 
+    //todo make static factory method which's async and which grabs api key(s) from storage and then passes them to constructor
+
     /**
      * @description Create an OpenAiEngine to call the OpenAI API for some particular model
      * @param model Model type to call in OpenAI API
@@ -73,15 +75,12 @@ export class OpenAiEngine {
      */
     constructor(model: string, apiKey?: string | Array<string>, openAi?: OpenAI, stop: string = "\n\n", rateLimit: number = -1,
                 temperature: number = 0, loggerToUse?: log.Logger) {
-        //todo consider the automatic unpacking trick for effectively having named arguments in the constructor, b/c this is absurd
-        // !!before sending to Prof Su!
+        //todo automatic unpacking trick for effectively having named arguments in the constructor, b/c this is absurd
         let apiKeys: Array<string> = [];
         const apiKeyInputUseless = apiKey == undefined ||
             (Array.isArray(apiKey) && apiKey.length == 0);
         if (apiKeyInputUseless) {
-            //todo environment variable is mostly irrelevant in browser extension context. replace this with
-            // use of chrome.storage.local and the setup of a listener for chrome.storage.local.onchanged
-            // to update the api key in use if that was changed via the options menu
+            //todo environment variable is mostly irrelevant in browser extension context. remove everything here except the error-throwing
             const envApiKey = process.env.OPENAI_API_KEY;
             if (envApiKey == undefined) {
                 throw new Error(OpenAiEngine.NO_API_KEY_ERR);
@@ -95,6 +94,8 @@ export class OpenAiEngine {
                 apiKeys = apiKey;
             }
         }
+
+        //todo add listener for chrome.storage.local changes to update apiKey if it's changed there
 
         this.apiKeys = apiKeys;
         //only a person's own api key will be used, within their own browser instance, so it isn't dangerous

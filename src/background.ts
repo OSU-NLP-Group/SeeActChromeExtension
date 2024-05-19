@@ -66,6 +66,7 @@ const modelName: string = "gpt-4-turbo";
 //REMINDER - DO NOT COMMIT ANY NONTRIVIAL EDITS OF THE FOLLOWING LINE
 const apiKey: string = "PLACEHOLDER";
 
+//todo use top-level await to call static factory method for openai engine
 let aiEngine: OpenAiEngine | undefined = new OpenAiEngine(modelName, apiKey);
 let agentController: AgentController | undefined = new AgentController(aiEngine);
 
@@ -198,13 +199,6 @@ function handleConnectionFromPage(port: Port): void {
 
 chrome.runtime.onConnect.addListener(handleConnectionFromPage);
 
-
-//todo once basic prototype is fully working (i.e. can complete a full multi-step task),
-// need to do negative e2e tests of user screwing with the system
-// to ensure that the system can recover from such situations and then be useful again for future tasks
-// without the user having to restart chrome or uninstall/reinstall the extension
-// (e.g. user closes tab while agent is running, user navigates away from page while agent is running, etc.)
-// or user inputs a new task and clicks the start button while the agent is still running the previous task
 
 
 
