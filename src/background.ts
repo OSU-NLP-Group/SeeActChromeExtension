@@ -65,8 +65,7 @@ chrome.runtime.onInstalled.addListener(function (details) {
 const modelName: string = "gpt-4o-2024-05-13";
 
 const apiKeyQuery = await chrome.storage.local.get("openAiApiKey");
-const apiKey: string = apiKeyQuery.openAiApiKey;
-if (apiKey === undefined) console.debug("api key from chrome storage is undefined")//remove this later?
+const apiKey: string = apiKeyQuery.openAiApiKey ?? "PLACEHOLDER_API_KEY";
 
 let aiEngine: OpenAiEngine | undefined = new OpenAiEngine(modelName, apiKey);
 let agentController: AgentController | undefined = new AgentController(aiEngine);

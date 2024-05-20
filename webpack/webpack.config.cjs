@@ -59,7 +59,7 @@ module.exports = {
             filename: "options.html",
             chunks: ["options"],
             showErrors: true,
-            inject: false
+            inject: "body"
         })
     ],
 };

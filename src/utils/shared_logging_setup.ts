@@ -1,9 +1,25 @@
 import log, {LogLevelNames, LogLevel} from "loglevel";
 import {PageRequestType} from "./misc";
 
+
+// Create an object that maps the names of the log levels to their numeric values
+const LogLevelValues = {
+    TRACE: log.levels.TRACE,
+    DEBUG: log.levels.DEBUG,
+    INFO: log.levels.INFO,
+    WARN: log.levels.WARN,
+    ERROR: log.levels.ERROR,
+    SILENT: log.levels.SILENT,
+};
 export const origLoggerFactory = log.methodFactory;
 
 const logLevelCache: {chosenLogLevel: keyof LogLevel} = { chosenLogLevel: "TRACE"}
+const logLevelQuery = await chrome.storage.local.get("logLevel");
+if (isLogLevelName(logLevelQuery.logLevel)) {
+    logLevelCache.chosenLogLevel = logLevelQuery.logLevel;
+} else {
+    console.error(`invalid log level was stored: ${logLevelQuery.logLevel}, ignoring it when initializing logging script`)
+}
 
 /**
  * Create a logger with the given name, using the 'plugin' functionality which was added to loglevel in
@@ -53,7 +69,7 @@ export const createNamedLogger = (loggerName: string, inServiceWorker: boolean):
                     newLogger.rebuild();
                     logLevelCache.chosenLogLevel = storedLevel;
                 } else {
-                    newLogger.error(`invalid log level was inserted into local storage: ${storedLevel}, ignoring`)
+                    newLogger.error(`invalid log level was inserted into local storage: ${storedLevel}, ignoring it when initializing a logger`)
                 }
             }
         });
@@ -71,7 +87,7 @@ export const createNamedLogger = (loggerName: string, inServiceWorker: boolean):
                         logLevelCache.chosenLogLevel = newLogLevel;
                     }
                 } else {
-                    newLogger.error(`invalid log level was inserted into local storage: ${newLogLevel}, ignoring`)
+                    newLogger.error(`invalid log level was inserted into local storage: ${newLogLevel}, ignoring it when processing a possible update to the log level setting`)
                 }
             }
         });
@@ -127,19 +143,9 @@ export function assertIsValidLogLevelName(logLevelName: unknown | undefined): as
     }
 }
 
-export function isLogLevelName(logLevelName: string): logLevelName is keyof LogLevel {
-    return logLevelName in LogLevelValues;
+export function isLogLevelName(logLevelName: unknown): logLevelName is keyof LogLevel {
+    return typeof logLevelName === "string" && logLevelName in LogLevelValues;
 }
-
-// Create an object that maps the names of the log levels to their numeric values
-const LogLevelValues = {
-    TRACE: log.levels.TRACE,
-    DEBUG: log.levels.DEBUG,
-    INFO: log.levels.INFO,
-    WARN: log.levels.WARN,
-    ERROR: log.levels.ERROR,
-    SILENT: log.levels.SILENT,
-};
 
 // Create a mapping object that maps from the numeric values of the log levels to their names
 export const LogLevelDict: { [K in typeof LogLevelValues[keyof typeof LogLevelValues]]: keyof LogLevel } = {
