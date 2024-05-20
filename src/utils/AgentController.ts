@@ -386,6 +386,7 @@ export class AgentController {
 
         if (action === Action.TERMINATE) {
             this.logger.info("Task completed!");
+            this.actionsSoFar.push({actionDesc: "Terminate task as completed", success: true, explanation: explanation})
             this.terminateTask();
             return LmmOutputReaction.ABORT_TASK;
         } else if (action === Action.NONE) {

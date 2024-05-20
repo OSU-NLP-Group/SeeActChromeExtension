@@ -1,4 +1,4 @@
-import {createNamedLogger} from "./utils/shared_logging_setup";
+import {createNamedLogger, defaultLogLevel} from "./utils/shared_logging_setup";
 
 const logger = createNamedLogger('options-menu', false);
 
@@ -19,8 +19,8 @@ if (!saveButton) throw new Error('save button not found');
 
 chrome.storage.local.get(['openAiApiKey', 'logLevel', 'isMonitorMode']).then(
     (items) => {
-        openAiApiKeyField.value = items.openAiApiKey;
-        logLevelSelector.value = items.logLevel;
+        openAiApiKeyField.value = items.openAiApiKey ?? "";
+        logLevelSelector.value = items.logLevel ?? defaultLogLevel;
         monitorModeToggle.checked = items.isMonitorMode;
         statusDisplay.textContent = "Loaded";
     }, (err) => {
