@@ -19,14 +19,13 @@ portToBackground.onMessage.addListener(pageActor.handleRequestFromAgentControlle
 // but still have the wait-and-conditionally-poll-the-backend, just in case we run this (including attachng an onload
 // listener) after the page has already finished loading
 
-(async () => {
-    //todo! wait here until page is loaded/stable!
-    await sleep(5000);
 
+//todo! wait here until page is loaded/stable!
+await sleep(5000);
+
+portToBackground.postMessage({msg: Page2BackgroundPortMsgType.READY});
+
+await sleep(1000);
+if (!pageActor.hasControllerEverResponded) {
     portToBackground.postMessage({msg: Page2BackgroundPortMsgType.READY});
-
-    await sleep(1000);
-    if (!pageActor.hasControllerEverResponded) {
-        portToBackground.postMessage({msg: Page2BackgroundPortMsgType.READY});
-    }
-})();
+}

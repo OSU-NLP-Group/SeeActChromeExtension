@@ -3,6 +3,8 @@ import {PageRequestType} from "./misc";
 
 export const origLoggerFactory = log.methodFactory;
 
+const logLevelCache: {chosenLogLevel: keyof LogLevel} = { chosenLogLevel: "TRACE"}
+
 /**
  * Create a logger with the given name, using the 'plugin' functionality which was added to loglevel in
  * shared_logging_setup.ts to centralize the extension's logging in the background script's console and add more detail
@@ -39,24 +41,37 @@ export const createNamedLogger = (loggerName: string, inServiceWorker: boolean):
         };
     }
 
-    newLogger.setLevel("TRACE");
+    newLogger.setLevel(logLevelCache.chosenLogLevel);
     newLogger.rebuild();
 
     if (chrome?.storage?.local) {
         chrome.storage.local.get("logLevel", (items) => {
-            newLogger.setLevel(items.logLevel || "TRACE");//todo change this to WARN before release
-            newLogger.rebuild();
+            const storedLevel: string = items.logLevel;
+            if (storedLevel) {
+                if (isLogLevelName(storedLevel)) {
+                    newLogger.setLevel(storedLevel);
+                    newLogger.rebuild();
+                    logLevelCache.chosenLogLevel = storedLevel;
+                } else {
+                    newLogger.error(`invalid log level was inserted into local storage: ${storedLevel}, ignoring`)
+                }
+            }
         });
 
         //todo unit testing this? maybe create a function that takes a logger and returns a "local storage changes handler" function, then just unit test that
         chrome.storage.local.onChanged.addListener((changes: {[p: string]: chrome.storage.StorageChange}) => {
             if (changes.logLevel) {
-                const newLogLevel: keyof LogLevel = changes.logLevel.newValue;
-                const existingLogLevel = LogLevelDict[newLogger.getLevel()];
-                if (newLogLevel !== existingLogLevel) {
-                    newLogger.debug(`log level changed from ${existingLogLevel} to ${newLogLevel}`)
-                    newLogger.setLevel(newLogLevel);
-                    newLogger.rebuild();
+                const newLogLevel: string = changes.logLevel.newValue;
+                if (isLogLevelName(newLogLevel)) {
+                    const existingLogLevel = LogLevelDict[newLogger.getLevel()];
+                    if (newLogLevel !== existingLogLevel) {
+                        newLogger.debug(`log level changed from ${existingLogLevel} to ${newLogLevel}`)
+                        newLogger.setLevel(newLogLevel);
+                        newLogger.rebuild();
+                        logLevelCache.chosenLogLevel = newLogLevel;
+                    }
+                } else {
+                    newLogger.error(`invalid log level was inserted into local storage: ${newLogLevel}, ignoring`)
                 }
             }
         });
@@ -112,6 +127,9 @@ export function assertIsValidLogLevelName(logLevelName: unknown | undefined): as
     }
 }
 
+export function isLogLevelName(logLevelName: string): logLevelName is keyof LogLevel {
+    return logLevelName in LogLevelValues;
+}
 
 // Create an object that maps the names of the log levels to their numeric values
 const LogLevelValues = {

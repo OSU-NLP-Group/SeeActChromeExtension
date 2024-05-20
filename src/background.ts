@@ -62,11 +62,12 @@ chrome.runtime.onInstalled.addListener(function (details) {
 
 
 //eventually allow other api's/model-providers
-const modelName: string = "gpt-4-turbo";
-//REMINDER - DO NOT COMMIT ANY NONTRIVIAL EDITS OF THE FOLLOWING LINE
-const apiKey: string = "PLACEHOLDER";
+const modelName: string = "gpt-4o-2024-05-13";
 
-//todo use top-level await to call static factory method for openai engine
+const apiKeyQuery = await chrome.storage.local.get("openAiApiKey");
+const apiKey: string = apiKeyQuery.openAiApiKey;
+if (apiKey === undefined) console.debug("api key from chrome storage is undefined")//remove this later?
+
 let aiEngine: OpenAiEngine | undefined = new OpenAiEngine(modelName, apiKey);
 let agentController: AgentController | undefined = new AgentController(aiEngine);
 

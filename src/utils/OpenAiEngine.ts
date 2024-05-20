@@ -61,8 +61,6 @@ export class OpenAiEngine {
     nextAvailTime: Array<number>;
     currKeyIdx: number;
 
-    //todo make static factory method which's async and which grabs api key(s) from storage and then passes them to constructor
-
     /**
      * @description Create an OpenAiEngine to call the OpenAI API for some particular model
      * @param model Model type to call in OpenAI API
@@ -80,13 +78,7 @@ export class OpenAiEngine {
         const apiKeyInputUseless = apiKey == undefined ||
             (Array.isArray(apiKey) && apiKey.length == 0);
         if (apiKeyInputUseless) {
-            //todo environment variable is mostly irrelevant in browser extension context. remove everything here except the error-throwing
-            const envApiKey = process.env.OPENAI_API_KEY;
-            if (envApiKey == undefined) {
-                throw new Error(OpenAiEngine.NO_API_KEY_ERR);
-            } else {
-                apiKeys.push(envApiKey);
-            }
+            throw new Error(OpenAiEngine.NO_API_KEY_ERR);
         } else {
             if (typeof apiKey === "string") {
                 apiKeys.push(apiKey);
@@ -95,7 +87,14 @@ export class OpenAiEngine {
             }
         }
 
-        //todo add listener for chrome.storage.local changes to update apiKey if it's changed there
+        if (chrome?.storage?.local) {
+            chrome.storage.local.onChanged.addListener((changes: {[p: string]: chrome.storage.StorageChange}) => {
+                if (changes.openAiApiKey !== undefined) {
+                    const newKey: string = changes.openAiApiKey.newValue;
+                    this.apiKeys = [newKey];
+                }
+            });
+        }
 
         this.apiKeys = apiKeys;
         //only a person's own api key will be used, within their own browser instance, so it isn't dangerous
