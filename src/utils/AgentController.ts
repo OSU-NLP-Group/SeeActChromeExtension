@@ -12,7 +12,7 @@ import {
     Page2BackgroundPortMsgType,
     sleep
 } from "./misc";
-import {formatChoices, generatePrompt, groundingRespParser, LmmPrompts, StrTriple} from "./format_prompts";
+import {formatChoices, generatePrompt, LmmPrompts, postProcessActionLlm, StrTriple} from "./format_prompts";
 import {getIndexFromOptionName} from "./format_prompt_utils";
 import {ChromeWrapper} from "./ChromeWrapper";
 import Port = chrome.runtime.Port;
@@ -380,26 +380,7 @@ export class AgentController {
         }
         this.logger.info("grounding output: " + groundingOutput);
 
-        const groundingResp = groundingRespParser(groundingOutput);
-        if (groundingResp === undefined) {
-            this.logger.warn("ai produced json which didn't conform to schema action, counting as noop action and reprompting");
-            this.noopCount++;
-            this.failureOrNoopStreak++;
-            //library docs say groundingRespParser.position should always be defined if the return value from the parser was undefined
-            const startOfProblematicPartOfOutput: number = Math.max(0, (groundingRespParser.position ?? 0) - 50);
-            const endOfProblematicPartOfOutput: number = Math.min((groundingRespParser.position ?? 0) + 50, groundingOutput.length);
-            const problematicPartOfOutput: string = groundingOutput.slice(startOfProblematicPartOfOutput, groundingRespParser.position ?? groundingOutput.length)
-                + "_" + groundingOutput[groundingRespParser.position ?? 0] + "_" + groundingOutput.slice((groundingRespParser.position ?? 0) + 1, endOfProblematicPartOfOutput);
-            this.actionsSoFar.push({
-                actionDesc: `NOOP: schema parsing error=${groundingRespParser.message}; bad part of output (with underscores around breaking point): [<${problematicPartOfOutput}>]`,
-                explanation: "ai produced json which didn't conform to schema",
-                success: false, noopType: NoopType.NON_SCHEMA_CONFORMING_GROUNDING_OUTPUT
-            });
-
-            return LmmOutputReaction.TRY_REPROMPT;
-        }
-
-        const {element, action, value, explanation} = groundingResp;
+        const [element, action, value, explanation] = postProcessActionLlm(groundingOutput);
         //if it proves to be a problem, can add validation to reject explanations which contain multiple periods that're each followed by space or end of string
         this.logger.debug(`suggested action: ${action}; value: ${value}; explanation: ${explanation}`);
 

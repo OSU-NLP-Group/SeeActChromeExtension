@@ -17,7 +17,7 @@ const logLevelCache: {chosenLogLevel: keyof LogLevel} = { chosenLogLevel: "TRACE
 const logLevelQuery = await chrome.storage.local.get("logLevel");
 if (isLogLevelName(logLevelQuery.logLevel)) {
     logLevelCache.chosenLogLevel = logLevelQuery.logLevel;
-} else {
+} else if (logLevelQuery.logLevel !== undefined) {
     console.error(`invalid log level was stored: ${logLevelQuery.logLevel}, ignoring it when initializing logging script`)
 }
 

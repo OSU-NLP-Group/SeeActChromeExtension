@@ -1,30 +1,6 @@
 import {_formatOptions, generateNewQueryPrompt} from "./format_prompt_utils";
 import {Action} from "./misc";
-import Ajv, {JTDSchemaType} from "ajv/dist/jtd"
 
-
-
-export interface GroundingResponse {
-    reasoning: string;
-    explanation: string;
-    element?: string;
-    action: Action;
-    value?: string;
-}
-export const groundingResponseJsonSchema: JTDSchemaType<GroundingResponse> = {
-    properties: {
-        reasoning: {type: "string"},
-        explanation: {type: "string"},
-        action: {
-            enum: Object.values(Action)
-        },
-    }, optionalProperties: {
-        element: {type: "string"},
-        value: {type: "string"}
-    }
-};
-const ajv = new Ajv();
-export const groundingRespParser = ajv.compileParser(groundingResponseJsonSchema);
 
 /**
  * Only exported for use in whitebox-type unit tests. Do not reference in application code outside this module.
@@ -89,6 +65,48 @@ export const formatChoices = (elements: Array<StrTriple>, candidateIds: Array<nu
     });
 }
 
+/**
+ * @description processes the output of the LLM and isolates a) the alphabetic name of the element which should be
+ * interacted with, b) the action which should be performed on that element, optionally c) the text value
+ * which should be used in that action, and d) a 1-sentence explanation of the action
+ * @param llmText the output of the LLM when asked what element should be interacted with and how
+ * @return a 4-tuple of strings, where the first string is the alphabetic name of the element which should be
+ *          interacted with, the second string is the action which should be performed on that element, the
+ *          third string is the text value (empty string if no value was available), and the fourth string is a
+ *          1-sentence explanation of the nature and purpose of the action
+ */
+export const postProcessActionLlm = (llmText: string): [string|undefined, Action, string|undefined, string] => {
+    let explanation = "";
+    let elementChoice: string|undefined;
+    let actionChoice: Action = Action.NONE;
+    let valueChoice: string|undefined;
+
+    let llmRespObj: any|undefined;
+    try {
+         llmRespObj = JSON.parse(llmText);
+    } catch (e) {
+        console.error(`Invalid JSON response from the model (which shouldn't be possible per OpenAI API docs): [<${llmText}>] with error ${e}`);
+        explanation= "doing nothing because model didn't produce valid json";
+    }
+    //maybe should later add validation logic to confirm that the values being pulled from the json object are all strings
+    if (llmRespObj !== undefined) {
+        if (llmRespObj.explanation !== undefined) {
+            explanation = llmRespObj.explanation;
+        }
+        if (llmRespObj.element !== undefined && llmRespObj.element !== null) {
+            elementChoice = llmRespObj.element;
+        }
+        if (llmRespObj.action !== undefined) {
+            actionChoice = llmRespObj.action;
+        }
+        if (llmRespObj.value !== undefined && llmRespObj.value !== null) {
+            valueChoice = llmRespObj.value;
+        }
+    }
+
+    return [elementChoice, actionChoice, valueChoice, explanation];
+}
+
 //todo ask Boyuan about changing system prompt to stop referring to playwright
 // Boyu feedback - still need to include up-to-date information explaining exactly what the different action names mean
 //todo figure out how to write appropriate new detailed explanation for click/type/select/press-enter options
@@ -128,9 +146,15 @@ First, reiterate your next target element, its detailed location, and the corres
 Below is a multi-choice question, where the choices are elements in the webpage. All elements are arranged in the order based on their height on the webpage, from top to bottom (and from left to right). This arrangement can be used to locate them. From the screenshot, find out where and what each one is on the webpage, taking into account both their text content and HTML details. Then, determine whether one matches your target element. Please examine the choices one by one. Choose the matching one. If multiple options match your answer, choose the most likely one by re-examining the screenshot, the choices, and your further reasoning. 
 Note that a search bar might initially show up in html as a button which must be clicked to make the actual search bar available`;//todo confirm with Boyuan about whether this addition at the end is worth keeping or too specific to github.com
 export const groundingOutputPromptIntro = `(Response Format)
-Please present your output in JSON format, following the type definition below. When a key ("value" or sometimes even "element") is irrelevant for the current response, use the json syntax for null`;
-
-export const groundingOutputPromptGeneralExplanation = `The parts of the JSON type definition are explained below
+Please present your output in JSON format, following the schema below. When a key ("value" or sometimes even "element") is irrelevant for the current response, use the json syntax for null (no double quotes around the word null)`;
+export const groundingResponseJsonSchema = `{
+    "reasoning": { "type": ["string"] },
+    "explanation": { "type": ["string"] },
+    "element": { "type": ["string", "null"] },
+    "action": { "type": ["string"] },
+    "value": {"type": ["string", "null"] }
+}`;
+export const groundingOutputPromptGeneralExplanation = `The parts of the JSON schema are explained below
 Generally-applicable response components:
 - reasoning: Perform all reasoning (as guided by the above prompt) in this string.
 - explanation: Provide a 1-sentence explanation of the action you are performing and what purpose it serves.`;
@@ -167,12 +191,11 @@ export const generatePrompt = (task: string, previousActions: Array<string>, cho
     if (choices) {
         groundingPrompt += _formatOptions(choices);
     }
-    //todo check whether stringifying the schema is the right way to include it in the prompt
-    groundingPrompt += groundingOutputPromptIntro + "\n" + JSON.stringify(groundingResponseJsonSchema) + "\n" + groundingOutputPromptGeneralExplanation + "\n" + groundingOutputPromptExplanation;
+    groundingPrompt += groundingOutputPromptIntro + "\n" + groundingResponseJsonSchema + "\n" + groundingOutputPromptGeneralExplanation + "\n" + groundingOutputPromptExplanation;
 
     return {
         sysPrompt: sysPrompt, queryPrompt: queryPrompt, groundingPrompt: groundingPrompt,
-        elementlessActionPrompt: groundingOutputPromptIntro + "\n" + JSON.stringify(groundingResponseJsonSchema) + "\n" + groundingElementlessActionPromptExplanation
+        elementlessActionPrompt: groundingOutputPromptIntro + "\n" + groundingResponseJsonSchema + "\n" + groundingElementlessActionPromptExplanation
     };
 }
 
