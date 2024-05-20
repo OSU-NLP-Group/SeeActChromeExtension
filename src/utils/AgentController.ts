@@ -1,17 +1,21 @@
 import {Mutex} from "async-mutex";
 import {SerializableElementData} from "./BrowserHelper";
-import Port = chrome.runtime.Port;
 import {v4 as uuidV4} from 'uuid';
 import {Logger} from "loglevel";
 import {createNamedLogger} from "./shared_logging_setup";
 import {OpenAiEngine} from "./OpenAiEngine";
 import {
-    Action, Background2PagePortMsgType, buildGenericActionDesc, expectedMsgForPortDisconnection, sleep,
-    Page2BackgroundPortMsgType
+    Action,
+    Background2PagePortMsgType,
+    buildGenericActionDesc,
+    expectedMsgForPortDisconnection,
+    Page2BackgroundPortMsgType,
+    sleep
 } from "./misc";
-import {formatChoices, generatePrompt, LmmPrompts, postProcessActionLlm, StrTriple} from "./format_prompts";
+import {formatChoices, generatePrompt, groundingRespParser, LmmPrompts, StrTriple} from "./format_prompts";
 import {getIndexFromOptionName} from "./format_prompt_utils";
 import {ChromeWrapper} from "./ChromeWrapper";
+import Port = chrome.runtime.Port;
 
 /**
  * states for the agent controller Finite State Machine
@@ -31,7 +35,8 @@ export enum AgentControllerState {
 enum NoopType {
     INVALID_ELEMENT,//ai gave invalid element name
     ACTION_INCOMPATIBLE_WITH_NONE_OF_ABOVE_ELEMENT,//ai chose 'none of the above' option for element but also chose an action that requires a target element
-    AI_SELECTED_NONE_ACTION//ai selected the NONE action
+    AI_SELECTED_NONE_ACTION,//ai selected the NONE action
+    NON_SCHEMA_CONFORMING_GROUNDING_OUTPUT//ai produced json which didn't conform to schema
 }
 
 /**
@@ -47,13 +52,15 @@ enum LmmOutputReaction {
  * used to store information about the current AI-suggested action, so that the controller can later make decisions,
  * logs, and records based on detailed information if the action fails
  */
-type ActionInfo = { elementIndex?: number, elementData?: SerializableElementData, action: Action, value?: string };
+type ActionInfo = {
+    elementIndex?: number, elementData?: SerializableElementData, action: Action, value?: string, explanation: string
+};
 
 /**
  * used to store information about an action that was performed, so that the controller can give the AI a clear history
  * of what actions have been tried and what the results were
  */
-type ActionRecord = { actionDesc: string, success: boolean, noopType?: NoopType };
+type ActionRecord = { actionDesc: string, success: boolean, noopType?: NoopType, explanation: string };
 
 //todo explore whether it might be possible to break this into multiple classes, or at least if there are
 // pure/non-state-affecting helper functions that could be extracted from existing code and then moved to
@@ -345,7 +352,8 @@ export class AgentController {
         interactiveChoices: string[], screenshotDataUrl: string, candidateIds: number[],
         interactiveElements: SerializableElementData[]): Promise<LmmOutputReaction> => {
         const prompts: LmmPrompts = generatePrompt(this.taskSpecification,
-            this.actionsSoFar.map(entry => `${entry.success ? "SUCCEEDED" : "FAILED"}-${entry.actionDesc}`), interactiveChoices);
+            this.actionsSoFar.map(entry => `${entry.success ? "SUCCEEDED" : "FAILED"}-${entry.actionDesc}; explanation: ${entry.explanation}`),
+            interactiveChoices);
         this.logger.debug("prompts: " + JSON.stringify(prompts));
         let planningOutput: string;
         let groundingOutput: string;
@@ -371,37 +379,58 @@ export class AgentController {
             return LmmOutputReaction.ABORT_TASK;
         }
         this.logger.info("grounding output: " + groundingOutput);
-        const [elementName, actionName, value] = postProcessActionLlm(groundingOutput);
-        this.logger.debug(`suggested action: ${actionName}; value: ${value}`);
 
-        if (actionName === Action.TERMINATE) {
+        const groundingResp = groundingRespParser(groundingOutput);
+        if (groundingResp === undefined) {
+            this.logger.warn("ai produced json which didn't conform to schema action, counting as noop action and reprompting");
+            this.noopCount++;
+            this.failureOrNoopStreak++;
+            //library docs say groundingRespParser.position should always be defined if the return value from the parser was undefined
+            const startOfProblematicPartOfOutput: number = Math.max(0, (groundingRespParser.position ?? 0) - 50);
+            const endOfProblematicPartOfOutput: number = Math.min((groundingRespParser.position ?? 0) + 50, groundingOutput.length);
+            const problematicPartOfOutput: string = groundingOutput.slice(startOfProblematicPartOfOutput, groundingRespParser.position ?? groundingOutput.length)
+                + "_" + groundingOutput[groundingRespParser.position ?? 0] + "_" + groundingOutput.slice((groundingRespParser.position ?? 0) + 1, endOfProblematicPartOfOutput);
+            this.actionsSoFar.push({
+                actionDesc: `NOOP: schema parsing error=${groundingRespParser.message}; bad part of output (with underscores around breaking point): [<${problematicPartOfOutput}>]`,
+                explanation: "ai produced json which didn't conform to schema",
+                success: false, noopType: NoopType.NON_SCHEMA_CONFORMING_GROUNDING_OUTPUT
+            });
+
+            return LmmOutputReaction.TRY_REPROMPT;
+        }
+
+        const {element, action, value, explanation} = groundingResp;
+        //if it proves to be a problem, can add validation to reject explanations which contain multiple periods that're each followed by space or end of string
+        this.logger.debug(`suggested action: ${action}; value: ${value}; explanation: ${explanation}`);
+
+        if (action === Action.TERMINATE) {
             this.logger.info("Task completed!");
             this.terminateTask();
             return LmmOutputReaction.ABORT_TASK;
-        } else if (actionName === Action.NONE) {
+        } else if (action === Action.NONE) {
             this.logger.warn("ai selected NONE action, counting as noop action and reprompting");
             this.noopCount++;
             this.failureOrNoopStreak++;
             this.actionsSoFar.push({
-                actionDesc: `NOOP: ai selected NONE action type`,
+                actionDesc: `NOOP: ai selected NONE action type`, explanation: explanation,
                 success: false, noopType: NoopType.AI_SELECTED_NONE_ACTION
             });
             return LmmOutputReaction.TRY_REPROMPT;
         }
-        const actionNeedsNoElement = actionName === Action.SCROLL_UP || actionName === Action.SCROLL_DOWN
-            || actionName === Action.PRESS_ENTER;
+        const actionNeedsNoElement = action === Action.SCROLL_UP || action === Action.SCROLL_DOWN
+            || action === Action.PRESS_ENTER;
 
-        let chosenCandidateIndex = getIndexFromOptionName(elementName);
+        let chosenCandidateIndex = getIndexFromOptionName(element);
 
         if ((!chosenCandidateIndex || chosenCandidateIndex > candidateIds.length) && !actionNeedsNoElement) {
-            this.logger.warn(`ai selected invalid option ${elementName} ` + (chosenCandidateIndex
+            this.logger.warn(`ai selected invalid option ${element} ` + (chosenCandidateIndex
                 ? `(was parsed as candidate index ${chosenCandidateIndex}, but the candidates list only had ${candidateIds.length} entries)`
                 : `(cannot be parsed into an index)`) + ", counting as noop action and reprompting");
             this.noopCount++;
             this.failureOrNoopStreak++;
             this.actionsSoFar.push({
-                actionDesc: `NOOP: ai selected invalid option ${elementName}`,
-                success: false, noopType: NoopType.INVALID_ELEMENT
+                actionDesc: `NOOP: ai selected invalid option ${element}`,
+                success: false, noopType: NoopType.INVALID_ELEMENT, explanation: explanation
             });
             return LmmOutputReaction.TRY_REPROMPT;
         } else if (chosenCandidateIndex === candidateIds.length && !actionNeedsNoElement) {
@@ -409,8 +438,9 @@ export class AgentController {
             this.noopCount++;
             this.failureOrNoopStreak++;
             this.actionsSoFar.push({
-                actionDesc: `NOOP: ai selected 'none of the above' option for element selection when action ${actionName} targets specific element`,
-                success: false, noopType: NoopType.ACTION_INCOMPATIBLE_WITH_NONE_OF_ABOVE_ELEMENT
+                actionDesc: `NOOP: ai selected 'none of the above' option for element selection when action ${action} targets specific element`,
+                success: false, noopType: NoopType.ACTION_INCOMPATIBLE_WITH_NONE_OF_ABOVE_ELEMENT,
+                explanation: explanation
             });
             return LmmOutputReaction.TRY_REPROMPT;
         }
@@ -423,11 +453,11 @@ export class AgentController {
         this.logger.debug(`acting on the ${chosenCandidateIndex} entry from the candidates list; which is the ${chosenElementIndex} element of the original interactiveElements list`);
 
         this.tentativeActionInfo = {
-            elementIndex: chosenElementIndex, action: actionName, value: value,
+            elementIndex: chosenElementIndex, action: action, value: value, explanation: explanation,
             elementData: chosenElementIndex ? interactiveElements[chosenElementIndex] : undefined
         };
         //can add TYPE and SELECT here if I ever see or get reports of such actions causing page navigation
-        this.mightNextActionCausePageNav = (actionName === Action.PRESS_ENTER || actionName === Action.CLICK);
+        this.mightNextActionCausePageNav = (action === Action.PRESS_ENTER || action === Action.CLICK);
 
 
         return LmmOutputReaction.PROCEED_WITH_ACTION;
@@ -470,7 +500,7 @@ export class AgentController {
             }
         }
 
-        const aborted = this.updateActionHistory(actionDesc, wasSuccessful);
+        const aborted = this.updateActionHistory(actionDesc, wasSuccessful, this.tentativeActionInfo?.explanation);
         if (aborted) {
             this.logger.info("task terminated due to exceeding a limit on operations, noops, or failures");
         } else if (wasPageNav) {
@@ -505,12 +535,13 @@ export class AgentController {
      *
      * @param actionDesc description of the action that was attempted
      * @param wasSuccessful whether the action was successful
+     * @param explanation model-generated 1 sentence explanation of the nature and purpose of the current action
      * @return whether the task should be aborted; indicates whether the action-completion-handler function which called
      *          this should proceed with setting things in motion for the next step of the task
      */ //todo write at least skeleton of unit test suite for this
-    updateActionHistory(actionDesc: string, wasSuccessful: boolean) {
+    updateActionHistory(actionDesc: string, wasSuccessful: boolean, explanation?: string) {
         let shouldAbort: boolean = false;
-        this.actionsSoFar.push({actionDesc: actionDesc, success: wasSuccessful});
+        this.actionsSoFar.push({actionDesc: actionDesc, success: wasSuccessful, explanation: explanation ?? "explanation unavailable"});
         this.tentativeActionInfo = undefined;
 
         this.opsCount++;
@@ -593,7 +624,7 @@ export class AgentController {
 
         //marking action as failure if it _accidentally_ caused page navigation or otherwise caused the page connection
         // to fail
-        const aborted = this.updateActionHistory(actionDesc, this.mightNextActionCausePageNav);
+        const aborted = this.updateActionHistory(actionDesc, this.mightNextActionCausePageNav, this.tentativeActionInfo?.explanation);
         if (!aborted) {
             await this.injectPageActorScript(false);
             //only resetting this after script injection because script injection needs to know whether it's ok that the

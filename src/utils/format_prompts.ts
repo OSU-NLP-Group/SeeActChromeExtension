@@ -1,6 +1,30 @@
 import {_formatOptions, generateNewQueryPrompt} from "./format_prompt_utils";
 import {Action} from "./misc";
+import Ajv, {JTDSchemaType} from "ajv/dist/jtd"
 
+
+
+export interface GroundingResponse {
+    reasoning: string;
+    explanation: string;
+    element?: string;
+    action: Action;
+    value?: string;
+}
+export const groundingResponseJsonSchema: JTDSchemaType<GroundingResponse> = {
+    properties: {
+        reasoning: {type: "string"},
+        explanation: {type: "string"},
+        action: {
+            enum: Object.values(Action)
+        },
+    }, optionalProperties: {
+        element: {type: "string"},
+        value: {type: "string"}
+    }
+};
+const ajv = new Ajv();
+export const groundingRespParser = ajv.compileParser(groundingResponseJsonSchema);
 
 /**
  * Only exported for use in whitebox-type unit tests. Do not reference in application code outside this module.
@@ -65,90 +89,6 @@ export const formatChoices = (elements: Array<StrTriple>, candidateIds: Array<nu
     });
 }
 
-/**
- * @description processes the output of the LLM and isolates a) the alphabetic name of the element which should be
- * interacted with, b) the action which should be performed on that element, and optionally c) the text value
- * which should be used in that action
- * @param llmText the output of the LLM when asked what element should be interacted with and how
- * @return a 3-tuple of strings, where the first string is the alphabetic name of the element which should be
- *          interacted with, the second string is the action which should be performed on that element, and the
- *          third string is the text value (empty string if no value was available)
- */
-//todo later idea for improvement is to leverage open ai api's "forced json" output mode instead of this regex-based parsing
-export const postProcessActionLlm = (llmText: string): [string, Action, string] => {
-    //sorted/deduplicated copy of list from src/format_prompt.py
-    //todo confer with Boyuan about whether this particular pre-processing is actually adding any value at this point
-    const llmJunkStrings = [
-        "Choose an action from {CLICK, TYPE, SELECT}.",
-        "Choose an action from {CLICK, TYPE, SELECT}.\n",
-        "Choose an action from {CLICK, TYPE, SELECT}.\n\n",
-        "Provide additional input based on ACTION.",
-        "Provide additional input based on ACTION.\n",
-        "Provide additional input based on ACTION.\n\n",
-        "The correct choice based on the analysis would be ",
-        "The correct choice based on the analysis would be :",
-        "The correct choice based on the analysis would be:\n",
-        "The correct choice based on the analysis would be:\n\n",
-        "The correct element to select would be ",
-        "The correct element to select would be:",
-        "The correct element to select would be:\n",
-        "The correct element to select would be:\n\n",
-        "The uppercase letter of my choice based on the analysis is ",
-        "The uppercase letter of my choice based on the analysis is:",
-        "The uppercase letter of my choice based on the analysis is:\n",
-        "The uppercase letter of my choice based on the analysis is:\n\n",
-        "The uppercase letter of my choice is ",
-        "The uppercase letter of my choice is \n",
-        "The uppercase letter of my choice is \n\n",
-        "The uppercase letter of my choice is:",
-        "The uppercase letter of my choice is:\n",
-        "The uppercase letter of my choice is:\n\n",
-        "The uppercase letter of your choice based on my analysis is:",
-        "The uppercase letter of your choice based on my analysis is:\n",
-        "The uppercase letter of your choice based on my analysis is:\n\n",
-        "The uppercase letter of your choice based on the analysis is ",
-        "The uppercase letter of your choice based on the analysis is:",
-        "The uppercase letter of your choice based on the analysis is:\n",
-        "The uppercase letter of your choice based on the analysis is:\n\n",
-        "The uppercase letter of your choice based on your analysis is:",
-        "The uppercase letter of your choice based on your analysis is:\n",
-        "The uppercase letter of your choice based on your analysis is:\n\n",
-        "The uppercase letter of your choice is ",
-        "The uppercase letter of your choice is \n",
-        "The uppercase letter of your choice is \n\n",
-        "The uppercase letter of your choice. Choose one of the following elements if it matches the target element based on your analysis:",
-        "The uppercase letter of your choice. Choose one of the following elements if it matches the target element based on your analysis:\n",
-        "The uppercase letter of your choice. Choose one of the following elements if it matches the target element based on your analysis:\n\n",
-        "The uppercase letter of your choice.",
-        "The uppercase letter of your choice.\n",
-        "The uppercase letter of your choice.\n\n"
-    ];
-    for (const junkPattern of llmJunkStrings) {
-        llmText = llmText.replace(junkPattern, "");
-    }
-
-    let elementChoice = "Invalid";
-    const elementMatch: RegExpMatchArray | null = llmText.match(/ELEMENT: ([A-Z]{1,2})/);
-    if (elementMatch) {
-        elementChoice = elementMatch[1];
-    }
-
-    let actionChoice: Action = Action.NONE;
-    const actionMatch: RegExpMatchArray | null = llmText.match(/ACTION: (CLICK|SELECT|TYPE|HOVER|PRESS_ENTER|SCROLL_UP|SCROLL_DOWN|TERMINATE|NONE)/);
-    if (actionMatch) {
-        actionChoice = actionMatch[1] as Action;
-    }
-
-    let valueChoice = "";
-    const valueMatch: RegExpMatchArray | null = llmText.match(/VALUE: (.+)$/m);
-    if (valueMatch) {
-        valueChoice = valueMatch[1];
-    }
-
-    return [elementChoice, actionChoice, valueChoice];
-}
-
-
 //todo ask Boyuan about changing system prompt to stop referring to playwright
 // Boyu feedback - still need to include up-to-date information explaining exactly what the different action names mean
 //todo figure out how to write appropriate new detailed explanation for click/type/select/press-enter options
@@ -180,25 +120,32 @@ In such a case, it is important that you include the exact string SKIP_ELEMENT_S
 //todo ask Boyuan about changing the action space- it keeps getting confused or doing things wrong related to the
 // sequence "TYPE on one step then PRESS ENTER on next step"; why don't we just make 2 actions TYPE and TYPE_THEN_ENTER?
 // and get rid of the PRESS_ENTER stand-alone action unless/until it becomes clear that it's needed?
+
 export const onlineReferringPromptDesc = `(Reiteration)
 First, reiterate your next target element, its detailed location, and the corresponding operation.
 
 (Multichoice Question)
-Below is a multi-choice question, where the choices are elements in the webpage. All elements are arranged in the order based on their height on the webpage, from top to bottom (and from left to right). This arrangement can be used to locate them. From the screenshot, find out where and what each one is on the webpage, taking into account both their text content and HTML details. Then, determine whether one matches your target element. Please examine the choices one by one. Choose the matching one. If multiple options match your answer, choose the most likely one by re-examining the screenshot, the choices, and your further reasoning. Note that a search bar might initially show up in html as a button which must be clicked to make the actual search bar available`;//todo confirm with Boyuan about whether this addition at the end is worth keeping or too specific to github.com
-export const onlineElementFormat = `(Final Answer)
-Finally, conclude your answer using the format below. Ensure your answer is strictly adhering to the format provided below. Please do not leave any explanation in your answers of the final standardized format part, and this final part should be clear and certain. The element choice, action, and value should be in three separate lines.
+Below is a multi-choice question, where the choices are elements in the webpage. All elements are arranged in the order based on their height on the webpage, from top to bottom (and from left to right). This arrangement can be used to locate them. From the screenshot, find out where and what each one is on the webpage, taking into account both their text content and HTML details. Then, determine whether one matches your target element. Please examine the choices one by one. Choose the matching one. If multiple options match your answer, choose the most likely one by re-examining the screenshot, the choices, and your further reasoning. 
+Note that a search bar might initially show up in html as a button which must be clicked to make the actual search bar available`;//todo confirm with Boyuan about whether this addition at the end is worth keeping or too specific to github.com
+export const groundingOutputPromptIntro = `(Response Format)
+Please present your output in JSON format, following the type definition below. When a key ("value" or sometimes even "element") is irrelevant for the current response, use the json syntax for null`;
 
-Format:
-
-ELEMENT: The uppercase letter of your choice. (No need for PRESS_ENTER, SCROLL_UP, or SCROLL_DOWN)`;
-export const onlineActionFormat = "ACTION: Choose an action from {CLICK, SELECT, TYPE, PRESS_ENTER, SCROLL_UP, SCROLL_DOWN, HOVER, TERMINATE, NONE}.";
-export const onlineValueFormat = "VALUE: Provide additional input based on ACTION.\n\nThe VALUE means:\nIf ACTION == TYPE, specify the text to be typed.\nIf ACTION == SELECT, indicate the option to be chosen. Revise the selection value to align with the available options within the element.\nIf ACTION == CLICK, PRESS_ENTER, SCROLL_UP, SCROLL_DOWN, TERMINATE or NONE, write \"None\".";
-
-export const onlineElementlessActionPrompt = "Based on your prior planning, the next action is not specific to " +
-    "an element. \nPlease pick from the following actions: SCROLL_UP, SCROLL_DOWN, PRESS_ENTER, TERMINATE, or " +
-    "NONE.\nSimply print a single line starting with \nACTION: \nfollowed by one of the options above on the " +
-    "same line.\nEnsure your answer is strictly adhering to the format provided above. Please do not leave any " +
-    "explanation in your answers of the final standardized format part, and this final part should be clear and certain";
+export const groundingOutputPromptGeneralExplanation = `The parts of the JSON type definition are explained below
+Generally-applicable response components:
+- reasoning: Perform all reasoning (as guided by the above prompt) in this string.
+- explanation: Provide a 1-sentence explanation of the action you are performing and what purpose it serves.`;
+export const groundingOutputPromptExplanation = `
+Response components for actions that might target an element:
+- element: The uppercase letter of your chosen element. (Not needed for PRESS_ENTER, SCROLL_UP, or SCROLL_DOWN)
+- action: Choose an action from {CLICK, SELECT, TYPE, PRESS_ENTER, SCROLL_UP, SCROLL_DOWN, HOVER, TERMINATE, NONE}.
+- value: Provide additional input based on action. The value means:
+    - If action == TYPE, specify the text to be typed.
+    - If action == SELECT, indicate the option to be chosen. Revise the selection value to align with the available options within the element.
+    - If action == CLICK, PRESS_ENTER, SCROLL_UP, SCROLL_DOWN, TERMINATE or NONE, set this to null.`;
+export const groundingElementlessActionPromptExplanation = `
+Based on your prior planning, the next action is not specific to an element.
+Response component for actions that will not target an element:
+- action: Choose an action from {SCROLL_UP, SCROLL_DOWN, PRESS_ENTER, TERMINATE, NONE}.`;
 
 /**
  * @description generate the prompts for the web agent for the current step of the task
@@ -220,11 +167,12 @@ export const generatePrompt = (task: string, previousActions: Array<string>, cho
     if (choices) {
         groundingPrompt += _formatOptions(choices);
     }
-    groundingPrompt += onlineElementFormat + "\n\n" + onlineActionFormat + "\n\n" + onlineValueFormat;
+    //todo check whether stringifying the schema is the right way to include it in the prompt
+    groundingPrompt += groundingOutputPromptIntro + "\n" + JSON.stringify(groundingResponseJsonSchema) + "\n" + groundingOutputPromptGeneralExplanation + "\n" + groundingOutputPromptExplanation;
 
     return {
         sysPrompt: sysPrompt, queryPrompt: queryPrompt, groundingPrompt: groundingPrompt,
-        elementlessActionPrompt: onlineElementlessActionPrompt
+        elementlessActionPrompt: groundingOutputPromptIntro + "\n" + JSON.stringify(groundingResponseJsonSchema) + "\n" + groundingElementlessActionPromptExplanation
     };
 }
 

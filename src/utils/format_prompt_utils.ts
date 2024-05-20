@@ -77,9 +77,9 @@ export const _generateOptionName = (index: number): string => {
  * @param optName a 1 or 2 letter string representing an option
  * @return the non-negative 0-based index of the option, or undefined if invalid input
  */
-export const getIndexFromOptionName = (optName: string): number|undefined => {
+export const getIndexFromOptionName = (optName: string|undefined): number|undefined => {
     let index: number|undefined;
-    if (optName.match(/^[A-Z]{1,2}$/)) {
+    if (optName?.match(/^[A-Z]{1,2}$/)) {
         const capitalLetterToIndex = (capitalLetter: string): number =>
             capitalLetter.charCodeAt(0) - 'A'.charCodeAt(0);
 
