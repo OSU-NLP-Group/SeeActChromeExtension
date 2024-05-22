@@ -1,7 +1,7 @@
 import {createNamedLogger} from "./utils/shared_logging_setup";
 import {PageRequestType} from "./utils/misc";
 
-const logger = createNamedLogger('main-popup', false);
+const logger = createNamedLogger('side-panel', false);
 
 const startButton = document.getElementById('startAgent');
 if (!startButton) throw new Error('startAgent button not found');

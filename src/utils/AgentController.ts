@@ -286,6 +286,7 @@ export class AgentController {
         // judged the action as successful
         // Maybe could limit this to only some action types that are particularly prone to being ineffectual, or
         // use a non-ML software tool to check for the two images being too close to identical
+        //      the latter could be easily thrown off by ads or other dynamic content. maybe getting a good solution for this would be more effort than it's worth
 
         //todo? try catch for error when trying to get screenshot, if that fails, then terminate task
         const screenshotDataUrl: string = await this.chromeWrapper.fetchVisibleTabScreenshot();

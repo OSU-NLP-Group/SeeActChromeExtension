@@ -4,7 +4,7 @@
     "version": "1.0",
     "description": "Allows the user to invoke the SeeAct web agent to perform tasks in the current browser tab/window.",
     "permissions": [
-        "tabCapture", "scripting", "debugger", "tabs", "debugger", "storage"
+        "tabCapture", "scripting", "debugger", "tabs", "debugger", "storage", "sidePanel"
     ],
     "host_permissions": [
         "<all_urls>"
@@ -20,8 +20,13 @@
         "service_worker": "src/background.js",
         "type": "module"
     },
+    "side_panel": {
+        "default_path": "src/side_panel.html",
+        "width": 400,
+        "height": 1000
+    },
     "action": {
-        "default_popup": "src/popup.html",
+        "default_title": "Click to open side panel for directing/supervising ML web agent",
         "default_icon": {
             "16": "images/seeact_icon_16.png",
             "32": "images/seeact_icon_32.png",

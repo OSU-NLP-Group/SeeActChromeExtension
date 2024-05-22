@@ -16,7 +16,7 @@ module.exports = {
         // having the other entry points depend on it. possibly a similar thing for any other multiply-used utils files
         // like utils/misc.ts
         background: path.resolve(root, "src", "background.ts"),
-        popup: path.resolve(root, "src", "popup.ts"),
+        side_panel: path.resolve(root, "src", "side_panel.ts"),
         page_interaction: path.resolve(root, "src", "page_interaction.ts"),
         options: path.resolve(root, "src", "options.ts")
     },
@@ -48,9 +48,9 @@ module.exports = {
             ]
         }),
         new HtmlWebpackPlugin({
-            template: path.resolve(root, "src", "popup.html"),
-            filename: "popup.html",
-            chunks: ["popup"],
+            template: path.resolve(root, "src", "side_panel.html"),
+            filename: "side_panel.html",
+            chunks: ["side_panel"],
             showErrors: true,
             inject: "body"
         }),
