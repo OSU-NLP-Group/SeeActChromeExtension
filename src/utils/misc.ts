@@ -15,6 +15,18 @@ export enum PageRequestType {
 }
 
 /**
+ * types of messages that the service worker might send to the side panel (for adding entries to history list, but
+ * also for things like monitor mode)
+ */
+export enum Background2PanelPortMsgType {
+    TASK_START = "taskStarted",
+    TASK_END = "taskEnded",
+    TASK_HISTORY_ENTRY = "taskHistoryEntry"
+}
+
+//todo later add enum for Panel2BackgroundPortMsgType for monitor mode directives
+
+/**
  * types of messages that the content script (mostly the page actor in the content script) might send to the agent
  * controller in the service worker (in the 'background') over their persistent connection
  */

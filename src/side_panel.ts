@@ -18,6 +18,9 @@ if (!killButton) throw new Error('endTask button not found');
 const optionsButton = document.getElementById('options');
 if (!optionsButton) throw new Error('options button not found');
 
+const historyList = document.getElementById('history-list') as HTMLOListElement;
+if (!historyList) throw new Error('history-list not found');
+
 startButton.addEventListener('click', async () => {
     logger.trace('startAgent button clicked');
     if (!taskSpecField.value) {
@@ -31,11 +34,7 @@ startButton.addEventListener('click', async () => {
     statusDiv.style.display = 'block';
     if (taskStartResponse.success) {
         statusDiv.textContent = `Task ${taskStartResponse.taskId} started successfully`;
-        setTimeout(() => {
-            window.close();
-        }, 2000);
-
-        //todo allow user in config menu to decide whether or not they want pop-up to automatically/immediately close on successful task start
+        //todo also insert history list entry with special class for start of task (which css will give special background)
     } else {
         statusDiv.textContent = 'Task start failed: ' + taskStartResponse.message;
     }
@@ -80,3 +79,15 @@ optionsButton.addEventListener('click', () => {
         window.open(chrome.runtime.getURL('src/options.html'));
     }
 });
+
+/*
+const portToBackground: chrome.runtime.Port|undefined;
+
+chrome.runtime.onConnect.addListener((port: chrome.runtime.Port): void => {
+    //todo
+});
+*/
+
+//todo add connection to background script to receive task history entries and display them in the history list
+// I think this can/should be a listener here for connection requests from backend, or maybe just for messages from backend
+// that are task history entries
