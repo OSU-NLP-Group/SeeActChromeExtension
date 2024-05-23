@@ -3,7 +3,7 @@ import {PageRequestType} from "./utils/misc";
 
 const logger = createNamedLogger('side-panel', false);
 
-const startButton = document.getElementById('startAgent');
+const startButton = document.getElementById('start-agent');
 if (!startButton) throw new Error('startAgent button not found');
 
 const taskSpecField = document.getElementById('task-spec') as HTMLInputElement;
@@ -12,7 +12,7 @@ if (!taskSpecField) throw new Error('task-spec field not found');
 const statusDiv = document.getElementById('status');
 if (!statusDiv) throw new Error('status div not found');
 
-const killButton = document.getElementById('endTask');
+const killButton = document.getElementById('end-task');
 if (!killButton) throw new Error('endTask button not found');
 
 const optionsButton = document.getElementById('options');
@@ -34,7 +34,6 @@ startButton.addEventListener('click', async () => {
     statusDiv.style.display = 'block';
     if (taskStartResponse.success) {
         statusDiv.textContent = `Task ${taskStartResponse.taskId} started successfully`;
-        //todo also insert history list entry with special class for start of task (which css will give special background)
     } else {
         statusDiv.textContent = 'Task start failed: ' + taskStartResponse.message;
     }

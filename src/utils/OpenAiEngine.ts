@@ -177,7 +177,8 @@ export class OpenAiEngine {
             }
 
             const response = await this.openAi.chat.completions.create(
-                {messages: messages, model: model, temperature: temp, max_tokens: maxNewTokens});
+                {messages: messages, model: model, temperature: temp, max_tokens: maxNewTokens,
+                    response_format: {type: "json_object"}});
             respStr = response.choices?.[0].message?.content;
             //confer with Boyuan- should this log warning with response object if respStr null? or throw error?
             // feedback - don't worry about the api being that weird/unreliable
