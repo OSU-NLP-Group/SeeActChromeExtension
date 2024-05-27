@@ -123,12 +123,12 @@ function processUpdateToMonitorModeCache(storedMonitorMode: unknown, objWithMoni
 
 export function setupMonitorModeCache(objWithMonitorMode: {cachedMonitorMode: boolean, logger: Logger}) {
     if (chrome?.storage?.local) {
-        chrome.storage.local.get("monitorMode", (items) => {
-            processUpdateToMonitorModeCache(items.monitorMode, objWithMonitorMode);
+        chrome.storage.local.get("isMonitorMode", (items) => {
+            processUpdateToMonitorModeCache(items.isMonitorMode, objWithMonitorMode);
         });
         chrome.storage.local.onChanged.addListener((changes: {[p: string]: chrome.storage.StorageChange}) => {
-            if (changes.monitorMode) {
-                processUpdateToMonitorModeCache(changes.monitorMode.newValue, objWithMonitorMode);
+            if (changes.isMonitorMode !== undefined) {
+                processUpdateToMonitorModeCache(changes.isMonitorMode.newValue, objWithMonitorMode);
             }
         });
     }

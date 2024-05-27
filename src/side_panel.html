@@ -10,11 +10,11 @@
         #task-spec {
             width: 100%;
             height: 15%;
-            font-size: 16px;
+            font-size: 12px;
             overflow: auto;/*enable scrolling through task specification*/
         }
         label {
-            font-size: 24px;
+            font-size: 20px;
         }
         hr {
             border: none;
@@ -27,12 +27,13 @@
         #history-container {
             width: 100%;
             height: 45%;/*history view should take up a plurality of the side panel's space*/
-            overflow: auto;/*enable scrolling through history*/
+            border: 1px solid black;
         }
         #history li {
             border: 1px solid black;
             margin: 5px;
             padding: 5px;
+            font-size: 14px;
         }
         #history li.task_start {
             background-color: #5dff55;
@@ -41,16 +42,19 @@
             background-color: #a727ff;
         }
         #pending-action {
+            border: 1px solid black;
             width: 100%;
             height: 10%;
             font-size: 16px;
-            overflow: auto;/*enable scrolling through pending action info*/
+
+        }
+        #monitor-mode-heading {
+            font-size: 30px;
         }
         #monitor-feedback {
             width: 100%;
             height: 10%;
-            font-size: 16px;
-            overflow: auto;/*enable scrolling through feedback message*/
+            font-size: 12px;
         }
     </style>
 </head>
@@ -83,7 +87,7 @@
 <br>
 <div id="pending-action"></div>
 <br>
-<label for="monitor-mode-container">Monitor Mode</label>
+<div id="monitor-mode-heading">Monitor Mode</div>
 <br>
 <div id="monitor-mode-container">
     <label for="monitor-feedback" title="Hint- if you reject the proposed action after doing something to the page, please mention that thing in the feedback">Feedback to Agent</label>
