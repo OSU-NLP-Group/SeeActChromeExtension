@@ -9,7 +9,7 @@
 
 <label for="open-ai-api-key">OpenAI API Key</label>
 <input type="text" id="open-ai-api-key" placeholder="Enter OpenAI API key here">
-
+<br>
 <!--
 <label for="fixed-choice-batch-size">Fixed-Choice Batch Size (how many elements to show to agent at a time when it's deciding what to interact with next)</label>
 <input type="number" id="fixed-choice-batch-size" min="0" value="17", step="1">
@@ -31,13 +31,21 @@
     <option value="DEBUG">DEBUG</option>
     <option value="TRACE" selected>TRACE</option>
 </select>
-
+<br>
 <label for="monitor-mode" title="Turning this on will force the web agent to confirm with you before each action">Monitor Mode</label>
 <input type="checkbox" disabled id="monitor-mode">
 <!--disabled for now because it won't be implemented until 1.5-2.5 weeks from now-->
-
+<br>
+<!--todo add options for the following:
+        max operations
+        max total noops
+        max total failures
+        max length of failure-or-noop streak
+        maybe the fraction of viewport-height that is used when doing a vertical scroll action
+-->
+<br>
 <div id="status-display">Initializing</div>
-
+<br>
 <button id="save">Save</button>
 </body>
 </html>

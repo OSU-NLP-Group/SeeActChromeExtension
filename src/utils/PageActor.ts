@@ -7,7 +7,7 @@ import {
     buildGenericActionDesc,
     expectedMsgForPortDisconnection,
     Page2BackgroundPortMsgType,
-    PageRequestType,
+    PageRequestType, renderUnknownValue,
     sleep
 } from "./misc";
 import {ChromeWrapper} from "./ChromeWrapper";
@@ -64,7 +64,7 @@ export class PageActor {
         if (this.currInteractiveElements) {
             this.logger.error("interactive elements already exist; background script might've asked for interactive elements twice in a row without in between instructing that an action be performed or without waiting for the action to be finished")
             this.portToBackground.postMessage(
-                {msg: Page2BackgroundPortMsgType.TERMINAL, error: "interactive elements already exist"});
+                {type: Page2BackgroundPortMsgType.TERMINAL, error: "interactive elements already exist"});
             return;
         }
 
@@ -80,12 +80,12 @@ export class PageActor {
         //todo also retrieve current viewport position and provide that to controller logic in background script
         try {
             this.portToBackground.postMessage(
-                {msg: Page2BackgroundPortMsgType.PAGE_STATE, interactiveElements: elementsInSerializableForm});
+                {type: Page2BackgroundPortMsgType.PAGE_STATE, interactiveElements: elementsInSerializableForm});
         } catch (error: any) {
             if ('message' in error && error.message === expectedMsgForPortDisconnection) {
                 this.logger.info("service worker disconnected from content script while content script was gathering interactive elements (task was probably terminated by user)");
             } else {
-                this.logger.error(`unexpected error in content script while sending interactive elements to service worker; error: ${error}, jsonified: ${JSON.stringify(error)}`);
+                this.logger.error(`unexpected error in content script while sending interactive elements to service worker; error: ${renderUnknownValue(error)}`);
             }
         }
     }
@@ -293,7 +293,7 @@ export class PageActor {
         if (!this.currInteractiveElements) {
             this.logger.error("perform action message received from background script but no interactive elements are currently stored");
             this.portToBackground.postMessage(
-                {msg: Page2BackgroundPortMsgType.TERMINAL, error: "no interactive elements stored to be acted on"});
+                {type: Page2BackgroundPortMsgType.TERMINAL, error: "no interactive elements stored to be acted on"});
             return;
         }
         const actionToPerform: Action = message.action;
@@ -380,14 +380,14 @@ export class PageActor {
 
         try {
             this.portToBackground.postMessage({
-                msg: Page2BackgroundPortMsgType.ACTION_DONE, success: actionOutcome.success,
+                type: Page2BackgroundPortMsgType.ACTION_DONE, success: actionOutcome.success,
                 result: actionOutcome.result
             });
         } catch (error: any) {
             if ('message' in error && error.message === expectedMsgForPortDisconnection) {
                 this.logger.info("service worker disconnected from content script while content script was performing action (task was probably terminated by user)");
             } else {
-                this.logger.error(`unexpected error in content script while notifying service worker about performed action; error: ${error}, jsonified: ${JSON.stringify(error)}`);
+                this.logger.error(`unexpected error in content script while notifying service worker about performed action; error: ${renderUnknownValue(error)}`);
             }
         }
     }
@@ -399,9 +399,9 @@ export class PageActor {
     handleRequestFromAgentController = async (message: any): Promise<void> => {
         this.logger.trace(`message received from background script: ${JSON.stringify(message)} by page ${document.URL}`);
         this.hasControllerEverResponded = true;
-        if (message.msg === Background2PagePortMsgType.REQ_PAGE_STATE) {
+        if (message.type === Background2PagePortMsgType.REQ_PAGE_STATE) {
             this.getPageInfoForController();
-        } else if (message.msg === Background2PagePortMsgType.REQ_ACTION) {
+        } else if (message.type === Background2PagePortMsgType.REQ_ACTION) {
             await this.performActionFromController(message);
         } else {
             this.logger.warn("unknown message from background script: " + JSON.stringify(message));

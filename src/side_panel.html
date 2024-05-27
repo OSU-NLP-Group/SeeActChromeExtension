@@ -12,7 +12,7 @@
             height: 50%;
             font-size: 16px;
         }
-        #task-spec-label {
+        label {
             font-size: 24px;
         }
         hr {
@@ -28,13 +28,16 @@
             height: 60%;/*history view should take up most of side panel*/
             overflow: auto;/*enable scrolling through history*/
         }
-        #history-label {
-            font-size: 24px;
-        }
-        #list li {
+        #history li {
             border: 1px solid black;
             margin: 5px;
             padding: 5px;
+        }
+        #history li.task_start {
+            background-color: #5dff55;
+        }
+        #history li.task_end {
+            background-color: #a727ff;
         }
     </style>
 </head>
@@ -50,26 +53,32 @@
 
 <div id="status"></div>
 <br>
-<button id="end-task">Terminate Task</button>
+<button disabled id="end-task">Terminate Task</button>
 
 <button id="options">Options</button>
 <br>
 <hr>
 <div id="history-container">
     <label id="history-label" for="history">Actions History</label>
+    <br>
     <ol id="history">
     </ol>
 </div>
+<br>
+<br>
+<label for="pending-action">Pending Action</label>
+<br>
+<div id="pending-action"></div>
+<br>
+<label for="monitor-mode-container">Monitor Mode</label>
+<br>
+<div id="monitor-mode-container">
+<!--    todo feedback text field-->
+<!--    todo approve button-->
+<!--    todo reject button-->
+</div>
 
-<!--todo either add a separator entry in the history list or wipe prior history when end a task, and/or when start new task-->
-<!-- maybe those separator list entries could be given an extra class by the js which inserts them, and the css could make that class's background different-->
-
-<!--todo clear history button-->
-
-<!--todo (later) buttons for monitor mode to accept or reject action-->
-
-
-<!--maybe also a button for "I'm going to intervene and then the agent can start its planning process over again"-->
+<!--maybe a clear history button? could also get that effect by closing and reopening the side panel-->
 
 </body>
 </html>

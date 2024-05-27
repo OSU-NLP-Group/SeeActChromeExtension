@@ -3,8 +3,8 @@ import {OpenAiEngine} from "./utils/OpenAiEngine";
 import log from "loglevel";
 import Port = chrome.runtime.Port;
 import MessageSender = chrome.runtime.MessageSender;
-import {AgentController, AgentControllerState} from "./utils/AgentController";
-import {PageRequestType} from "./utils/misc";
+import {AgentController} from "./utils/AgentController";
+import {PageRequestType, pageToControllerPort, panelToControllerPort, renderUnknownValue} from "./utils/misc";
 
 
 console.log("successfully loaded background script in browser");
@@ -65,14 +65,21 @@ chrome.runtime.onInstalled.addListener(function (details) {
 // https://developer.mozilla.org/en-US/docs/Web/API/Performance/now#performance.now_vs._date.now
 
 
-//eventually allow other api's/model-providers
+//eventually allow other api's/model-providers? depends on how much we rely on audio modality of gpt-4o and how quickly others catch up there
 const modelName: string = "gpt-4o-2024-05-13";
 
 const apiKeyQuery = await chrome.storage.local.get("openAiApiKey");
 const apiKey: string = apiKeyQuery.openAiApiKey ?? "PLACEHOLDER_API_KEY";
 
-let aiEngine: OpenAiEngine | undefined = new OpenAiEngine(modelName, apiKey);
-let agentController: AgentController | undefined = new AgentController(aiEngine);
+
+function initializeAgentController(): AgentController {
+    const aiEngine: OpenAiEngine = new OpenAiEngine(modelName, apiKey);
+    return new AgentController(aiEngine);
+}
+
+let agentController: AgentController | undefined = initializeAgentController();
+
+
 
 
 /**
@@ -88,7 +95,7 @@ let agentController: AgentController | undefined = new AgentController(aiEngine)
 function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (response?: any) => void): boolean {
     if (request.reqType !== PageRequestType.LOG) {
         centralLogger.trace("request received by service worker", sender.tab ?
-            "from a content script:" + sender.tab.url : "from the extension");
+            `from a content script:${sender.tab.url}` : "from the extension");
     }
     if (request.reqType === PageRequestType.LOG) {
         if (!centralLogger) {
@@ -104,37 +111,10 @@ function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (r
         if (level === "trace") {
             consoleMethodNm = "debug";
         }
-        console[consoleMethodNm](augmentLogMsg(timestamp, loggerName, level, args));
+        const finalLogMsg = augmentLogMsg(timestamp, loggerName, level, args);
+        console[consoleMethodNm](finalLogMsg);
+        //todo also interact with indexeddb
         sendResponse({success: true});
-    } else if (request.reqType === PageRequestType.START_TASK) {
-        if (!agentController) {
-            aiEngine = new OpenAiEngine(modelName, apiKey);
-            agentController = new AgentController(aiEngine);
-        }
-        if (!centralLogger) {centralLogger = createNamedLogger('service-worker', true);}
-        if (typeof (request.taskSpecification) === "string" && (request.taskSpecification as string).trim().length > 0) {
-            agentController.mutex.runExclusive(async () => await agentController?.startTask(request, sendResponse));
-        } else {sendResponse({success: false, message: "No valid task specification provided"});}
-    } else if (request.reqType === PageRequestType.END_TASK) {
-        if (!agentController) {
-            sendResponse({
-                success: false,
-                message: "Agent controller is not initialized; please do not press 'Terminate Task' unless there is an ongoing task "
-            });
-        } else {
-            agentController.terminationSignal = true;
-            agentController.mutex.runExclusive(() => {
-                if (agentController?.taskId === undefined) {
-                    centralLogger.warn("No task in progress to end");
-                    sendResponse({success: false, message: "No task in progress to end"});
-                    if (agentController) { agentController.terminationSignal = false; }
-                } else {
-                    const terminatedTaskId = agentController.taskId;
-                    agentController.terminateTask();
-                    sendResponse({success: true, taskId: terminatedTaskId});
-                }
-            });
-        }
     } else if (request.reqType === PageRequestType.PRESS_ENTER) {
         if (!agentController) {
             sendResponse({success: false, message: "Cannot press enter when agent controller is not initialized"});
@@ -144,8 +124,9 @@ function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (r
             agentController.sendEnterKeyPress(agentController.currTaskTabId).then(() => {
                 sendResponse({success: true, message: "Sent Enter key press"});
             }, (error) => {
-                centralLogger.error(`error sending Enter key press; error: ${error}, jsonified: ${JSON.stringify(error)}`);
-                sendResponse({success: false, message: `Error sending Enter key press: ${error}`});
+                const errMsg = `error sending Enter key press; error: ${renderUnknownValue(error)}`;
+                centralLogger.error(errMsg);
+                sendResponse({success: false, message: errMsg});
             });
         }
     } else if (request.reqType === PageRequestType.HOVER) {
@@ -157,8 +138,9 @@ function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (r
             agentController.hoverOnElem(agentController.currTaskTabId, request.x, request.y).then(() => {
                 sendResponse({success: true, message: `Hovered over element at ${request.x}, ${request.y}`});
             }, (error) => {
-                centralLogger.error(`error performing mouse hover; error: ${error}, jsonified: ${JSON.stringify(error)}`);
-                sendResponse({success: false, message: `Error performing mouse hover: ${error}`});
+                const errMsg = `error performing mouse hover; error: ${renderUnknownValue(error)}`;
+                centralLogger.error(errMsg);
+                sendResponse({success: false, message: errMsg});
             });
         }
     } else {
@@ -181,21 +163,19 @@ chrome.runtime.onMessage.addListener(handleMsgFromPage);
 function handleConnectionFromPage(port: Port): void {
     if (!centralLogger) { centralLogger = createNamedLogger("service-worker", true)}
     //todo if make port names unique (for each injected content script), change this to a "starts with" check
-    if (port.name === "page-actor-2-agent-controller") {
+    if (port.name === pageToControllerPort) {
         if (!agentController) {
-            throw new Error(`agentController not initialized when page actor ${port.name} tried to connect to agent controller in service worker`);
+            centralLogger.error(`agentController not initialized when page actor ${port.name} tried to connect to agent controller in service worker`);
+            return;
         }
-        agentController.mutex.runExclusive(() => {
-            if (agentController?.state !== AgentControllerState.WAITING_FOR_CONTENT_SCRIPT_INIT) {
-                centralLogger.error("received connection from content script while not waiting for content script initialization, but rather in state " + AgentControllerState[agentController!.state]);
-                agentController?.terminateTask();
-                return;
-            }
-            centralLogger.trace("content script connected to agent controller in service worker");
-            port.onMessage.addListener(agentController.handlePageMsgToAgentController);
-            port.onDisconnect.addListener(agentController.handlePageDisconnectFromAgentController);
-            agentController.currPortToContentScript = port;
-        });
+        agentController.addPageConnection(port).then(
+            () => centralLogger.trace("page actor connected to agent controller in service worker"));
+    } else if (port.name === panelToControllerPort) {
+        if (!agentController) {
+            agentController = initializeAgentController();
+        }
+        agentController.addSidePanelConnection(port).then(
+            () => centralLogger.trace("side panel connected to agent controller in service worker"));
     } else {
         centralLogger.warn("unrecognized port name:", port.name);
     }

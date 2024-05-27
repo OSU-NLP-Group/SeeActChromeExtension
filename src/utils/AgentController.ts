@@ -6,10 +6,10 @@ import {createNamedLogger} from "./shared_logging_setup";
 import {OpenAiEngine} from "./OpenAiEngine";
 import {
     Action,
-    Background2PagePortMsgType,
+    Background2PagePortMsgType, Background2PanelPortMsgType,
     buildGenericActionDesc,
     expectedMsgForPortDisconnection,
-    Page2BackgroundPortMsgType,
+    Page2BackgroundPortMsgType, Panel2BackgroundPortMsgType, renderUnknownValue,
     sleep
 } from "./misc";
 import {formatChoices, generatePrompt, LmmPrompts, postProcessActionLlm, StrTriple} from "./format_prompts";
@@ -25,6 +25,7 @@ export enum AgentControllerState {
     WAITING_FOR_CONTENT_SCRIPT_INIT,//there's an active task, but injection of content script hasn't completed yet
     ACTIVE,//partway through an event handler function
     WAITING_FOR_PAGE_STATE,// waiting for content script to retrieve page state (e.g. interactive elements) from page
+    //todo need state for waiting on monitor mode
     WAITING_FOR_ACTION,//waiting for content script to perform an action on an element
     PENDING_RECONNECT//content script disconnected, but waiting for new connection to be established when the onDisconnect listener gets to run
 }
@@ -35,8 +36,7 @@ export enum AgentControllerState {
 enum NoopType {
     INVALID_ELEMENT,//ai gave invalid element name
     ACTION_INCOMPATIBLE_WITH_NONE_OF_ABOVE_ELEMENT,//ai chose 'none of the above' option for element but also chose an action that requires a target element
-    AI_SELECTED_NONE_ACTION,//ai selected the NONE action
-    NON_SCHEMA_CONFORMING_GROUNDING_OUTPUT//ai produced json which didn't conform to schema
+    AI_SELECTED_NONE_ACTION//ai selected the NONE action
 }
 
 /**
@@ -52,7 +52,7 @@ enum LmmOutputReaction {
  * used to store information about the current AI-suggested action, so that the controller can later make decisions,
  * logs, and records based on detailed information if the action fails
  */
-type ActionInfo = {
+export type ActionInfo = {
     elementIndex?: number, elementData?: SerializableElementData, action: Action, value?: string, explanation: string
 };
 
@@ -78,6 +78,7 @@ export class AgentController {
     currTaskTabId: number | undefined;
 
 
+    //todo rename this to pendingActionInfo
     private tentativeActionInfo: ActionInfo | undefined;
     private mightNextActionCausePageNav: boolean = false;
 
@@ -119,10 +120,14 @@ export class AgentController {
      */
     maxFailureOrNoopStreakLimit: number = 2;
 
+    cachedMonitorMode: boolean = false;
+
 
     state: AgentControllerState = AgentControllerState.IDLE;
 
     currPortToContentScript: Port | undefined;
+    currPortToSidePanel: Port | undefined;
+
     private aiEngine: OpenAiEngine;
     private chromeWrapper: ChromeWrapper;
     readonly logger: Logger;
@@ -138,6 +143,9 @@ export class AgentController {
 
         this.logger = createNamedLogger('agent-controller', true);
         this.logger.debug(`max ops limit: ${this.maxOpsLimit}, max noop limit: ${this.maxNoopLimit}, max failure limit: ${this.maxFailureLimit}, max failure-or-noop streak limit: ${this.maxFailureOrNoopStreakLimit}`);
+
+        //todo make initial chrome storage query that will eventually initialize cached monitor mode field
+        //todo add chrome storage change listener for monitor mode
     }
 
 
@@ -145,20 +153,18 @@ export class AgentController {
      * @description Injects the agent's page-interaction/data-gathering script into the current tab
      * @param isStartOfTask Whether this injection is to start a new task or to continue an existing one (e.g. after
      *                      a page navigation)
-     * @param sendResponse Optional callback to send a response back to the caller if it's a start-of-task injection
      * @param newTab optional tab object to inject the script into, to avoid wasted effort if the caller has already
      *                identified the active tab
      */
-    injectPageActorScript = async (isStartOfTask: boolean, sendResponse?: (response?: any) => void, newTab?: chrome.tabs.Tab): Promise<void> => {
+    injectPageActorScript = async (isStartOfTask: boolean, newTab?: chrome.tabs.Tab): Promise<void> => {
         let tabId: number | undefined = undefined;
         let tab: chrome.tabs.Tab | undefined = newTab;
         if (!tab) {
             try {
                 tab = await this.getActiveTab();
             } catch (error) {
-                this.logger.error(`error ${error} getting active tab id, cannot inject content script; full error object:${JSON.stringify(error)}`);
+                this.logger.error(`error getting active tab id, cannot inject content script; full error object:${renderUnknownValue(error)}`);
                 this.terminateTask();
-                sendResponse?.({success: false, message: `Can't get tab id because of error: ${error}`});
                 return;
             }
         }
@@ -166,7 +172,6 @@ export class AgentController {
         if (!tabId) {
             this.logger.warn("Can't inject agent script into chrome:// URLs for security reasons; " + isStartOfTask ? "please only try to start the agent on a regular web page." : "please don't switch to a chrome:// URL while the agent is running");
             this.terminateTask();
-            sendResponse?.({success: false, message: "Can't inject script in a chrome:// URL"});
         } else {
             const toStartTaskStr = isStartOfTask ? " to start a task" : "";
 
@@ -179,7 +184,6 @@ export class AgentController {
                     const errMsg = `The active tab changed unexpectedly to ${tab.title}. Terminating task.`;
                     this.logger.error(errMsg);
                     this.terminateTask();
-                    sendResponse?.({success: false, message: errMsg});
                     return;
                 }
             }
@@ -189,11 +193,9 @@ export class AgentController {
             try {
                 await this.chromeWrapper.runScript({files: ['./src/page_interaction.js'], target: {tabId: tabId}});
                 this.logger.trace('agent script injected into page' + toStartTaskStr);
-                sendResponse?.({success: true, taskId: this.taskId, message: "Started content script in current tab"});
             } catch (error) {
-                this.logger.error(`error injecting agent script into page${toStartTaskStr}; error: ${error}; jsonified error: ${JSON.stringify(error)}`);
+                this.logger.error(`error injecting agent script into page${toStartTaskStr}; error: ${renderUnknownValue(error)}`);
                 this.terminateTask();
-                sendResponse?.({success: false, message: "Error injecting agent script into page" + toStartTaskStr});
             }
         }
     }
@@ -201,26 +203,69 @@ export class AgentController {
 
     /**
      * @description Starts a new task for the agent to complete
-     * @param request The request object describing the new task
-     * @param sendResponse The callback to send a response back to the caller that requested the new task
+     * @param message The message describing the new task
+     * @param port the connection to the side panel which requested the start of the task
      */
-    startTask = async (request: any, sendResponse: (response?: any) => void): Promise<void> => {
+    startTask = async (message: any, port: Port): Promise<void> => {
         if (this.taskId !== undefined) {
             const taskRejectMsg = `Task ${this.taskId} already in progress; not starting new task`;
             this.logger.warn(taskRejectMsg);
-            sendResponse({success: false, message: taskRejectMsg});
+            try {
+                port.postMessage({type: Background2PanelPortMsgType.ERROR, msg: taskRejectMsg});
+            } catch (error: any) {
+                this.logger.error(`error while trying to send error message to side panel about task-start request being received when task is already running; error: ${renderUnknownValue(error)}`);
+            }
+        } else if (typeof (message.taskSpecification) !== "string" || message.taskSpecification.trim().length === 0) {
+            this.logger.error(`received bad task specification from side panel: ${renderUnknownValue(message.taskSpecification)}`);
+            this.state = AgentControllerState.IDLE;
+            try {
+                port.postMessage({type: Background2PanelPortMsgType.ERROR, msg: "bad task specification"});
+            } catch (error: any) {
+                this.logger.error(`error while trying to send error message to side panel about task start request with bad task specification; error: ${renderUnknownValue(error)}`);
+            }
         } else {
             this.taskId = uuidV4();
-            this.taskSpecification = request.taskSpecification;
+            this.taskSpecification = message.taskSpecification;
             this.logger.info(`STARTING TASK ${this.taskId} with specification: ${this.taskSpecification}`);
             try {
-                await this.injectPageActorScript(true, sendResponse)
+                await this.injectPageActorScript(true);
             } catch (error: any) {
-                this.logger.error(`error injecting content script to start task; error: ${error}, jsonified: ${JSON.stringify(error)}`);
+                this.logger.error(`error injecting content script to start task; error: ${renderUnknownValue(error)}`);
                 this.terminateTask();
-                sendResponse({success: false, message: `Error injecting content script to start task: ${error}`});
             }
         }
+    }
+
+    addPageConnection = async (port: Port): Promise<void> => {
+        await this.mutex.runExclusive(() => {
+            if (this.state !== AgentControllerState.WAITING_FOR_CONTENT_SCRIPT_INIT) {
+                this.logger.error("received connection from content script while not waiting for content script initialization, but rather in state " + AgentControllerState[this.state]);
+                this.terminateTask();
+                return;
+            }
+            this.logger.trace("content script connected to agent controller in service worker");
+            port.onMessage.addListener(this.handlePageMsgToAgentController);
+            port.onDisconnect.addListener(this.handlePageDisconnectFromAgentController);
+            this.currPortToContentScript = port;
+        });
+    }
+
+    addSidePanelConnection = async (port: Port): Promise<void> => {
+        await this.mutex.runExclusive(() => {
+            if (this.state !== AgentControllerState.IDLE) {
+                this.logger.error("received connection from side panel while not idle, but rather in state " + AgentControllerState[this.state]);
+                this.terminateTask();
+            }
+            this.logger.trace("side panel connected to agent controller in service worker");
+            this.currPortToSidePanel = port;
+            this.currPortToSidePanel.onMessage.addListener(this.handlePanelMsgToController);
+            this.currPortToSidePanel.onDisconnect.addListener(this.handlePanelDisconnectFromController);
+            try {
+                this.currPortToSidePanel.postMessage({type: Background2PanelPortMsgType.AGENT_CONTROLLER_READY});
+            } catch (error: any) {
+                this.logger.error(`error while trying to inform side panel about agent controller's readiness for start of new task; error: ${renderUnknownValue(error)}`);
+            }
+        });
     }
 
     /**
@@ -237,15 +282,33 @@ export class AgentController {
         this.logger.trace("content script initialized and ready; requesting interactive elements")
 
         this.state = AgentControllerState.WAITING_FOR_PAGE_STATE
+        let successfulStart = false;
         try {
-            port.postMessage({msg: Background2PagePortMsgType.REQ_PAGE_STATE});
+            port.postMessage({type: Background2PagePortMsgType.REQ_PAGE_STATE});
+            successfulStart = true;
         } catch (error: any) {
             if ('message' in error && error.message === expectedMsgForPortDisconnection) {
                 this.logger.info("content script disconnected from service worker while processing initial message and before trying to request interactive elements; task will resume after new content script connection is established");
                 this.state = AgentControllerState.PENDING_RECONNECT;
             } else {
-                this.logger.error(`unexpected error while processing initial message and before trying to request interactive elements; terminating task; error: ${error}, jsonified: ${JSON.stringify(error)}`);
+                this.logger.error(`unexpected error while processing initial message and before trying to request interactive elements; terminating task; error: ${renderUnknownValue(error)}`);
                 this.terminateTask();
+            }
+        }
+        if (this.actionsSoFar.length === 0) {
+            if (!this.currPortToSidePanel) {
+                this.logger.error("no side panel connection to send task started message to, aborting task");
+                this.terminateTask();
+            } else {
+                try {
+                    this.currPortToSidePanel.postMessage({
+                        type: Background2PanelPortMsgType.TASK_STARTED, taskId: this.taskId,
+                        success: successfulStart, taskSpec: this.taskSpecification
+                    });
+                } catch (error: any) {
+                    this.logger.error(`error while trying to inform side panel about start of task and the requesting of interactive elements; terminating task; error: ${renderUnknownValue(error)}`);
+                    this.terminateTask();
+                }
             }
         }
     }
@@ -303,15 +366,32 @@ export class AgentController {
 
             if (this.terminationSignal) {
                 this.logger.info("received termination signal while processing interactive elements; terminating task")
-                //the task termination will be handled by the terminateTask method being called by the message handler
-                // in background.ts once this method ends and the controller's mutex is released
+                //the task termination will be handled by the terminateTask method being called by the handler (for
+                // messages from side panel) once this method ends and the controller's mutex is released
                 // This prevents the agent from performing a final action after the user presses the terminate button
                 return;
             }
+
+            if (this.currPortToSidePanel) {
+                try {
+                    this.currPortToSidePanel.postMessage(
+                        {type: Background2PanelPortMsgType.ACTION_CANDIDATE, actionInfo: this.tentativeActionInfo});
+                } catch (error: any) {
+                    this.logger.error(`error while trying to inform side panel about pending action; terminating task; error: ${renderUnknownValue(error)}`);
+                    this.terminateTask();
+                }
+            } else {
+                this.logger.error("side panel connection lost at some point during action planning, terminating task");
+                this.terminateTask();
+            }
+
+            //todo checks related to monitor mode
+            // todo including sending a msg to page actor to highlight/focus-visible the element
+
             this.state = AgentControllerState.WAITING_FOR_ACTION;
             try {
                 port.postMessage({
-                    msg: Background2PagePortMsgType.REQ_ACTION, elementIndex: this.tentativeActionInfo?.elementIndex,
+                    type: Background2PagePortMsgType.REQ_ACTION, elementIndex: this.tentativeActionInfo?.elementIndex,
                     action: this.tentativeActionInfo?.action, value: this.tentativeActionInfo?.value
                 });
             } catch (error: any) {
@@ -320,7 +400,7 @@ export class AgentController {
                     this.state = AgentControllerState.PENDING_RECONNECT;
                     this.tentativeActionInfo = undefined;
                 } else {
-                    this.logger.error(`unexpected error while processing interactive elements and before trying to request an action; terminating task; error: ${error}, jsonified: ${JSON.stringify(error)}`);
+                    this.logger.error(`unexpected error while requesting an action; terminating task; error: ${renderUnknownValue(error)}`);
                     this.terminateTask();
                 }
             }
@@ -373,9 +453,8 @@ export class AgentController {
             groundingOutput = await this.aiEngine.generateWithRetry(
                 {prompts: prompts, turnInStep: 1, imgDataUrl: screenshotDataUrl, priorTurnOutput: planningOutput},
                 aiApiBaseDelay);
-            //todo low priority per Boyuan, but experiment with json output mode specifically for the grounding api call
         } catch (error) {
-            this.logger.error(`error getting next step from ai; terminating task; error: ${error}, jsonified: ${JSON.stringify(error)}`);
+            this.logger.error(`error getting next step from ai; terminating task; error: ${renderUnknownValue(error)}`);
             this.terminateTask();
             return LmmOutputReaction.ABORT_TASK;
         }
@@ -388,12 +467,14 @@ export class AgentController {
         if (action === Action.TERMINATE) {
             this.logger.info("Task completed!");
             this.actionsSoFar.push({actionDesc: "Terminate task as completed", success: true, explanation: explanation})
+            //when passing termination-reason to terminateTask(), include the explanation in that string
             this.terminateTask();
             return LmmOutputReaction.ABORT_TASK;
         } else if (action === Action.NONE) {
             this.logger.warn("ai selected NONE action, counting as noop action and reprompting");
             this.noopCount++;
             this.failureOrNoopStreak++;
+            //todo send some kind of message to the side panel about the noop
             this.actionsSoFar.push({
                 actionDesc: `NOOP: ai selected NONE action type`, explanation: explanation,
                 success: false, noopType: NoopType.AI_SELECTED_NONE_ACTION
@@ -411,6 +492,7 @@ export class AgentController {
                 : `(cannot be parsed into an index)`) + ", counting as noop action and reprompting");
             this.noopCount++;
             this.failureOrNoopStreak++;
+            //todo send some kind of message to the side panel about the noop
             this.actionsSoFar.push({
                 actionDesc: `NOOP: ai selected invalid option ${element}`,
                 success: false, noopType: NoopType.INVALID_ELEMENT, explanation: explanation
@@ -420,6 +502,7 @@ export class AgentController {
             this.logger.info("ai selected 'none of the above' option for element selection when action targets specific element, marking action as noop");
             this.noopCount++;
             this.failureOrNoopStreak++;
+            //todo send some kind of message to the side panel about the noop
             this.actionsSoFar.push({
                 actionDesc: `NOOP: ai selected 'none of the above' option for element selection when action ${action} targets specific element`,
                 success: false, noopType: NoopType.ACTION_INCOMPATIBLE_WITH_NONE_OF_ABOVE_ELEMENT,
@@ -489,8 +572,8 @@ export class AgentController {
         } else if (wasPageNav) {
             this.logger.info("tab id changed after action was performed, so killing connection to " +
                 "old tab and injecting content script in new tab " + tab?.title);
-            this.killPageConnection(port);
-            await this.injectPageActorScript(false, undefined, tab);
+            this.killPageConnection(port, true);
+            await this.injectPageActorScript(false, tab);
             //only resetting this after script injection because script injection needs to know whether it's ok
             // that the tab id might've changed
             this.mightNextActionCausePageNav = false;
@@ -498,13 +581,13 @@ export class AgentController {
             this.mightNextActionCausePageNav = false;
             this.state = AgentControllerState.WAITING_FOR_PAGE_STATE
             try {
-                port.postMessage({msg: Background2PagePortMsgType.REQ_PAGE_STATE});
+                port.postMessage({type: Background2PagePortMsgType.REQ_PAGE_STATE});
             } catch (error: any) {
                 if ('message' in error && error.message === expectedMsgForPortDisconnection) {
                     this.logger.info("content script disconnected from service worker while processing completed action and before trying to request more interactive elements; task will resume after new content script connection is established");
                     this.state = AgentControllerState.PENDING_RECONNECT;
                 } else {
-                    this.logger.error(`unexpected error while processing completed action and before trying to request more interactive elements; terminating task; error: ${error}, jsonified: ${JSON.stringify(error)}`);
+                    this.logger.error(`unexpected error while processing completed action and before trying to request more interactive elements; terminating task; error: ${renderUnknownValue(error)}`);
                     this.terminateTask();
                 }
             }
@@ -522,9 +605,26 @@ export class AgentController {
      * @return whether the task should be aborted; indicates whether the action-completion-handler function which called
      *          this should proceed with setting things in motion for the next step of the task
      */ //todo write at least skeleton of unit test suite for this
-    updateActionHistory(actionDesc: string, wasSuccessful: boolean, explanation?: string) {
+    updateActionHistory(actionDesc: string, wasSuccessful: boolean, explanation: string = "explanation unavailable") {
         let shouldAbort: boolean = false;
-        this.actionsSoFar.push({actionDesc: actionDesc, success: wasSuccessful, explanation: explanation ?? "explanation unavailable"});
+        this.actionsSoFar.push({actionDesc: actionDesc, success: wasSuccessful, explanation: explanation});
+
+        if (!this.currPortToSidePanel) {
+            this.logger.error("no side panel connection to send action history to, aborting task");
+            this.terminateTask();
+            return true;
+        }
+        try {
+            this.currPortToSidePanel.postMessage({
+                actionDesc: actionDesc, success: wasSuccessful, explanation: explanation,
+                actionInfo: this.tentativeActionInfo, type: Background2PanelPortMsgType.TASK_HISTORY_ENTRY
+            });
+        } catch (error: any) {
+            this.logger.error("error when sending action history entry to side panel, aborting task");
+            this.terminateTask();
+            return true;
+        }
+
         this.tentativeActionInfo = undefined;
 
         this.opsCount++;
@@ -552,19 +652,47 @@ export class AgentController {
         return shouldAbort;
     }
 
+    handlePanelMsgToController = async (message: any, port: chrome.runtime.Port): Promise<void> => {
+        if (message.type === Panel2BackgroundPortMsgType.START_TASK) {
+            await this.mutex.runExclusive(() => {
+                this.startTask(message, port).catch((error) => {
+                    this.logger.error("error while trying to start task; error: ", renderUnknownValue(error));
+                });
+            });
+        } else if (message.type === Panel2BackgroundPortMsgType.KILL_TASK) {
+            this.terminationSignal = true;
+            await this.mutex.runExclusive(() => {
+                if (this.taskId === undefined) {
+                    this.logger.error("received termination signal from side panel while no task was running; ignoring");
+                    try {
+                        port.postMessage(
+                            {type: Background2PanelPortMsgType.ERROR, msg: "No task was running to terminate"});
+                    } catch (error: any) {
+                        this.logger.error(`error while trying to send error message to side panel about task termination request when no task was running; error: ${renderUnknownValue(error)}`);
+                    }
+                    this.terminationSignal = false;
+                } else {
+                    this.terminateTask();
+                }
+            });
+        } else {
+            this.logger.error("unknown message from side panel:", JSON.stringify(message));
+        }
+    }
+
     /**
      * @description Handles messages from the content script to the service worker over their persistent connection
      * @param message the message from the content script
      * @param port the port object representing the connection between the service worker and the content script
      */
     handlePageMsgToAgentController = async (message: any, port: Port): Promise<void> => {
-        if (message.msg === Page2BackgroundPortMsgType.READY) {
+        if (message.type === Page2BackgroundPortMsgType.READY) {
             await this.mutex.runExclusive(() => {this.processPageActorInitialized(port);});
-        } else if (message.msg === Page2BackgroundPortMsgType.PAGE_STATE) {
+        } else if (message.type === Page2BackgroundPortMsgType.PAGE_STATE) {
             await this.mutex.runExclusive(async () => {await this.processPageStateFromActor(message, port);});
-        } else if (message.msg === Page2BackgroundPortMsgType.ACTION_DONE) {
+        } else if (message.type === Page2BackgroundPortMsgType.ACTION_DONE) {
             await this.mutex.runExclusive(async () => {await this.processActionPerformedConfirmation(message, port);});
-        } else if (message.msg === Page2BackgroundPortMsgType.TERMINAL) {
+        } else if (message.type === Page2BackgroundPortMsgType.TERMINAL) {
             await this.mutex.runExclusive(() => {
                 this.logger.error("something went horribly wrong in the content script, so terminating the task; details: ", message.error);
                 this.terminateTask();
@@ -629,6 +757,7 @@ export class AgentController {
                 await this.processActorDisconnectDuringAction();
             } else if (this.state === AgentControllerState.PENDING_RECONNECT) {
                 this.logger.info("service worker's connection to content script was lost partway through the controller's processing of some step; reestablishing connection")
+                //todo like with noops, it might be worth sending a message to side panel when these content-script-disconnects happen so user wouldn't fear that the agent had frozen
                 await this.injectPageActorScript(false);
             } else {
                 this.logger.error("service worker's connection to content script was lost while not waiting for action, " +
@@ -640,26 +769,33 @@ export class AgentController {
         });
     }
 
+    handlePanelDisconnectFromController = async (port: Port): Promise<void> => {
+        await this.mutex.runExclusive(() => {
+            this.logger.debug("side panel disconnected from service worker; port name:", port.name);
+            this.currPortToSidePanel = undefined;
+            if (this.state !== AgentControllerState.IDLE) {
+                this.logger.error("side panel disconnected while not idle, but rather in state " + AgentControllerState[this.state]);
+                this.terminateTask();
+            }
+        });
+    }
+
     /**
      * @description ends any connection the service worker may still have to the content script, which should
      * eliminate any further computation in the targeted content script
      * @param pageConn the port object representing the connection between the service worker and the content script
+     * @param isForContentScript whether the connection is to the content script (true) or the side panel (false)
      */
-    killPageConnection = (pageConn: Port): void => {
+    killPageConnection = (pageConn: Port, isForContentScript: boolean): void => {
+        const connectionTarget = isForContentScript ? "content script" : "side panel";
         try {
-            pageConn.onDisconnect.removeListener(this.handlePageDisconnectFromAgentController);
-            if (pageConn.onDisconnect.hasListeners()) {
-                this.logger.error("something went wrong when removing the onDisconnect listener for the port "
-                    + pageConn.name + "between service worker and content script. the onDisconnect event of that port " +
-                    "still has one or more listeners");
-            }
             pageConn.disconnect();
-            this.logger.info(`successfully cleaned up content script connection ${pageConn.name}`);
+            this.logger.info(`successfully cleaned up ${connectionTarget} connection ${pageConn.name}`);
         } catch (error: any) {
             if ('message' in error && error.message === expectedMsgForPortDisconnection) {
-                this.logger.info(`unable to clean up content script connection ${pageConn.name} because the connection to the content script was already closed`);
+                this.logger.info(`unable to clean up ${connectionTarget} connection ${pageConn.name} because the connection to the ${connectionTarget} was already closed`);
             } else {
-                this.logger.error(`unexpected error while cleaning up content script connection ${pageConn.name}; error: ${error}, jsonified: ${JSON.stringify(error)}`);
+                this.logger.error(`unexpected error while cleaning up ${connectionTarget} connection ${pageConn.name}; error: ${renderUnknownValue(error)}`);
             }
         }
     }
@@ -672,6 +808,7 @@ export class AgentController {
      * open
      */
     terminateTask = (): void => {
+        const taskIdBeingTerminated = this.taskId;
         this.logger.info(`TERMINATING TASK ${this.taskId} which had specification: ${this.taskSpecification}; final this.state was ${AgentControllerState[this.state]}`);
         this.taskId = undefined;
         this.taskSpecification = "";
@@ -688,17 +825,33 @@ export class AgentController {
         this.failureOrNoopStreak = 0;
         if (this.currPortToContentScript) {
             this.logger.info("terminating task while content script connection may still be open, attempting to close it")
-            this.killPageConnection(this.currPortToContentScript);
+            this.killPageConnection(this.currPortToContentScript, true);
             this.currPortToContentScript = undefined;
         }
-        //todo if aiEngine ever has its own nontrivial bits of state, should probably somehow reset them here
+        if (this.currPortToSidePanel) {
+            try {
+                //if I eventually give the terminateTask() method a 'reason' argument, I could pass that along here
+                // and then have the side panel display it to the user
+                this.currPortToSidePanel.postMessage(
+                    {type: Background2PanelPortMsgType.TASK_ENDED, taskId: taskIdBeingTerminated});
+            } catch (error: any) {
+                this.logger.error(`error while trying to inform side panel about agent controller having terminated the current task; error: ${renderUnknownValue(error)}`);
+            }
+
+            this.logger.info("terminating task while side panel connection may still be open, attempting to close it")
+            this.killPageConnection(this.currPortToSidePanel, false);
+            this.currPortToSidePanel = undefined;
+        }
+        //todo if aiEngine ever has its own nontrivial bits of task-specific state, should probably somehow reset them here
 
         //todo if I use console.group elsewhere, should use console.groupEnd() here repeatedly (maybe 10 times) to be
-        // completely certain that any nested groups get escaped when the task ends, even if things went really wrong with
+        // ~completely certain that any nested groups get escaped when the task ends, even if things went really wrong with
         // exception handling and control flow expectations wrt group management
         // If groupEnd throws when there's no group to escape, use a try catch and the catch block would break the loop
         this.terminationSignal = false;
     }
+
+    //todo getActiveTab, sendEnterKeyPress, and hoverOnElem are good candidates for being moved out of AgentController (which is way too big)
 
     /**
      * @description Get the active tab in the current window (but with id set to undefined if the active tab is a chrome:// URL)
@@ -711,7 +864,7 @@ export class AgentController {
         try {
             tabs = await this.chromeWrapper.fetchTabs({active: true, currentWindow: true});
         } catch (error) {
-            const errMsg = `error querying active tab; error: ${error}, jsonified: ${JSON.stringify(error)}`;
+            const errMsg = `error querying active tab; error: ${renderUnknownValue(error)}`;
             this.logger.error(errMsg);
             throw new Error(errMsg);
         }
