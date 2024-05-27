@@ -4,7 +4,7 @@ import {Logger} from "loglevel";
 import {
     Background2PanelPortMsgType, buildGenericActionDesc,
     Panel2BackgroundPortMsgType,
-    panelToControllerPort
+    panelToControllerPort, setupMonitorModeCache
 } from "./misc";
 import {Mutex} from "async-mutex";
 import {ActionInfo} from "./AgentController";
@@ -17,6 +17,9 @@ export interface SidePanelElements {
     killButton: HTMLButtonElement;
     historyList: HTMLOListElement;
     pendingActionDiv: HTMLDivElement;
+    monitorFeedbackField: HTMLTextAreaElement;
+    monitorApproveButton: HTMLButtonElement;
+    monitorRejectButton: HTMLButtonElement;
 }
 
 /**
@@ -40,14 +43,18 @@ export class SidePanelManager {
     private readonly killButton: HTMLButtonElement;
     private readonly historyList: HTMLOListElement;
     private readonly pendingActionDiv: HTMLDivElement;
+    private readonly monitorFeedbackField: HTMLTextAreaElement;
+    private readonly monitorApproveButton: HTMLButtonElement;
+    private readonly monitorRejectButton: HTMLButtonElement;
 
     private readonly chromeWrapper: ChromeWrapper;
-    private readonly logger: Logger;
+    readonly logger: Logger;
     private readonly dom: Document;
 
     readonly mutex = new Mutex();
 
-    private cachedMonitorMode = false;
+    //allow read access to this without mutex because none of this class's code should _ever_ mutate it (only updated by storage change listener that was set up in constructor)
+    cachedMonitorMode = false;
 
 
     private state: SidePanelMgrState = SidePanelMgrState.IDLE;
@@ -61,18 +68,20 @@ export class SidePanelManager {
         this.killButton = elements.killButton;
         this.historyList = elements.historyList;
         this.pendingActionDiv = elements.pendingActionDiv;
+        this.monitorFeedbackField = elements.monitorFeedbackField;
+        this.monitorApproveButton = elements.monitorApproveButton;
+        this.monitorRejectButton = elements.monitorRejectButton;
 
         this.chromeWrapper = chromeWrapper ?? new ChromeWrapper();
         this.logger = logger ?? createNamedLogger('side-panel-mgr', false);
         this.dom = overrideDoc ?? document;
 
-        //todo make initial chrome storage query that will eventually initialize cached monitor mode field
-        //todo add chrome storage change listener for monitor mode
+        setupMonitorModeCache(this);
     }
 
-    startTaskClickHandler = (): void => {
+    startTaskClickHandler = async (): Promise<void> => {
         this.logger.trace('startAgent button clicked');
-        this.mutex.runExclusive(async () => {
+        await this.mutex.runExclusive(async () => {
             this.logger.trace("start task button click being handled")
             if (this.taskSpecField.value.trim() === '') {
                 const taskEmptyWhenStartMsg = "task specification field is empty (or all whitespace), can't start agent";
@@ -96,9 +105,9 @@ export class SidePanelManager {
         });
     }
 
-    killTaskClickHandler = (): void => {
+    killTaskClickHandler = async (): Promise<void> => {
         this.logger.trace('endTask button clicked');
-        this.mutex.runExclusive(async () => {
+        await this.mutex.runExclusive(async () => {
             this.logger.trace("end task button click being handled")
             if (this.state === SidePanelMgrState.IDLE || this.state === SidePanelMgrState.WAIT_FOR_TASK_ENDED) {
                 const noTaskToKillMsg = 'task is not in progress, cannot kill task';
@@ -131,6 +140,44 @@ export class SidePanelManager {
         }
     }
 
+    monitorApproveButtonClickHandler = async (): Promise<void> => {
+        if (!this.cachedMonitorMode) {
+            this.logger.error("monitor mode not enabled, approve button shouldn't be clickable; ignoring");
+            return;
+        }
+        await this.mutex.runExclusive(() => {
+            if (this.state !== SidePanelMgrState.WAIT_FOR_MONITOR_RESPONSE) {
+                this.logger.error("approve button clicked but state is not WAIT_FOR_MONITOR_RESPONSE; ignoring");
+                return;
+            } else if (!this.serviceWorkerPort) {
+                this.logger.error("service worker port doesn't exist, can't approve the pending action");
+                return;
+            }
+            this.serviceWorkerPort.postMessage({type: Panel2BackgroundPortMsgType.MONITOR_APPROVED});
+            this.state = SidePanelMgrState.WAIT_FOR_ACTION_PERFORMED_RECORD;
+        });
+    }
+
+    monitorRejectButtonClickHandler = async (): Promise<void> => {
+        if (!this.cachedMonitorMode) {
+            this.logger.error("monitor mode not enabled, reject button shouldn't be clickable; ignoring");
+            return;
+        }
+        await this.mutex.runExclusive(() => {
+            if (this.state !== SidePanelMgrState.WAIT_FOR_MONITOR_RESPONSE) {
+                this.logger.error("reject button clicked but state is not WAIT_FOR_MONITOR_RESPONSE; ignoring");
+                return;
+            } else if (!this.serviceWorkerPort) {
+                this.logger.error("service worker port doesn't exist, can't reject the pending action");
+                return;
+            }
+            const feedbackText = this.monitorFeedbackField.value;
+            this.serviceWorkerPort.postMessage(
+                {type: Panel2BackgroundPortMsgType.MONITOR_REJECTED, feedback: feedbackText});
+            this.state = SidePanelMgrState.WAIT_FOR_PENDING_ACTION_INFO;
+        });
+    }
+
     handleAgentControllerMsg = async (message: any): Promise<void> => {
         this.logger.trace(`message received from background script: ${JSON.stringify(message)} by side panel`);
         if (message.type === Background2PanelPortMsgType.AGENT_CONTROLLER_READY) {
@@ -153,11 +200,20 @@ export class SidePanelManager {
     private processErrorFromController(message: any) {
         this.logger.error(`error message from background script: ${message.msg}`);
         this.setStatusWithDelayedClear(`Error: ${message.msg}`, 5);
-        this.state = SidePanelMgrState.IDLE;
         this.serviceWorkerPort?.disconnect();
+        this.reset();
+    }
+
+    private reset() {
+        this.state = SidePanelMgrState.IDLE;
         this.serviceWorkerPort = undefined;
+        this.taskSpecField.textContent = '';
         this.startButton.disabled = false;
         this.killButton.disabled = true;
+        this.monitorFeedbackField.textContent = '';
+        this.monitorFeedbackField.disabled = true;
+        this.monitorApproveButton.disabled = true;
+        this.monitorRejectButton.disabled = true;
     }
 
     processConnectionReady = (): void => {
@@ -195,6 +251,9 @@ export class SidePanelManager {
             this.startButton.disabled = true;
             this.killButton.disabled = false;
             this.taskSpecField.textContent = '';
+            if (this.cachedMonitorMode) {
+                this.monitorFeedbackField.disabled = false;
+            }
         } else {
             newStatus = 'Task start failed: ' + message.message;
             this.state = SidePanelMgrState.IDLE;
@@ -209,21 +268,23 @@ export class SidePanelManager {
         }
 
         if (this.cachedMonitorMode) {
-            //todo enable monitor mode ui elements
-            //todo other stuff?
+            this.monitorApproveButton.disabled= false;
+            this.monitorRejectButton.disabled = false;
 
-            //todo update state
+            this.state = SidePanelMgrState.WAIT_FOR_MONITOR_RESPONSE;
         } else {
             this.state = SidePanelMgrState.WAIT_FOR_ACTION_PERFORMED_RECORD;
         }
 
         const pendingActionInfo = message.actionInfo as ActionInfo;
-        this.pendingActionDiv.textContent = buildGenericActionDesc(pendingActionInfo.action,
-            pendingActionInfo.elementData, pendingActionInfo.value) + "\nExplanation: " + pendingActionInfo.explanation;
+        this.pendingActionDiv.textContent = "Explanation: " + pendingActionInfo.explanation + "\nDetails: "
+            buildGenericActionDesc(pendingActionInfo.action, pendingActionInfo.elementData, pendingActionInfo.value);
     }
 
     processActionPerformedRecord = (message: any): void => {
-        if (this.state !== SidePanelMgrState.WAIT_FOR_ACTION_PERFORMED_RECORD) {
+        if (this.state === SidePanelMgrState.WAIT_FOR_MONITOR_RESPONSE) {
+            this.logger.debug("received TASK_HISTORY_ENTRY message from service worker port while waiting for monitor response from user; implies that a keyboard shortcut for a monitor judgement was used instead of the side panel ui");
+        } else if (this.state !== SidePanelMgrState.WAIT_FOR_ACTION_PERFORMED_RECORD) {
             this.logger.error('received TASK_HISTORY_ENTRY message from service worker port but state is not WAIT_FOR_ACTION_PERFORMED_RECORD');
             return;
         }
@@ -253,10 +314,12 @@ export class SidePanelManager {
         }
 
         this.addHistoryEntry(displayText, hoverText);
-
+        if (this.cachedMonitorMode) {
+            this.monitorFeedbackField.textContent = '';
+            this.monitorApproveButton.disabled = true;
+            this.monitorRejectButton.disabled = true;
+        }
         this.state = SidePanelMgrState.WAIT_FOR_PENDING_ACTION_INFO;
-
-        //todo disable monitor mode elements if they're enabled?
     }
 
 
@@ -272,10 +335,7 @@ export class SidePanelManager {
             this.setStatusWithDelayedClear(`Task ${message.taskId} ended`);
             this.addHistoryEntry(`Task ended`, `Ended task id: ${message.taskId}`, "task_end");
         }
-        this.state = SidePanelMgrState.IDLE;
-        this.serviceWorkerPort = undefined;//relying on the service worker to disconnect the port on its end
-        this.startButton.disabled = false;
-        this.killButton.disabled = true;
+        this.reset();
     }
 
 

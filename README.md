@@ -41,29 +41,22 @@ will cause an error and the task will be terminated.
 4. There will be a line "Inspect views: service worker"; with the "service worker" part being a link. Click that link.
 ![Inspecting Service Worker](images/open_service_worker_console.png)
 
+TODO add updated screenshots that reflect side-panel-based ui
 ## Starting a Task
-
 1. To ensure that the browser's focus is in the appropriate tab, please click somewhere in the tab which you want the 
 agent to act in, just before starting a task.
-2. Click the extension's icon (robot next to monitor) to open the extension's popup.
-3. Type a task description into the text box and click the "Start Task" button.  
-![Typing task, about to start](images/entering_task.png)
-    3a. If the task is started successfully, a message to that effect will be displayed in the popup for 2 seconds, and then the popup will close.  
-    ![Task Started](images/task_started.png)
-    3b. If the task was not started successfully, an error message will be displayed in the popup (which will not close automatically).
-    ![Unable to start task](images/task_start_failed.png)
+2. Click the extension's icon (robot next to monitor) to open the extension's side-panel.
+3. Type a task description into the "Task Specification" text box and click the "Start Task" button.  
 
 ## Terminating a Task
 If the agent does something undesirable, becomes stuck in a loop, goes in a non-viable direction, etc.,
-you can terminate the task by clicking the extension's icon (robot next to monitor) and then clicking the 
-"Terminate Task" button.
-![Task termination](images/task_termination.png)
+you can terminate the task by clicking the "Terminate Task" button in the side panel.
 
 ## Hover Action
 
 In order for the agent to be able to perform a hover action, the user's actual mouse cursor must be moved outside the
 bounds of the window which the web agent is operating in, immediately after the "start task" button had been clicked 
-in the extension's popup.
+in the extension's side panel.
 
 # Conventions
 
@@ -90,10 +83,11 @@ Only use ERROR if one of the assumptions/expectations in the extension's design 
 TODO consider replacing "utils" folder with frontend, serviceworker, and shared folders
 
 
-# Comments from manifest.json
+TODO explore use of desktopCapture permission when adding support for voice input during tasks
 
-```json
-{
-    "comment_on_permissions": "might want to revisit webNavigation, desktopCapture, sidePanel, storage (e.g. will need storage if given requirement for actual persistence of logs; there's a small chance that that might open a can of worms in terms of user data/PII/privacy responsibilities)"
-}
-```
+TODO really need to standardize naming conventions for certain entities at some point (not just variable/enum-entry names but also comments and strings like log messages)
+ - agent controller in background script- "Controller"/"AgentController"/"ServiceWorker"/"Background"
+ - page actor in content script- "Actor"/"Page"/"PageActor"/"ContentScript"
+ - manager in side panel- "SidePanelManager"/"Panel"/"SidePanel"
+ - task_history_entry vs action_performed_record  etc.
+ - etc.

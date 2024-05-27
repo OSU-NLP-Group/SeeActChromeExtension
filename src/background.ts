@@ -19,6 +19,10 @@ chrome.sidePanel
     .setPanelBehavior({ openPanelOnActionClick: true })
     .catch((error) => console.error(error));
 
+//todo keyboard shortcuts for monitor mode judgements!!!
+
+
+
 //todo? later add indexeddb logging via the background script, i.e. the part of the message listener which handles
 // 'log'-type requests will write them to db rather than solely the extension's console
 // if this is done, it will require changes to how loggers are created for code that's running in the service worker

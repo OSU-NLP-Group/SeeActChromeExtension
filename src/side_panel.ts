@@ -24,16 +24,32 @@ if (!historyList) throw new Error('history list not found');
 const pendingActionDiv = document.getElementById('pending-action');
 if (!pendingActionDiv) throw new Error('pending-action div not found');
 
+const monitorFeedbackField = document.getElementById('monitor-feedback');
+if (!monitorFeedbackField) throw new Error('monitor-feedback field not found');
+
+const monitorApproveButton = document.getElementById('approve');
+if (!monitorApproveButton) throw new Error('approve button not found');
+
+const monitorRejectButton = document.getElementById('reject');
+if (!monitorRejectButton) throw new Error('reject button not found');
+
 const manager = new SidePanelManager({
     startButton: startButton as HTMLButtonElement,
     taskSpecField: taskSpecField as HTMLTextAreaElement,
     statusDiv: statusDiv as HTMLDivElement,
     killButton: killButton as HTMLButtonElement,
     historyList: historyList as HTMLOListElement,
-    pendingActionDiv: pendingActionDiv as HTMLDivElement
+    pendingActionDiv: pendingActionDiv as HTMLDivElement,
+    monitorFeedbackField: monitorFeedbackField as HTMLTextAreaElement,
+    monitorApproveButton: monitorApproveButton as HTMLButtonElement,
+    monitorRejectButton: monitorRejectButton as HTMLButtonElement
 });
+
 startButton.addEventListener('click', manager.startTaskClickHandler);
 
 killButton.addEventListener('click', manager.killTaskClickHandler);
 
 optionsButton.addEventListener('click', manager.optionsButtonClickHandler);
+
+monitorApproveButton.addEventListener('click', manager.monitorApproveButtonClickHandler);
+monitorRejectButton.addEventListener('click', manager.monitorRejectButtonClickHandler);

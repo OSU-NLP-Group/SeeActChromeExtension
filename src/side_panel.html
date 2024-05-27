@@ -9,8 +9,9 @@
         }
         #task-spec {
             width: 100%;
-            height: 50%;
+            height: 15%;
             font-size: 16px;
+            overflow: auto;/*enable scrolling through task specification*/
         }
         label {
             font-size: 24px;
@@ -25,7 +26,7 @@
         }
         #history-container {
             width: 100%;
-            height: 60%;/*history view should take up most of side panel*/
+            height: 45%;/*history view should take up a plurality of the side panel's space*/
             overflow: auto;/*enable scrolling through history*/
         }
         #history li {
@@ -38,6 +39,18 @@
         }
         #history li.task_end {
             background-color: #a727ff;
+        }
+        #pending-action {
+            width: 100%;
+            height: 10%;
+            font-size: 16px;
+            overflow: auto;/*enable scrolling through pending action info*/
+        }
+        #monitor-feedback {
+            width: 100%;
+            height: 10%;
+            font-size: 16px;
+            overflow: auto;/*enable scrolling through feedback message*/
         }
     </style>
 </head>
@@ -73,9 +86,13 @@
 <label for="monitor-mode-container">Monitor Mode</label>
 <br>
 <div id="monitor-mode-container">
-<!--    todo feedback text field-->
-<!--    todo approve button-->
-<!--    todo reject button-->
+    <label for="monitor-feedback" title="Hint- if you reject the proposed action after doing something to the page, please mention that thing in the feedback">Feedback to Agent</label>
+    <textarea id="monitor-feedback" disabled>
+
+    </textarea>
+    <br>
+    <button id="approve" disabled>Approve</button>
+    <button id="reject" disabled>Reject</button>
 </div>
 
 <!--maybe a clear history button? could also get that effect by closing and reopening the side panel-->

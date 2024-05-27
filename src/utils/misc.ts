@@ -1,3 +1,4 @@
+import {Logger} from "loglevel";
 import {SerializableElementData} from "./BrowserHelper";
 
 
@@ -26,7 +27,8 @@ export enum Background2PanelPortMsgType {
     ACTION_CANDIDATE = "actionCandidate",
     TASK_HISTORY_ENTRY = "taskHistoryEntry",
     TASK_ENDED = "taskEnded",
-    ERROR = "error"//cases where the agent controller wants to tell the side panel about a problem with some message from the side panel which was identified before a task id was generated
+    ERROR = "error",//cases where the agent controller wants to tell the side panel about a problem with some message from the side panel which was identified before a task id was generated
+    //todo add NOTIFICATION type for agent notifying side panel of non-critical problem that will delay progress on the task (so the side panel can display that to user in status field and avoid user giving up on system)
 }
 
 /**
@@ -56,7 +58,8 @@ export enum Page2BackgroundPortMsgType {
  */
 export enum Background2PagePortMsgType {
     REQ_PAGE_STATE = "requestPageState",
-    REQ_ACTION = "requestAction"
+    REQ_ACTION = "requestAction",
+    HIGHLIGHT_CANDIDATE_ELEM = "highlightCandidateElement",
 }
 
 /**
@@ -109,3 +112,25 @@ export function renderUnknownValue(val: unknown): string {
         return String(val);
     }
 }
+
+function processUpdateToMonitorModeCache(storedMonitorMode: unknown, objWithMonitorMode: { cachedMonitorMode: boolean; logger: Logger}) {
+    if (typeof storedMonitorMode === "boolean") {
+        objWithMonitorMode.cachedMonitorMode = storedMonitorMode;
+    } else if (typeof storedMonitorMode !== "undefined") {
+        objWithMonitorMode.logger.error(`invalid monitor mode value was inserted into local storage: ${storedMonitorMode}, ignoring it`)
+    }
+}
+
+export function setupMonitorModeCache(objWithMonitorMode: {cachedMonitorMode: boolean, logger: Logger}) {
+    if (chrome?.storage?.local) {
+        chrome.storage.local.get("monitorMode", (items) => {
+            processUpdateToMonitorModeCache(items.monitorMode, objWithMonitorMode);
+        });
+        chrome.storage.local.onChanged.addListener((changes: {[p: string]: chrome.storage.StorageChange}) => {
+            if (changes.monitorMode) {
+                processUpdateToMonitorModeCache(changes.monitorMode.newValue, objWithMonitorMode);
+            }
+        });
+    }
+}
+

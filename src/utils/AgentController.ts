@@ -9,7 +9,7 @@ import {
     Background2PagePortMsgType, Background2PanelPortMsgType,
     buildGenericActionDesc,
     expectedMsgForPortDisconnection,
-    Page2BackgroundPortMsgType, Panel2BackgroundPortMsgType, renderUnknownValue,
+    Page2BackgroundPortMsgType, Panel2BackgroundPortMsgType, renderUnknownValue, setupMonitorModeCache,
     sleep
 } from "./misc";
 import {formatChoices, generatePrompt, LmmPrompts, postProcessActionLlm, StrTriple} from "./format_prompts";
@@ -25,7 +25,7 @@ export enum AgentControllerState {
     WAITING_FOR_CONTENT_SCRIPT_INIT,//there's an active task, but injection of content script hasn't completed yet
     ACTIVE,//partway through an event handler function
     WAITING_FOR_PAGE_STATE,// waiting for content script to retrieve page state (e.g. interactive elements) from page
-    //todo need state for waiting on monitor mode
+    WAITING_FOR_MONITOR_RESPONSE,//only reached in monitor mode, waiting for user to indicate (either from side panel or via keyboard shortcut) whether proposed action should be performed or whether the LMM should be reprompted
     WAITING_FOR_ACTION,//waiting for content script to perform an action on an element
     PENDING_RECONNECT//content script disconnected, but waiting for new connection to be established when the onDisconnect listener gets to run
 }
@@ -101,8 +101,7 @@ export class AgentController {
      */
     failureOrNoopStreak: number = 0;
 
-    //todo get below limits from chrome.storage rather than hard-coding (when/where to do that retrieval? constructor?)
-    // that would also involve setting those limits via options menu
+    //todo get below limits from chrome.storage (do retrieval and change-listening in constructor) rather than hard-coding
     /**
      * max number of total operations (successful or not) allowed in a task
      */
@@ -121,10 +120,13 @@ export class AgentController {
     maxFailureOrNoopStreakLimit: number = 2;
 
     cachedMonitorMode: boolean = false;
+    wasPrevActionRejectedByMonitor: boolean = false;
+    monitorFeedback: string = "";
 
 
     state: AgentControllerState = AgentControllerState.IDLE;
 
+    //todo remove the curr prefix from both of these, that doesn't make sense except maybe in loops
     currPortToContentScript: Port | undefined;
     currPortToSidePanel: Port | undefined;
 
@@ -144,8 +146,7 @@ export class AgentController {
         this.logger = createNamedLogger('agent-controller', true);
         this.logger.debug(`max ops limit: ${this.maxOpsLimit}, max noop limit: ${this.maxNoopLimit}, max failure limit: ${this.maxFailureLimit}, max failure-or-noop streak limit: ${this.maxFailureOrNoopStreakLimit}`);
 
-        //todo make initial chrome storage query that will eventually initialize cached monitor mode field
-        //todo add chrome storage change listener for monitor mode
+        setupMonitorModeCache(this);
     }
 
 
@@ -291,7 +292,7 @@ export class AgentController {
                 this.logger.info("content script disconnected from service worker while processing initial message and before trying to request interactive elements; task will resume after new content script connection is established");
                 this.state = AgentControllerState.PENDING_RECONNECT;
             } else {
-                this.logger.error(`unexpected error while processing initial message and before trying to request interactive elements; terminating task; error: ${renderUnknownValue(error)}`);
+                this.logger.error(`unexpected error while trying to request interactive elements; terminating task; error: ${renderUnknownValue(error)}`);
                 this.terminateTask();
             }
         }
@@ -322,9 +323,9 @@ export class AgentController {
      * what the next step should be and then send a request for that action to the page actor
      * My apologies for the severely nonlinear control flow. Looking out for ways to rework it to be less convoluted
      * @param message the message from the content script containing the page state information
-     * @param port the port object representing the connection between the service worker and the content script
+     * @param pageActorPort the port object representing the connection between the service worker and the content script
      */
-    processPageStateFromActor = async (message: any, port: Port): Promise<void> => {
+    processPageStateFromActor = async (message: any, pageActorPort: Port): Promise<void> => {
         if (this.state !== AgentControllerState.WAITING_FOR_PAGE_STATE) {
             this.logger.error("received 'sending interactive elements' message from content script while not waiting for elements, but rather in state " + AgentControllerState[this.state]);
             this.terminateTask();
@@ -353,11 +354,26 @@ export class AgentController {
 
         //todo? try catch for error when trying to get screenshot, if that fails, then terminate task
         const screenshotDataUrl: string = await this.chromeWrapper.fetchVisibleTabScreenshot();
-        this.logger.debug("screenshot data url (truncated): " + screenshotDataUrl.slice(0, 100) + "...");
+        this.logger.debug(`screenshot data url (truncated): ${screenshotDataUrl.slice(0, 100)}...`);
+
+        let monitorRejectionInfo: string | undefined;
+        if (this.wasPrevActionRejectedByMonitor) {
+            if (!this.tentativeActionInfo) {
+                this.logger.error("previous action was rejected by monitor, but no tentative action info stored; terminating task");
+                this.terminateTask();
+                return;
+            }
+            monitorRejectionInfo = "WARNING- The monitor/user rejected your previous planned action: "
+                + buildGenericActionDesc(this.tentativeActionInfo.action, this.tentativeActionInfo.elementData, this.tentativeActionInfo.value);
+            if (this.monitorFeedback) {monitorRejectionInfo += `;\n They gave the feedback: ${this.monitorFeedback}`;}
+            this.monitorFeedback = "";
+            this.tentativeActionInfo = undefined;
+            this.wasPrevActionRejectedByMonitor = false;
+        }
 
         while (this.noopCount <= this.maxNoopLimit && this.failureOrNoopStreak <= this.maxFailureOrNoopStreakLimit) {
             const reactionToLmmOutput = await this.queryLmmAndProcessResponsesForAction(interactiveChoices,
-                screenshotDataUrl, candidateIds, interactiveElements);
+                screenshotDataUrl, candidateIds, interactiveElements, monitorRejectionInfo);
             if (reactionToLmmOutput === LmmOutputReaction.ABORT_TASK) {
                 return;
             } else if (reactionToLmmOutput === LmmOutputReaction.TRY_REPROMPT) {
@@ -369,6 +385,12 @@ export class AgentController {
                 //the task termination will be handled by the terminateTask method being called by the handler (for
                 // messages from side panel) once this method ends and the controller's mutex is released
                 // This prevents the agent from performing a final action after the user presses the terminate button
+                return;
+            }
+            if (this.tentativeActionInfo === undefined) {
+                this.logger.error("Bug in action selection code allowed the scaffolding to reach a point where it "
+                    + "would commit to the chosen action while no action had actually been chosen; terminating task");
+                this.terminateTask();
                 return;
             }
 
@@ -385,23 +407,41 @@ export class AgentController {
                 this.terminateTask();
             }
 
-            //todo checks related to monitor mode
-            // todo including sending a msg to page actor to highlight/focus-visible the element
-
-            this.state = AgentControllerState.WAITING_FOR_ACTION;
-            try {
-                port.postMessage({
-                    type: Background2PagePortMsgType.REQ_ACTION, elementIndex: this.tentativeActionInfo?.elementIndex,
-                    action: this.tentativeActionInfo?.action, value: this.tentativeActionInfo?.value
-                });
-            } catch (error: any) {
-                if ('message' in error && error.message === expectedMsgForPortDisconnection) {
-                    this.logger.info("content script disconnected from service worker while processing interactive elements and before trying to request an action; task will resume after new content script connection is established");
-                    this.state = AgentControllerState.PENDING_RECONNECT;
-                    this.tentativeActionInfo = undefined;
-                } else {
-                    this.logger.error(`unexpected error while requesting an action; terminating task; error: ${renderUnknownValue(error)}`);
-                    this.terminateTask();
+            if (this.cachedMonitorMode) {
+                this.state = AgentControllerState.WAITING_FOR_MONITOR_RESPONSE;
+                if (this.tentativeActionInfo.elementIndex !== undefined) {
+                    try {
+                        pageActorPort.postMessage({
+                            type: Background2PagePortMsgType.HIGHLIGHT_CANDIDATE_ELEM,
+                            elementIndex: this.tentativeActionInfo.elementIndex
+                        });
+                    } catch (error: any) {
+                        if ('message' in error && error.message === expectedMsgForPortDisconnection) {
+                            this.logger.info("content script disconnected from service worker while processing interactive elements and before trying to highlight an element; task will resume after new content script connection is established");
+                            this.state = AgentControllerState.PENDING_RECONNECT;
+                            this.tentativeActionInfo = undefined;
+                        } else {
+                            this.logger.error(`unexpected error while trying to highlight an element for monitor mode; terminating task; error: ${renderUnknownValue(error)}`);
+                            this.terminateTask();
+                        }
+                    }
+                }
+            } else {
+                this.state = AgentControllerState.WAITING_FOR_ACTION;
+                try {
+                    pageActorPort.postMessage({
+                        type: Background2PagePortMsgType.REQ_ACTION, action: this.tentativeActionInfo.action,
+                        elementIndex: this.tentativeActionInfo.elementIndex, value: this.tentativeActionInfo.value
+                    });
+                } catch (error: any) {
+                    if ('message' in error && error.message === expectedMsgForPortDisconnection) {
+                        this.logger.info("content script disconnected from service worker while processing interactive elements and before trying to request an action; task will resume after new content script connection is established");
+                        this.state = AgentControllerState.PENDING_RECONNECT;
+                        this.tentativeActionInfo = undefined;
+                    } else {
+                        this.logger.error(`unexpected error while requesting an action; terminating task; error: ${renderUnknownValue(error)}`);
+                        this.terminateTask();
+                    }
                 }
             }
             return;//not doing break here b/c no point doing the noop checks if it successfully chose an action which
@@ -426,15 +466,20 @@ export class AgentController {
      * @param screenshotDataUrl the data URL of the screenshot of the current page
      * @param candidateIds the indices of the interactive elements that are candidates for the next action
      * @param interactiveElements the full data about the interactive elements on the page
+     * @param monitorRejectionContext optional string to include in the query prompt if the previous action was rejected by the monitor
      * @return indicator of what the main "processPageStateFromActor" function should do next based on the LLM response
      *         (e.g. whether to try reprompting, proceed with the action, or abort the task)
      */
     private queryLmmAndProcessResponsesForAction = async (
         interactiveChoices: string[], screenshotDataUrl: string, candidateIds: number[],
-        interactiveElements: SerializableElementData[]): Promise<LmmOutputReaction> => {
+        interactiveElements: SerializableElementData[], monitorRejectionContext?: string): Promise<LmmOutputReaction> => {
         const prompts: LmmPrompts = generatePrompt(this.taskSpecification,
             this.actionsSoFar.map(entry => `${entry.success ? "SUCCEEDED" : "FAILED"}-${entry.actionDesc}; explanation: ${entry.explanation}`),
             interactiveChoices);
+        if (monitorRejectionContext !== undefined) {
+            prompts.queryPrompt += `\n${monitorRejectionContext}`;
+        }
+
         this.logger.debug("prompts: " + JSON.stringify(prompts));
         let planningOutput: string;
         let groundingOutput: string;
@@ -587,7 +632,7 @@ export class AgentController {
                     this.logger.info("content script disconnected from service worker while processing completed action and before trying to request more interactive elements; task will resume after new content script connection is established");
                     this.state = AgentControllerState.PENDING_RECONNECT;
                 } else {
-                    this.logger.error(`unexpected error while processing completed action and before trying to request more interactive elements; terminating task; error: ${renderUnknownValue(error)}`);
+                    this.logger.error(`unexpected error while trying to request more interactive elements; terminating task; error: ${renderUnknownValue(error)}`);
                     this.terminateTask();
                 }
             }
@@ -652,6 +697,66 @@ export class AgentController {
         return shouldAbort;
     }
 
+    processMonitorApproval = () => {
+        if (this.state !== AgentControllerState.WAITING_FOR_MONITOR_RESPONSE) {
+            this.logger.error("received monitor approval message while not waiting for monitor response, but rather in state " + AgentControllerState[this.state]);
+            this.terminateTask();
+            return;
+        } else if (this.currPortToContentScript === undefined) {
+            this.logger.error("received monitor approval message while not having a connection to the content script; terminating task");
+            this.terminateTask();
+            return;
+        } else if (this.tentativeActionInfo === undefined) {
+            this.logger.error("Monitor approval received for chosen action, but no chosen action remains stored in "
+                + "controller's memory; terminating task");
+            this.terminateTask();
+            return;
+        }
+        this.state = AgentControllerState.WAITING_FOR_ACTION;
+        try {
+            this.currPortToContentScript.postMessage({
+                type: Background2PagePortMsgType.REQ_ACTION, elementIndex: this.tentativeActionInfo.elementIndex,
+                action: this.tentativeActionInfo.action, value: this.tentativeActionInfo.value
+            });
+        } catch (error: any) {
+            if ('message' in error && error.message === expectedMsgForPortDisconnection) {
+                this.logger.info("content script disconnected from service worker while waiting for monitor judgement on proposed action; task will resume after new content script connection is established");
+                this.state = AgentControllerState.PENDING_RECONNECT;
+                this.tentativeActionInfo = undefined;
+            } else {
+                this.logger.error(`unexpected error while requesting an action after monitor approval; terminating task; error: ${renderUnknownValue(error)}`);
+                this.terminateTask();
+            }
+        }
+    }
+
+    processMonitorRejection = (message: any) => {
+        if (this.state !== AgentControllerState.WAITING_FOR_MONITOR_RESPONSE) {
+            this.logger.error("received monitor rejection message while not waiting for monitor response, but rather in state " + AgentControllerState[this.state]);
+            this.terminateTask();
+            return;
+        } else if (this.currPortToContentScript === undefined) {
+            this.logger.error("received monitor rejection message while not having a connection to the content script; terminating task");
+            this.terminateTask();
+            return;
+        }
+        this.wasPrevActionRejectedByMonitor = true;
+        this.monitorFeedback = message.feedback as string;
+
+        this.state = AgentControllerState.WAITING_FOR_PAGE_STATE
+        try {
+            this.currPortToContentScript.postMessage({type: Background2PagePortMsgType.REQ_PAGE_STATE});
+        } catch (error: any) {
+            if ('message' in error && error.message === expectedMsgForPortDisconnection) {
+                this.logger.info("content script disconnected from agent controller while the latter was waiting for a response from the monitor; task will resume after new content script connection is established");
+                this.state = AgentControllerState.PENDING_RECONNECT;
+            } else {
+                this.logger.error(`unexpected error trying to request interactive elements; terminating task; error: ${renderUnknownValue(error)}`);
+                this.terminateTask();
+            }
+        }
+    }
+
     handlePanelMsgToController = async (message: any, port: chrome.runtime.Port): Promise<void> => {
         if (message.type === Panel2BackgroundPortMsgType.START_TASK) {
             await this.mutex.runExclusive(() => {
@@ -675,6 +780,10 @@ export class AgentController {
                     this.terminateTask();
                 }
             });
+        } else if (message.type === Panel2BackgroundPortMsgType.MONITOR_APPROVED) {
+            await this.mutex.runExclusive(() => this.processMonitorApproval());
+        } else if (message.type === Panel2BackgroundPortMsgType.MONITOR_REJECTED) {
+            await this.mutex.runExclusive(() => this.processMonitorRejection(message));
         } else {
             this.logger.error("unknown message from side panel:", JSON.stringify(message));
         }
@@ -800,6 +909,8 @@ export class AgentController {
         }
     }
 
+    //todo handler methods for keyboard shortcuts
+
 
     //todo b4 release, make this take an error message param and make it show an alert so the user doesn't need to look
     // at the extension's dev console to see why the actions stopped (if param null, alert would just say task completed)
@@ -823,6 +934,8 @@ export class AgentController {
         this.noopCount = 0;
         this.failureCount = 0;
         this.failureOrNoopStreak = 0;
+        this.wasPrevActionRejectedByMonitor = false;
+        this.monitorFeedback = "";
         if (this.currPortToContentScript) {
             this.logger.info("terminating task while content script connection may still be open, attempting to close it")
             this.killPageConnection(this.currPortToContentScript, true);
@@ -830,8 +943,8 @@ export class AgentController {
         }
         if (this.currPortToSidePanel) {
             try {
-                //if I eventually give the terminateTask() method a 'reason' argument, I could pass that along here
-                // and then have the side panel display it to the user
+                //todo when I eventually give the terminateTask() method a 'reason' argument, I should pass that along
+                // here and then have the side panel display it to the user
                 this.currPortToSidePanel.postMessage(
                     {type: Background2PanelPortMsgType.TASK_ENDED, taskId: taskIdBeingTerminated});
             } catch (error: any) {

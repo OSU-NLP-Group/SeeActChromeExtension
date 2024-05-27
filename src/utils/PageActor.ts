@@ -291,7 +291,7 @@ export class PageActor {
      */
     performActionFromController = async (message: any): Promise<void> => {
         if (!this.currInteractiveElements) {
-            this.logger.error("perform action message received from background script but no interactive elements are currently stored");
+            this.logger.error("perform-action message received from background script but no interactive elements are currently stored");
             this.portToBackground.postMessage(
                 {type: Page2BackgroundPortMsgType.TERMINAL, error: "no interactive elements stored to be acted on"});
             return;
@@ -299,7 +299,7 @@ export class PageActor {
         const actionToPerform: Action = message.action;
         const valueForAction: string | undefined = message.value;
 
-        const elementIndexValid = message.elementIndex !== undefined && message.elementIndex < this.currInteractiveElements.length;
+        const elementIndexValid = (typeof message.elementIndex === "number")  && message.elementIndex < this.currInteractiveElements.length;
         const actionOutcome: ActionOutcome = {
             success: false, result: buildGenericActionDesc(actionToPerform,
                 elementIndexValid ? this.currInteractiveElements[message.elementIndex] : undefined, valueForAction)
@@ -392,6 +392,32 @@ export class PageActor {
         }
     }
 
+    highlightCandidateElement = (message: any): void => {
+        if (!this.currInteractiveElements) {
+            this.logger.error("highlight-candidate-element message received from background script but no interactive elements are currently stored");
+            this.portToBackground.postMessage(
+                {type: Page2BackgroundPortMsgType.TERMINAL, error: "no interactive elements stored to be highlighted"});
+            return;
+        } if ((typeof message.elementIndex !== "number") || message.elementIndex >= this.currInteractiveElements.length) {
+            this.logger.error("highlight-candidate-element message received from background script but element index is invalid");
+            this.portToBackground.postMessage(
+                {type: Page2BackgroundPortMsgType.TERMINAL, error: "invalid element index provided to highlight"});
+            return;
+        }
+        const elementToActOnData = this.currInteractiveElements[message.elementIndex];
+        const elementToActOn = elementToActOnData.element;
+        // @ts-expect-error focusVisible is not in the typescript definition for focus, but it's definitely in the MDN reference https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/focus#focusvisible
+        elementToActOn.focus({focusVisible: true});
+
+        //if the above doesn't work as intended, can try the options suggested here
+        // https://stackoverflow.com/questions/1389609/plain-javascript-code-to-highlight-an-html-element
+        // meddling with element.style properties like backgroundColor, outline, filter, (border?)
+        // https://developer.mozilla.org/en-US/docs/Web/CSS/background-color
+        // https://developer.mozilla.org/en-US/docs/Web/CSS/outline
+        // https://developer.mozilla.org/en-US/docs/Web/CSS/filter
+        // https://developer.mozilla.org/en-US/docs/Web/CSS/border
+    }
+
     /**
      * Method that handles messages received from the agent controller in the background script.
      * @param message the message received from the agent controller
@@ -403,6 +429,8 @@ export class PageActor {
             this.getPageInfoForController();
         } else if (message.type === Background2PagePortMsgType.REQ_ACTION) {
             await this.performActionFromController(message);
+        } else if (message.type === Background2PagePortMsgType.HIGHLIGHT_CANDIDATE_ELEM) {
+            this.highlightCandidateElement(message);
         } else {
             this.logger.warn("unknown message from background script: " + JSON.stringify(message));
         }
