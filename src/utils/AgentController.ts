@@ -745,7 +745,8 @@ export class AgentController {
 
         this.state = AgentControllerState.WAITING_FOR_PAGE_STATE
         try {
-            this.currPortToContentScript.postMessage({type: Background2PagePortMsgType.REQ_PAGE_STATE});
+            this.currPortToContentScript.postMessage(
+                {type: Background2PagePortMsgType.REQ_PAGE_STATE, isMonitorRetry: true});
         } catch (error: any) {
             if ('message' in error && error.message === expectedMsgForPortDisconnection) {
                 this.logger.info("content script disconnected from agent controller while the latter was waiting for a response from the monitor; task will resume after new content script connection is established");

@@ -9,7 +9,7 @@
         }
         #task-spec {
             width: 100%;
-            height: 15%;
+            height: 25%;
             font-size: 12px;
             overflow: auto;/*enable scrolling through task specification*/
         }
@@ -59,7 +59,8 @@
     </style>
 </head>
 <body>
-
+<button id="options">Options</button>
+<br>
 <label id="task-spec-label" for="task-spec" title="the task should be completable when starting from the website which is loaded in the current tab"
 >Agent Task Specification</label>
 <br>
@@ -67,12 +68,7 @@
 <textarea id="task-spec">Enter a task specification for the SeeAct agent</textarea>
 
 <button id="start-agent">Start Agent</button>
-
-<div id="status"></div>
-<br>
 <button disabled id="end-task">Terminate Task</button>
-
-<button id="options">Options</button>
 <br>
 <hr>
 <div id="history-container">
@@ -82,6 +78,7 @@
     </ol>
 </div>
 <br>
+<div id="status"></div>
 <br>
 <label for="pending-action">Pending Action</label>
 <br>

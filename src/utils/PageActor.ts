@@ -30,6 +30,7 @@ export class PageActor {
     private browserHelper: BrowserHelper;
     private domWrapper: DomWrapper;
     private chromeWrapper: ChromeWrapper;
+    //todo remove 'curr' prefix
     currInteractiveElements: ElementData[] | undefined;
     //if significant mutable state at some point extends beyond currInteractiveElements,
     // consider making a mutex for the state
@@ -299,7 +300,7 @@ export class PageActor {
         const actionToPerform: Action = message.action;
         const valueForAction: string | undefined = message.value;
 
-        const elementIndexValid = (typeof message.elementIndex === "number")  && message.elementIndex < this.currInteractiveElements.length;
+        const elementIndexValid = (typeof message.elementIndex === "number") && message.elementIndex < this.currInteractiveElements.length;
         const actionOutcome: ActionOutcome = {
             success: false, result: buildGenericActionDesc(actionToPerform,
                 elementIndexValid ? this.currInteractiveElements[message.elementIndex] : undefined, valueForAction)
@@ -398,7 +399,7 @@ export class PageActor {
             this.portToBackground.postMessage(
                 {type: Page2BackgroundPortMsgType.TERMINAL, error: "no interactive elements stored to be highlighted"});
             return;
-        } if ((typeof message.elementIndex !== "number") || message.elementIndex >= this.currInteractiveElements.length) {
+        } else if ((typeof message.elementIndex !== "number") || message.elementIndex >= this.currInteractiveElements.length) {
             this.logger.error("highlight-candidate-element message received from background script but element index is invalid");
             this.portToBackground.postMessage(
                 {type: Page2BackgroundPortMsgType.TERMINAL, error: "invalid element index provided to highlight"});
@@ -406,10 +407,18 @@ export class PageActor {
         }
         const elementToActOnData = this.currInteractiveElements[message.elementIndex];
         const elementToActOn = elementToActOnData.element;
-        // @ts-expect-error focusVisible is not in the typescript definition for focus, but it's definitely in the MDN reference https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/focus#focusvisible
-        elementToActOn.focus({focusVisible: true});
+        const elemStyle = elementToActOn.style;
 
-        //if the above doesn't work as intended, can try the options suggested here
+        const initialOutline = elemStyle.outline;
+        //const initialBackgroundColor = elemStyle.backgroundColor;
+
+        elemStyle.outline = "3px solid red";
+        setTimeout(() => {
+            elemStyle.outline = initialOutline;
+        }, 5000);
+
+        //elemStyle.filter = "brightness(1.5)";
+
         // https://stackoverflow.com/questions/1389609/plain-javascript-code-to-highlight-an-html-element
         // meddling with element.style properties like backgroundColor, outline, filter, (border?)
         // https://developer.mozilla.org/en-US/docs/Web/CSS/background-color
@@ -426,6 +435,7 @@ export class PageActor {
         this.logger.trace(`message received from background script: ${JSON.stringify(message)} by page ${document.URL}`);
         this.hasControllerEverResponded = true;
         if (message.type === Background2PagePortMsgType.REQ_PAGE_STATE) {
+            if (message.isMonitorRetry) {this.currInteractiveElements = undefined;}
             this.getPageInfoForController();
         } else if (message.type === Background2PagePortMsgType.REQ_ACTION) {
             await this.performActionFromController(message);

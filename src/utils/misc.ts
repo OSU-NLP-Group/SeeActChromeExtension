@@ -92,7 +92,7 @@ export function buildGenericActionDesc(action: Action, elementData?: Serializabl
         const valueDesc = value ? ` with value: ${value}` : "";
         return `[${elementData?.tagHead}] ${elementData?.description} -> ${action}${valueDesc}`;
     } else {
-        return `Performed element-independent action ${action}`;
+        return `Perform element-independent action ${action}`;
     }
 }//todo 2 unit tests
 

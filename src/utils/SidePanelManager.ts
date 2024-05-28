@@ -207,10 +207,12 @@ export class SidePanelManager {
     private reset() {
         this.state = SidePanelMgrState.IDLE;
         this.serviceWorkerPort = undefined;
-        this.taskSpecField.textContent = '';
+        this.taskSpecField.value = '';
         this.startButton.disabled = false;
         this.killButton.disabled = true;
-        this.monitorFeedbackField.textContent = '';
+        this.pendingActionDiv.textContent = '';
+        this.pendingActionDiv.title = '';
+        this.monitorFeedbackField.value = '';
         this.monitorFeedbackField.disabled = true;
         this.monitorApproveButton.disabled = true;
         this.monitorRejectButton.disabled = true;
@@ -250,7 +252,7 @@ export class SidePanelManager {
             this.addHistoryEntry(`Task started: ${message.taskSpec}`, `Task ID: ${message.taskId}`, "task_start")
             this.startButton.disabled = true;
             this.killButton.disabled = false;
-            this.taskSpecField.textContent = '';
+            this.taskSpecField.value = '';
             if (this.cachedMonitorMode) {
                 this.monitorFeedbackField.disabled = false;
             }
@@ -277,8 +279,8 @@ export class SidePanelManager {
         }
 
         const pendingActionInfo = message.actionInfo as ActionInfo;
-        this.pendingActionDiv.textContent = "Explanation: " + pendingActionInfo.explanation + "\nDetails: "
-            buildGenericActionDesc(pendingActionInfo.action, pendingActionInfo.elementData, pendingActionInfo.value);
+        this.pendingActionDiv.textContent = pendingActionInfo.explanation;
+        this.pendingActionDiv.title = buildGenericActionDesc(pendingActionInfo.action, pendingActionInfo.elementData, pendingActionInfo.value)
     }
 
     processActionPerformedRecord = (message: any): void => {
@@ -315,7 +317,7 @@ export class SidePanelManager {
 
         this.addHistoryEntry(displayText, hoverText);
         if (this.cachedMonitorMode) {
-            this.monitorFeedbackField.textContent = '';
+            this.monitorFeedbackField.value = '';
             this.monitorApproveButton.disabled = true;
             this.monitorRejectButton.disabled = true;
         }
