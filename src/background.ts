@@ -32,26 +32,26 @@ const LOGS_OBJECT_STORE = "logs";
 //   that might be overly-optimistic, db initialization seems weird/non-promise based, so can't simply await for db to be ready before using db-persistent logging for rest of onInstalled activity
 //    However, https://web.dev/articles/indexeddb#open indicates you can open an indexeddb database in a promise-based way
 chrome.runtime.onInstalled.addListener(async function (details) {
-    centralLogger.error("starting of 'onInstalled' handler being executed in background script");
+    centralLogger.info("starting of 'onInstalled' handler being executed in background script");
 
     if (details.reason == "install") {
-        centralLogger.error("This is a first install! initializing indexeddb for logging");
+        centralLogger.info("This is a first install! initializing indexeddb for logging");
 
         const openRequest: IDBOpenDBRequest = indexedDB.open("Browser_LMM_Agent_Logging", 1);
 
         openRequest.onupgradeneeded = function (event: IDBVersionChangeEvent) {
             const db = (event.target as IDBOpenDBRequest).result;
-            centralLogger.error("handling upgrade of logging db during initial install of extension");
+            centralLogger.info("handling upgrade of logging db during initial install of extension");
             if (!db.objectStoreNames.contains(LOGS_OBJECT_STORE)) {
-                centralLogger.error("creating object store for logs during initial install of extension");
+                centralLogger.info("creating object store for logs during initial install of extension");
                 db.createObjectStore(LOGS_OBJECT_STORE, {autoIncrement: true});
             }
         };
         openRequest.onsuccess = function (event) {
-            centralLogger.error("logging db successfully opened during initial install of extension");
+            centralLogger.info("logging db successfully opened during initial install of extension");
             const db = (event.target as IDBOpenDBRequest).result;
             db.close();
-            centralLogger.error("logging db successfully closed after creating/opening during initial install of extension");
+            centralLogger.info("logging db successfully closed after creating/opening during initial install of extension");
         };
         openRequest.onerror = function (event) {
             // Handle errors
@@ -60,11 +60,11 @@ chrome.runtime.onInstalled.addListener(async function (details) {
             //todo maybe do something here like with the missing shortcuts
         };
 
-        centralLogger.error("This is a first install! checking keyboard shortcuts and initializing database for logging");
+        centralLogger.info("This is a first install! checking keyboard shortcuts and initializing database for logging");
 
         checkCommandShortcutsOnInstall();
     } else if (details.reason === "update") {
-        centralLogger.error(`chrome.runtime.onInstalled listener fired for "update" reason`);
+        centralLogger.warn(`chrome.runtime.onInstalled listener fired for "update" reason`);
         //todo what would be needed here?
     } else {
         centralLogger.error("chrome.runtime.onInstalled listener fired with unexpected reason ", details.reason);
@@ -72,9 +72,9 @@ chrome.runtime.onInstalled.addListener(async function (details) {
 });
 
 function checkCommandShortcutsOnInstall() {
-    centralLogger.error("starting to check command shortcuts on install");
+    centralLogger.info("starting to check command shortcuts on install");
     chrome.commands.getAll(async (commands) => {
-        centralLogger.error("query for chrome commands completed, analyzing results");
+        centralLogger.info("query for chrome commands completed, analyzing results");
         const missingShortcuts: string[] = [];
 
         for (const {name, shortcut, description} of commands) {
@@ -82,7 +82,7 @@ function checkCommandShortcutsOnInstall() {
                 if (name === undefined) {
                     centralLogger.error(`a chrome extension command's name is undefined (description: ${description})`);
                 } else if (name === "_execute_action") {
-                    centralLogger.error("as intended, the _execute_action command has no keyboard shortcut");
+                    centralLogger.info("as intended, the _execute_action command has no keyboard shortcut");
                 } else {missingShortcuts.push(`Shortcut name: ${name}; description: ${description}`);}
             }
         }
@@ -100,7 +100,7 @@ function checkCommandShortcutsOnInstall() {
                 if (chrome.runtime.lastError) {
                     centralLogger.error("error opening installation greeting page:", chrome.runtime.lastError);
                 } else {
-                    centralLogger.error("opened installation greeting page in tab:", tab);
+                    centralLogger.info("opened installation greeting page in tab:", tab);
                 }
             });
         }
