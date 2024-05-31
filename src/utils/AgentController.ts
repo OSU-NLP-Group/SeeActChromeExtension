@@ -910,7 +910,33 @@ export class AgentController {
         }
     }
 
-    //todo handler methods for keyboard shortcuts
+    processMonitorApproveKeyCommand = async (): Promise<void> => {
+        if (!this.cachedMonitorMode) {
+            this.logger.info("user pressed key command to approve the current action; but monitor mode is not enabled; ignoring");
+            return;
+        }
+        await this.mutex.runExclusive(() => {
+            if (this.state !== AgentControllerState.WAITING_FOR_MONITOR_RESPONSE) {
+                this.logger.info("user pressed key command to approve the current action, but the controller is not waiting for monitor response; ignoring");
+                return;
+            }
+            this.processMonitorApproval();
+        });
+    }
+
+    processMonitorRejectKeyCommand = async (): Promise<void> => {
+        if (!this.cachedMonitorMode) {
+            this.logger.info("user pressed key command to reject the current action; but monitor mode is not enabled; ignoring");
+            return;
+        }
+        await this.mutex.runExclusive(() => {
+            if (this.state !== AgentControllerState.WAITING_FOR_MONITOR_RESPONSE) {
+                this.logger.info("user pressed key command to reject the current action, but the controller is not waiting for monitor response; ignoring");
+                return;
+            }
+            this.processMonitorRejection({feedback: ""});
+        });
+    }
 
 
     //todo b4 release, make this take an error message param and make it show an alert so the user doesn't need to look

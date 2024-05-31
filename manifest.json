@@ -33,5 +33,19 @@
             "48": "images/seeact_icon_48.png",
             "128": "images/seeact_icon_128.png"
         }
+    },
+    "commands": {
+        "monitor_approve": {
+            "suggested_key": {
+                "default": "Alt+Shift+J"
+            },
+            "description": "Approve the pending action (in monitor mode)"
+        },
+        "monitor_reject": {
+            "suggested_key": {
+                "default": "Alt+Shift+U"
+            },
+            "description": "Reject the pending action (in monitor mode)"
+        }
     }
 }

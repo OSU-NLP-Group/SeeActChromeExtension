@@ -309,7 +309,7 @@ export class BrowserHelper {
             '[role="listbox"]', '[role="menu"]', '[role="link"]', '[type="button"]', '[type="radio"]', '[type="combobox"]',
             '[type="textbox"]', '[type="listbox"]', '[type="menu"]', '[tabindex]:not([tabindex="-1"])',
             '[contenteditable]:not([contenteditable="false"])', '[onclick]', '[onfocus]', '[onkeydown]',
-            '[onkeypress]', '[onkeyup]', "[checkbox]", '[aria-disabled="false"],[data-link]'];
+            '[onkeypress]', '[onkeyup]', "[checkbox]", '[aria-disabled="false"]', '[data-link]'];
 
         const uniqueInteractiveElements = new Set<HTMLElement>();
         interactiveElementSelectors.forEach(selector => {

@@ -60,6 +60,13 @@ module.exports = {
             chunks: ["options"],
             showErrors: true,
             inject: "body"
+        }),
+        new HtmlWebpackPlugin({
+            template: path.resolve(root, "src", "installation_greeting.html"),
+            filename: "installation_greeting.html",
+            chunks: [],
+            showErrors: true,
+            inject: false
         })
     ],
 };

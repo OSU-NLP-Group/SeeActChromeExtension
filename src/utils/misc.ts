@@ -76,7 +76,6 @@ export enum Action {
     TERMINATE = "TERMINATE",
     NONE = "NONE"
 }
-//todo user docs must warn that HOVER only works if they keep their actual mouse cursor outside of the browser window
 
 
 /**

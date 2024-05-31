@@ -16,45 +16,108 @@ let centralLogger = createNamedLogger('service-worker', true);
 centralLogger.trace("central logger created in background script");
 
 chrome.sidePanel
-    .setPanelBehavior({ openPanelOnActionClick: true })
+    .setPanelBehavior({openPanelOnActionClick: true})
     .catch((error) => console.error(error));
-
-//todo keyboard shortcuts for monitor mode judgements!!!
-
 
 
 //todo? later add indexeddb logging via the background script, i.e. the part of the message listener which handles
 // 'log'-type requests will write them to db rather than solely the extension's console
 // if this is done, it will require changes to how loggers are created for code that's running in the service worker
-/*const LOGS_OBJECT_STORE = "logs";
+const LOGS_OBJECT_STORE = "logs";
 
+centralLogger.warn("about to try to set up onInstalled listener in background script");
+console.error("basic- about to try to set up onInstalled listener in background script");
 chrome.runtime.onInstalled.addListener(function (details) {
+    console.error("basic- starting of 'onInstalled' handler being executed in background script")
+    centralLogger.warn("start of 'onInstalled' handler being executed in background script");
     if (details.reason == "install") {
-        console.log("This is a first install! initializing indexeddb for logging");
+        centralLogger.warn("This is a first install! checking keyboard shortcuts and initializing database for logging");
+
+        checkCommandShortcutsOnInstall();
+
+
+
+        centralLogger.warn("This is a first install! initializing indexeddb for logging");
+
 
         const openRequest: IDBOpenDBRequest = indexedDB.open("Browser_LLM_Agent_Logging", 1);
 
         openRequest.onupgradeneeded = function (e: IDBVersionChangeEvent) {
             const db = (e.target as IDBOpenDBRequest).result;
-            console.log("handling upgrade of logging db during initial install of extension");
+            centralLogger.warn("handling upgrade of logging db during initial install of extension");
             if (!db.objectStoreNames.contains(LOGS_OBJECT_STORE)) {
-                console.log("creating object store for logs during initial install of extension");
+                centralLogger.warn("creating object store for logs during initial install of extension");
                 db.createObjectStore(LOGS_OBJECT_STORE, {autoIncrement: true});
             }
         };
         openRequest.onsuccess = function (e) {
-            console.log("logging db successfully opened during initial install of extension");
+            centralLogger.warn("logging db successfully opened during initial install of extension");
             const db = (e.target as IDBOpenDBRequest).result;
             db.close();
-            console.log("logging db successfully closed after creating/opening during initial install of extension");
+            centralLogger.warn("logging db successfully closed after creating/opening during initial install of extension");
         };
         openRequest.onerror = function (e) {
             // Handle errors
-            console.log("failure during opening of logging db during initial install of extension!");
+            centralLogger.error("failure during opening of logging db during initial install of extension!");
             console.dir(e);
+            //todo maybe do something here like with the missing shortcuts
         };
     }
-});*/
+});
+
+function populateInstallPageWarnings(warnings: string[]) {
+    const warningList = document.getElementById("install-warnings");
+    if (warningList) {
+        for (const warning of warnings) {
+            const li = document.createElement("li");
+            li.textContent = warning;
+            warningList.appendChild(li);
+        }
+    } else {
+        console.error("unable to find warning list element in installation greeting page for alerting the user about the following: \n", warnings.join("\n"));
+    }
+}
+
+function checkCommandShortcutsOnInstall() {
+    centralLogger.warn("starting to check command shortcuts on install");
+    chrome.commands.getAll((commands) => {
+        centralLogger.warn("query for chrome commands completed, analyzing results");
+        const missingShortcuts: string[] = [];
+
+        for (const {name, shortcut, description} of commands) {
+            if (shortcut === '') {
+                if (name === undefined) {
+                    centralLogger.error(`a chrome extension command's name is undefined (description: ${description})`);
+                } else {missingShortcuts.push(`Shortcut name: ${name}; description: ${description}`);}
+            }
+        }
+
+        //todo confirm that the below works (e.g. temporarily tweak manifest so that it uses alt-shift-L)
+        // why didn't this work with alt-shift-k? need to add tracing messages and/or comb over the logs for this warning message
+        //  in any case, the greeting page thing didn't work (does that generally not work when loading unpacked extension??)
+        if (missingShortcuts.length > 0) {
+            //todo try using notifications if I can't see console messages from background script's install invocation
+            // https://developer.chrome.com/docs/extensions/reference/api/notifications
+            centralLogger.error("the following commands are missing keyboard shortcuts:", missingShortcuts.join("\n"));
+            missingShortcuts.unshift("The following commands are missing keyboard shortcuts:");
+            chrome.tabs.create({url: "src/installation_greeting.html"}, (tab) => {
+                if (tab.id === undefined) {
+                    centralLogger.error("unable to get tab id after creating tab for installation greeting page");
+                    return;
+                }
+                chrome.scripting.executeScript({
+                    target: {tabId: tab.id},
+                    world: 'MAIN',
+                    func: populateInstallPageWarnings,
+                    args: [missingShortcuts]
+                }).catch((error) => {
+                    centralLogger.error("error populating installation greeting page with missing shortcuts info:", renderUnknownValue(error));
+                });
+            });
+        }
+    });
+}
+
 //todo before official release, if indexeddb persistent logging was implemented, make mechanism to trigger
 // once every 14 days and purge logs older than 14 days from the extension's indexeddb
 
@@ -82,8 +145,6 @@ function initializeAgentController(): AgentController {
 }
 
 let agentController: AgentController | undefined = initializeAgentController();
-
-
 
 
 /**
@@ -187,7 +248,33 @@ function handleConnectionFromPage(port: Port): void {
 
 chrome.runtime.onConnect.addListener(handleConnectionFromPage);
 
+function handleKeyCommand(command: string, tab: chrome.tabs.Tab): void {
+    if (command === "monitor_approve") {
+        if (!agentController) {
+            centralLogger.warn(`agentController not initialized when user tried to press the monitor-mode approve key command from tab: ${JSON.stringify(tab)}`);
+            return;
+        }
+        agentController.processMonitorApproveKeyCommand().then(() => {
+            centralLogger.trace("monitor mode approval key command was successfully processed")
+        }, (error) => {
+            centralLogger.error(`error processing monitor-mode approval key command: ${renderUnknownValue(error)}`);
+        });
+    } else if (command === "monitor_reject") {
+        if (!agentController) {
+            centralLogger.warn(`agentController not initialized when user tried to press the monitor-mode reject key command from tab: ${JSON.stringify(tab)}`);
+            return;
+        }
+        agentController.processMonitorRejectKeyCommand().then(() => {
+            centralLogger.trace("monitor mode rejection key command was successfully processed")
+        }, (error) => {
+            centralLogger.error(`error processing monitor-mode rejection key command: ${renderUnknownValue(error)}`);
+        });
+    } else {
+        centralLogger.error(`unrecognized key command: ${command} from tab: ${JSON.stringify(tab)}`);
+    }
+}
 
+chrome.commands.onCommand.addListener(handleKeyCommand);
 
 
 

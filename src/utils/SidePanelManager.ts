@@ -31,7 +31,6 @@ enum SidePanelMgrState {
     WAIT_FOR_TASK_STARTED,
     WAIT_FOR_PENDING_ACTION_INFO,
     WAIT_FOR_MONITOR_RESPONSE,//unlike the others, in this state the panel is primarily waiting for input from the user to the side panel's UI rather than from the background (service worker)
-    // after adding keyboard shortcuts for monitor approve/reject, the above will get markedly more complicated (the service worker will have to receive the command event, then query the side panel for the feedback text field, then this will have to go to WAIT_FOR_PENDING_ACTION_INFO again)
     WAIT_FOR_ACTION_PERFORMED_RECORD,
     WAIT_FOR_TASK_ENDED//panel only reaches this state for a task that the user decides to kill, not for a task that ends naturally
 }
@@ -155,6 +154,8 @@ export class SidePanelManager {
             }
             this.serviceWorkerPort.postMessage({type: Panel2BackgroundPortMsgType.MONITOR_APPROVED});
             this.state = SidePanelMgrState.WAIT_FOR_ACTION_PERFORMED_RECORD;
+            this.pendingActionDiv.textContent = '';
+            this.pendingActionDiv.title = '';
         });
     }
 
@@ -175,6 +176,8 @@ export class SidePanelManager {
             this.serviceWorkerPort.postMessage(
                 {type: Panel2BackgroundPortMsgType.MONITOR_REJECTED, feedback: feedbackText});
             this.state = SidePanelMgrState.WAIT_FOR_PENDING_ACTION_INFO;
+            this.pendingActionDiv.textContent = '';
+            this.pendingActionDiv.title = '';
         });
     }
 
@@ -290,7 +293,6 @@ export class SidePanelManager {
             this.logger.error('received TASK_HISTORY_ENTRY message from service worker port but state is not WAIT_FOR_ACTION_PERFORMED_RECORD');
             return;
         }
-        this.pendingActionDiv.textContent = '';
 
         const actionDesc = message.actionDesc as string;
         const successful = message.success as boolean;
