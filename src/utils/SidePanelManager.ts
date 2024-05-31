@@ -252,6 +252,9 @@ export class SidePanelManager {
         if (message.success) {
             newStatus = `Task ${message.taskId} started successfully`;
             this.state = SidePanelMgrState.WAIT_FOR_PENDING_ACTION_INFO;
+            //wipe history from previous task
+            while (this.historyList.firstChild) { this.historyList.removeChild(this.historyList.firstChild);}
+
             this.addHistoryEntry(`Task started: ${message.taskSpec}`, `Task ID: ${message.taskId}`, "task_start")
             this.startButton.disabled = true;
             this.killButton.disabled = false;
