@@ -16,12 +16,14 @@ export const origLoggerFactory = log.methodFactory;
 export const defaultLogLevel: keyof LogLevel = "TRACE";//todo change this to warn before release
 
 const logLevelCache: {chosenLogLevel: keyof LogLevel} = { chosenLogLevel: defaultLogLevel}
-const logLevelQuery = await chrome.storage.local.get("logLevel");
-if (isLogLevelName(logLevelQuery.logLevel)) {
-    logLevelCache.chosenLogLevel = logLevelQuery.logLevel;
-} else if (logLevelQuery.logLevel !== undefined) {
-    console.error(`invalid log level was stored: ${logLevelQuery.logLevel}, ignoring it when initializing logging script`)
-}
+//todo need to e2e test whether getting rid of top-level await causes problems
+chrome.storage.local.get("logLevel").then((items) => {
+    if (isLogLevelName(items.logLevel)) {
+        logLevelCache.chosenLogLevel = items.logLevel;
+    } else if (items.logLevel !== undefined) {
+        console.error(`invalid log level was stored: ${items.logLevel}, ignoring it when initializing logging script`)
+    }
+});
 
 /**
  * Create a logger with the given name, using the 'plugin' functionality which was added to loglevel in

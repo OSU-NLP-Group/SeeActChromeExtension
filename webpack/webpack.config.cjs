@@ -18,7 +18,8 @@ module.exports = {
         background: path.resolve(root, "src", "background.ts"),
         side_panel: path.resolve(root, "src", "side_panel.ts"),
         page_interaction: path.resolve(root, "src", "page_interaction.ts"),
-        options: path.resolve(root, "src", "options.ts")
+        options: path.resolve(root, "src", "options.ts"),
+        install_greeting: path.resolve(root, "src", "installation_greeting.ts"),
     },
     devtool: "source-map",
     output: {
@@ -64,9 +65,9 @@ module.exports = {
         new HtmlWebpackPlugin({
             template: path.resolve(root, "src", "installation_greeting.html"),
             filename: "installation_greeting.html",
-            chunks: [],
+            chunks: ["install_greeting"],
             showErrors: true,
-            inject: false
+            inject: "body"
         })
     ],
 };

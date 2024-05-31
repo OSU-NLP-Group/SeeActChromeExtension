@@ -106,7 +106,11 @@ export function renderUnknownValue(val: unknown): string {
     } else if (val === undefined) {
         return "ACTUAL_js_undefined";
     } else if (typeof val === 'object') {
-        return JSON.stringify(val);
+        if (val instanceof Error) {
+            return `error type: ${val.name}; message: ${val.message}; stack: ${val.stack}`;
+        } else {
+            return JSON.stringify(val);
+        }
     } else {
         return String(val);
     }

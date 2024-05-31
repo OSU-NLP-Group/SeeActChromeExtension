@@ -2,8 +2,6 @@
  * @fileoverview This file contains utility functions for formatting prompts
  */
 
-import {isEmpty} from "lodash";
-
 export const basicPromptIntro: string = "You are asked to complete the following task: ";
 export const prevActionsIntro: string = "Previous Actions:\n";
 export const noPrevActions: string = "No prior actions\n";
@@ -31,7 +29,7 @@ export const generateNewQueryPrompt =
         const sysRole: string = systemPrompt;
 
         let queryText: string = basicPromptIntro + task + "\n\n" + prevActionsIntro;
-        if (isEmpty(previousActions)) {
+        if (previousActions === null || previousActions.length === 0) {
             queryText += noPrevActions;
         } else {
             //previousActions can't be null here b/c of the contract of _.isEmpty()
