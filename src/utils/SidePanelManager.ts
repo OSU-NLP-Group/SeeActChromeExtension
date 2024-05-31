@@ -267,7 +267,9 @@ export class SidePanelManager {
     }
 
     processActionCandidate = (message: any): void => {
-        if (this.state != SidePanelMgrState.WAIT_FOR_PENDING_ACTION_INFO) {
+        if (this.state === SidePanelMgrState.WAIT_FOR_MONITOR_RESPONSE) {
+            this.logger.trace("received ACTION_CANDIDATE message from service worker port while waiting for monitor response from user; implies that a keyboard shortcut for a monitor rejection was used instead of the side panel ui")
+        } else if (this.state != SidePanelMgrState.WAIT_FOR_PENDING_ACTION_INFO) {
             this.logger.error('received ACTION_CANDIDATE message from service worker port but state is not WAIT_FOR_PENDING_ACTION_INFO');
             return;
         }
@@ -324,6 +326,8 @@ export class SidePanelManager {
             this.monitorRejectButton.disabled = true;
         }
         this.state = SidePanelMgrState.WAIT_FOR_PENDING_ACTION_INFO;
+        this.pendingActionDiv.textContent = '';
+        this.pendingActionDiv.title = '';
     }
 
 
