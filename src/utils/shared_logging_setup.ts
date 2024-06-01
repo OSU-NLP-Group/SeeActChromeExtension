@@ -1,5 +1,6 @@
 import log, {LogLevelNames, LogLevel} from "loglevel";
-import {PageRequestType} from "./misc";
+import {PageRequestType, renderUnknownValue} from "./misc";
+import {openDB, DBSchema, IDBPDatabase} from 'idb';
 
 
 // Create an object that maps the names of the log levels to their numeric values
@@ -13,10 +14,10 @@ const LogLevelValues = {
 };
 export const origLoggerFactory = log.methodFactory;
 
+
 export const defaultLogLevel: keyof LogLevel = "TRACE";//todo change this to warn before release
 
-const logLevelCache: {chosenLogLevel: keyof LogLevel} = { chosenLogLevel: defaultLogLevel}
-//todo need to e2e test whether getting rid of top-level await causes problems
+const logLevelCache: { chosenLogLevel: keyof LogLevel } = {chosenLogLevel: defaultLogLevel}
 chrome.storage.local.get("logLevel").then((items) => {
     if (isLogLevelName(items.logLevel)) {
         logLevelCache.chosenLogLevel = items.logLevel;
@@ -24,6 +25,41 @@ chrome.storage.local.get("logLevel").then((items) => {
         console.error(`invalid log level was stored: ${items.logLevel}, ignoring it when initializing logging script`)
     }
 });
+
+export const taskIdHolder: { currTaskId: string | undefined } = {currTaskId: undefined};
+export const taskIdPlaceholderVal = "UNAFFILIATED";
+
+export const DB_NAME = "Browser_LMM_Agent";
+export const LOGS_OBJECT_STORE = "logs";
+
+export interface AgentDb extends DBSchema {
+    logs: {
+        key: number;
+        value: {
+            timestamp: string;
+            loggerName: string;
+            level: LogLevelNames;
+            taskId: string;
+            msg: string;
+        };
+        indexes: { 'by-ts': "timestamp", 'by-task': "taskId" };
+    };
+}
+
+export const dbConnHolder: { dbConn: IDBPDatabase<AgentDb> | null } = {dbConn: null};
+
+export const initializeDbConnection = async () => {
+    try {
+        dbConnHolder.dbConn = await openDB<AgentDb>(DB_NAME, 1);
+    } catch (error: any) {
+        console.error("error occurred while opening db connection", error)
+    }
+    if (dbConnHolder.dbConn) {
+        dbConnHolder.dbConn.onerror = (event) => {
+            console.error("error occurred on db connection", event);
+        }
+    }
+}
 
 /**
  * Create a logger with the given name, using the 'plugin' functionality which was added to loglevel in
@@ -38,8 +74,17 @@ export const createNamedLogger = (loggerName: string, inServiceWorker: boolean):
     if (inServiceWorker) {
         newLogger.methodFactory = function (methodName, logLevel, loggerName) {
             const rawMethod = origLoggerFactory(methodName, logLevel, loggerName);
+            const actualLoggerName: string = typeof loggerName === "string" ? loggerName :
+                (Symbol.keyFor(loggerName) ?? loggerName.toString());
             return function (...args: unknown[]) {
                 rawMethod(augmentLogMsg(new Date().toISOString(), loggerName, methodName, args));
+                if (dbConnHolder.dbConn) {
+                    dbConnHolder.dbConn.add(LOGS_OBJECT_STORE, {
+                        timestamp: new Date().toISOString(), loggerName: actualLoggerName, level: methodName,
+                        taskId: taskIdHolder.currTaskId ?? taskIdPlaceholderVal, msg: args.join(" ")
+                    }).catch((error) =>
+                        console.error("error adding log message to indexeddb:", renderUnknownValue(error)));
+                }
             };
         };
     } else {
@@ -79,7 +124,7 @@ export const createNamedLogger = (loggerName: string, inServiceWorker: boolean):
         });
 
         //todo unit testing this? maybe create a function that takes a logger and returns a "local storage changes handler" function, then just unit test that
-        chrome.storage.local.onChanged.addListener((changes: {[p: string]: chrome.storage.StorageChange}) => {
+        chrome.storage.local.onChanged.addListener((changes: { [p: string]: chrome.storage.StorageChange }) => {
             if (changes.logLevel) {
                 const newLogLevel: string = changes.logLevel.newValue;
                 if (isLogLevelName(newLogLevel)) {

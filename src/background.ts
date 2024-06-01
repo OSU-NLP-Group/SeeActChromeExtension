@@ -1,10 +1,17 @@
-import {assertIsValidLogLevelName, augmentLogMsg, createNamedLogger} from "./utils/shared_logging_setup";
+import {
+    AgentDb,
+    assertIsValidLogLevelName,
+    augmentLogMsg,
+    createNamedLogger, DB_NAME, dbConnHolder, initializeDbConnection,
+    LOGS_OBJECT_STORE, taskIdHolder, taskIdPlaceholderVal
+} from "./utils/shared_logging_setup";
 import {OpenAiEngine} from "./utils/OpenAiEngine";
 import log from "loglevel";
+import {AgentController} from "./utils/AgentController";
+import {PageRequestType, pageToControllerPort, panelToControllerPort, renderUnknownValue, sleep} from "./utils/misc";
 import Port = chrome.runtime.Port;
 import MessageSender = chrome.runtime.MessageSender;
-import {AgentController} from "./utils/AgentController";
-import {PageRequestType, pageToControllerPort, panelToControllerPort, renderUnknownValue} from "./utils/misc";
+import {openDB} from "idb";
 
 
 console.log("successfully loaded background script in browser");
@@ -18,60 +25,64 @@ chrome.sidePanel
     .setPanelBehavior({openPanelOnActionClick: true})
     .catch((error) => centralLogger.error(error));
 
-
-//todo? later add indexeddb logging via the background script, i.e. the part of the message listener which handles
-// 'log'-type requests will write them to db rather than solely the extension's console
-// if this is done, it will require changes to how loggers are created for code that's running in the service worker
-const LOGS_OBJECT_STORE = "logs";
-
-//Also, it uses error rather than debug/info/warn because the devtools window/console won't/can't be open when the installation is first happening, so
-// the only way to see those log messages is to look at the "Errors" view for the extension in chrome://extensions
-// right after the install/update and then clear them from the "Errors" view.
-// todo comment out those error() calls (that are actually for info/debug-level messages) before official release
-//  Maybe, once db log persistence is working, this will no longer even be necessary for the messages which occur after db has been set up?
-//   that might be overly-optimistic, db initialization seems weird/non-promise based, so can't simply await for db to be ready before using db-persistent logging for rest of onInstalled activity
-//    However, https://web.dev/articles/indexeddb#open indicates you can open an indexeddb database in a promise-based way
+let isOnInstalledRunning = false;
 chrome.runtime.onInstalled.addListener(async function (details) {
+    isOnInstalledRunning = true;
     centralLogger.info("starting of 'onInstalled' handler being executed in background script");
 
     if (details.reason == "install") {
         centralLogger.info("This is a first install! initializing indexeddb for logging");
+        const initErrMsgs: string[] = [];
 
-        const openRequest: IDBOpenDBRequest = indexedDB.open("Browser_LMM_Agent_Logging", 1);
-
-        openRequest.onupgradeneeded = function (event: IDBVersionChangeEvent) {
-            const db = (event.target as IDBOpenDBRequest).result;
-            centralLogger.info("handling upgrade of logging db during initial install of extension");
-            if (!db.objectStoreNames.contains(LOGS_OBJECT_STORE)) {
-                centralLogger.info("creating object store for logs during initial install of extension");
-                db.createObjectStore(LOGS_OBJECT_STORE, {autoIncrement: true});
+        try {
+            dbConnHolder.dbConn = await openDB<AgentDb>(DB_NAME, 1, {
+                upgrade(db) {
+                    centralLogger.info(`during initial install of extension, db ${DB_NAME} has object stores: ${JSON.stringify(db.objectStoreNames)}`);
+                    if (!db.objectStoreNames.contains(LOGS_OBJECT_STORE)) {
+                        centralLogger.info("creating object store for logs during initial install of extension");
+                        const logsObjStore = db.createObjectStore(LOGS_OBJECT_STORE,
+                            {keyPath: "key", autoIncrement: true});
+                        logsObjStore.createIndex("by-ts", "timestamp", {unique: false});
+                        logsObjStore.createIndex("by-task", "taskId", {unique: false});
+                    }
+                }
+            });
+            dbConnHolder.dbConn.onerror = (event) => {
+                console.error("error occurred on db connection", event);
             }
-        };
-        openRequest.onsuccess = function (event) {
-            centralLogger.info("logging db successfully opened during initial install of extension");
-            const db = (event.target as IDBOpenDBRequest).result;
-            db.close();
-            centralLogger.info("logging db successfully closed after creating/opening during initial install of extension");
-        };
-        openRequest.onerror = function (event) {
-            // Handle errors
-            centralLogger.error("failure during opening of logging db during initial install of extension!");
-            console.dir(event);
-            //todo maybe do something here like with the missing shortcuts
-        };
+        } catch (error: any) {
+            const dbInitErrMsg = `error occurred during initialization of indexeddb for logging: ${renderUnknownValue(error)}`;
+            console.error(dbInitErrMsg);
+            initErrMsgs.push(dbInitErrMsg);
+            initErrMsgs.push("--------------");
+        }
 
-        centralLogger.info("This is a first install! checking keyboard shortcuts and initializing database for logging");
+        centralLogger.info("This is a first install! checking keyboard shortcuts");
+        checkCommandShortcutsOnInstall(initErrMsgs);
 
-        checkCommandShortcutsOnInstall();
+        const greetingUrlSearchParams = new URLSearchParams({});
+        if (initErrMsgs.length > 0) {
+            greetingUrlSearchParams.set("warnings", JSON.stringify(initErrMsgs));
+        }
+        const greetingUrl = chrome.runtime.getURL("src/installation_greeting.html") + "?" + greetingUrlSearchParams.toString();
+
+        chrome.tabs.create({url: greetingUrl}, (tab) => {
+            if (chrome.runtime.lastError) {
+                centralLogger.error("error opening installation greeting page:", chrome.runtime.lastError);
+            } else {
+                centralLogger.info("opened installation greeting page in tab:", tab);
+            }
+        });
     } else if (details.reason === "update") {
-        centralLogger.warn(`chrome.runtime.onInstalled listener fired for "update" reason`);
+        centralLogger.info(`chrome.runtime.onInstalled listener fired for "update" reason`);
         //todo what would be needed here?
     } else {
         centralLogger.error("chrome.runtime.onInstalled listener fired with unexpected reason ", details.reason);
     }
+    isOnInstalledRunning = false;
 });
 
-function checkCommandShortcutsOnInstall() {
+function checkCommandShortcutsOnInstall(initErrorMessages: string[]) {
     centralLogger.info("starting to check command shortcuts on install");
     chrome.commands.getAll(async (commands) => {
         centralLogger.info("query for chrome commands completed, analyzing results");
@@ -91,21 +102,17 @@ function checkCommandShortcutsOnInstall() {
             centralLogger.error("the following commands are missing keyboard shortcuts:", missingShortcuts.join("\n"));
             missingShortcuts.unshift("The following commands are missing keyboard shortcuts:");
 
-            const greetingUrlSearchParams = new URLSearchParams({
-                warnings: JSON.stringify(missingShortcuts)
-            });
-            const greetingUrl = chrome.runtime.getURL("src/installation_greeting.html") + "?" + greetingUrlSearchParams.toString();
-
-            chrome.tabs.create({url: greetingUrl}, (tab) => {
-                if (chrome.runtime.lastError) {
-                    centralLogger.error("error opening installation greeting page:", chrome.runtime.lastError);
-                } else {
-                    centralLogger.info("opened installation greeting page in tab:", tab);
-                }
-            });
+            initErrorMessages.push(...missingShortcuts)
+            initErrorMessages.push("--------------");
         }
     });
 }
+
+chrome.runtime.onSuspend.addListener(() => {
+    if (dbConnHolder.dbConn) {
+        dbConnHolder.dbConn.close();
+    }
+});
 
 //todo before official release, if indexeddb persistent logging was implemented, make mechanism to trigger
 // once every 14 days and purge logs older than 14 days from the extension's indexeddb
@@ -123,12 +130,20 @@ function checkCommandShortcutsOnInstall() {
 // if microsecond precision timestamps are needed for logging, can use this (only ~5usec precision, but still better than 1msec precision)
 // https://developer.mozilla.org/en-US/docs/Web/API/Performance/now#performance.now_vs._date.now
 
+//sleep for 20ms to give time for onInstalled listener to start running (and set the flag)
+sleep(20).then(() => {
+    if (!isOnInstalledRunning && !dbConnHolder.dbConn) {
+        initializeDbConnection().then(() => {
+            console.debug("db connection initialized in background script");
+        }, (error) => {
+            console.error("error initializing db connection in background script:", renderUnknownValue(error));
+        });
+    }
+});
 
 //eventually allow other api's/model-providers? depends on how much we rely on audio modality of gpt-4o and how quickly others catch up there
 const modelName: string = "gpt-4o-2024-05-13";
 
-
-//todo need to e2e test whether getting rid of top-level await causes problems
 async function initializeAgentController(): Promise<AgentController> {
     const apiKeyQuery = await chrome.storage.local.get("openAiApiKey");
     const apiKey: string = apiKeyQuery.openAiApiKey ?? "PLACEHOLDER_API_KEY";
@@ -137,20 +152,6 @@ async function initializeAgentController(): Promise<AgentController> {
 }
 
 let agentController: AgentController | undefined;
-// let controllerIsInitializing = false; todo remove this chunk of commented-out code if not needed in practice
-// if this immediate initialization is kept, might want to rewrite this so a promise is stored by the async initializer method, then the promise can be awaited by the side panel connection-establishment handler
-//  then the initializeAgentController() method would have the side effect of setting the agentController variable instead of returning an AgentController?
-// (async () => {
-//     controllerIsInitializing = true;
-//     agentController = await initializeAgentController();
-//     controllerIsInitializing = false;
-// })().then(() => {
-//     console.trace("agent controller initialized")
-//     }, (error) => {
-//     console.error("problem when initializing agent controller:", renderUnknownValue(error));
-//     }
-// );
-
 
 
 /**
@@ -182,9 +183,13 @@ function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (r
         if (level === "trace") {
             consoleMethodNm = "debug";
         }
-        const finalLogMsg = augmentLogMsg(timestamp, loggerName, level, args);
-        console[consoleMethodNm](finalLogMsg);
-        //todo also interact with indexeddb
+        console[consoleMethodNm](augmentLogMsg(timestamp, loggerName, level, args));
+        if (dbConnHolder.dbConn) {
+            dbConnHolder.dbConn.add(LOGS_OBJECT_STORE, {
+                timestamp: timestamp, loggerName: loggerName, level: level,
+                taskId: taskIdHolder.currTaskId  ?? taskIdPlaceholderVal, msg: args.join(" ")
+            }).catch((error) => console.error("error adding log message to indexeddb:", renderUnknownValue(error)));
+        }
         sendResponse({success: true});
     } else if (request.reqType === PageRequestType.PRESS_ENTER) {
         if (!agentController) {

@@ -2,7 +2,7 @@ import {Mutex} from "async-mutex";
 import {SerializableElementData} from "./BrowserHelper";
 import {v4 as uuidV4} from 'uuid';
 import {Logger} from "loglevel";
-import {createNamedLogger} from "./shared_logging_setup";
+import {createNamedLogger, dbConnHolder, LOGS_OBJECT_STORE, taskIdHolder} from "./shared_logging_setup";
 import {OpenAiEngine} from "./OpenAiEngine";
 import {
     Action,
@@ -208,6 +208,8 @@ export class AgentController {
      * @param port the connection to the side panel which requested the start of the task
      */
     startTask = async (message: any, port: Port): Promise<void> => {
+        const logsSinceInstall = await dbConnHolder!.dbConn!.getAll(LOGS_OBJECT_STORE);
+        this.logger.info("log messages since install: ", logsSinceInstall.map(entry => entry.msg).join(";| "));
         if (this.taskId !== undefined) {
             const taskRejectMsg = `Task ${this.taskId} already in progress; not starting new task`;
             this.logger.warn(taskRejectMsg);
@@ -226,6 +228,7 @@ export class AgentController {
             }
         } else {
             this.taskId = uuidV4();
+            taskIdHolder.currTaskId = this.taskId;
             this.taskSpecification = message.taskSpecification;
             this.logger.info(`STARTING TASK ${this.taskId} with specification: ${this.taskSpecification}`);
             try {
@@ -354,6 +357,15 @@ export class AgentController {
 
         //todo? try catch for error when trying to get screenshot, if that fails, then terminate task
         const screenshotDataUrl: string = await this.chromeWrapper.fetchVisibleTabScreenshot();
+        //TODO!! store screenshot in indexedDB for later export
+        // separate object store? key- based on task id, action step, picture index for that action?
+        //  "action step" need another thing there to distinguish between the image retrieved for the first prompting after 3 completed actions
+        //  vs the image retrieved for the 2nd prompting after 3 completed actions (because the 1st prompting's output was rejected/noop)
+        //  vs the image retrieved for the 3rd prompting after 3 completed actions (because user, in monitor mode, rejected the action proposed by the 2nd prompting's output)
+        //  etc.
+        //  Then, for "picture index", there's the screenshot taken for the prompting (already captured but not yet persisted)
+        //   but also, if the chosen action after that has a target element, I've been asked to capture a screenshot of the tab with the target element outlined in red (like when monitor mode is on)
+        //    distinguish with a string component of the key: "initial" vs "targetted", to allow for more types of screenshots in future
         this.logger.debug(`screenshot data url (truncated): ${screenshotDataUrl.slice(0, 100)}...`);
 
         let monitorRejectionInfo: string | undefined;
@@ -949,6 +961,8 @@ export class AgentController {
         const taskIdBeingTerminated = this.taskId;
         this.logger.info(`TERMINATING TASK ${this.taskId} which had specification: ${this.taskSpecification}; final this.state was ${AgentControllerState[this.state]}`);
         this.taskId = undefined;
+        taskIdHolder.currTaskId = undefined;
+        //todo start up async process to export all logging and screenshots for the current taskId to a downloaded zip archive
         this.taskSpecification = "";
         this.currTaskTabId = undefined;
         this.state = AgentControllerState.IDLE;
