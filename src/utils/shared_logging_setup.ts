@@ -42,8 +42,16 @@ export interface AgentDb extends DBSchema {
             taskId: string;
             msg: string;
         };
-        indexes: { 'by-ts': "timestamp", 'by-task': "taskId" };
+        indexes: { 'by-ts': string, 'by-task': string };
     };
+}
+
+export interface LogMessage {
+    timestamp: string;
+    loggerName: string;
+    level: LogLevelNames;
+    taskId: string;
+    msg: string;
 }
 
 export const dbConnHolder: { dbConn: IDBPDatabase<AgentDb> | null } = {dbConn: null};

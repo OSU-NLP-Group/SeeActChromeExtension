@@ -2,7 +2,7 @@ import {Mutex} from "async-mutex";
 import {SerializableElementData} from "./BrowserHelper";
 import {v4 as uuidV4} from 'uuid';
 import {Logger} from "loglevel";
-import {createNamedLogger, dbConnHolder, LOGS_OBJECT_STORE, taskIdHolder} from "./shared_logging_setup";
+import {createNamedLogger, dbConnHolder, LogMessage, LOGS_OBJECT_STORE, taskIdHolder} from "./shared_logging_setup";
 import {OpenAiEngine} from "./OpenAiEngine";
 import {
     Action,
@@ -16,6 +16,8 @@ import {formatChoices, generatePrompt, LmmPrompts, postProcessActionLlm, StrTrip
 import {getIndexFromOptionName} from "./format_prompt_utils";
 import {ChromeWrapper} from "./ChromeWrapper";
 import Port = chrome.runtime.Port;
+import JSZip from "jszip";
+import saveAs from "file-saver";
 
 /**
  * states for the agent controller Finite State Machine
@@ -76,6 +78,8 @@ export class AgentController {
     taskId: string | undefined = undefined;
     private taskSpecification: string = "";
     currTaskTabId: number | undefined;
+
+    initWebsiteForTask: string | undefined;
 
 
     //todo rename this to pendingActionInfo
@@ -178,6 +182,7 @@ export class AgentController {
 
             if (isStartOfTask) {
                 this.currTaskTabId = tabId;
+                this.initWebsiteForTask = tab.url;
             } else if (this.currTaskTabId !== tabId) {
                 if (this.mightNextActionCausePageNav) {
                     this.currTaskTabId = tabId;
@@ -960,17 +965,30 @@ export class AgentController {
     terminateTask = (): void => {
         const taskIdBeingTerminated = this.taskId;
         this.logger.info(`TERMINATING TASK ${this.taskId} which had specification: ${this.taskSpecification}; final this.state was ${AgentControllerState[this.state]}`);
+        this.logger.info("action history for task: " + JSON.stringify(this.actionsSoFar));
+        this.logger.info(`summary of actions in task: ${this.opsCount} operations, ${this.noopCount} no-ops, ${this.failureCount} failures; at end of task, the length of the failure-or-noop streak was ${this.failureOrNoopStreak} (this is not the length of the longest such streak during the task)`)
+        if (this.taskId === undefined) {
+            this.logger.warn("no task id stored, so not storing logs for terminated task");
+        } else {
+            this.logger.info("starting process of exporting task history to zip file download");
+            this.exportTaskHistory(this.taskId, this.taskSpecification, this.actionsSoFar, this.opsCount,
+                this.noopCount, this.failureCount, this.failureOrNoopStreak, this.initWebsiteForTask)
+                .then(() => {
+                    this.logger.info("task history exported successfully for task " + this.taskId);
+                }, (error) => {
+                    this.logger.error(`error while trying to export task history for task ${this.taskId}; error: ${renderUnknownValue(error)}`);
+                });
+        }
         this.taskId = undefined;
         taskIdHolder.currTaskId = undefined;
-        //todo start up async process to export all logging and screenshots for the current taskId to a downloaded zip archive
+
         this.taskSpecification = "";
         this.currTaskTabId = undefined;
+        this.initWebsiteForTask = undefined;
         this.state = AgentControllerState.IDLE;
         this.tentativeActionInfo = undefined;
         this.mightNextActionCausePageNav = false;
-        this.logger.info("action history for task: " + JSON.stringify(this.actionsSoFar));
         this.actionsSoFar = [];
-        this.logger.info(`summary of actions in task: ${this.opsCount} operations, ${this.noopCount} no-ops, ${this.failureCount} failures; at end of task, the length of the failure-or-noop streak was ${this.failureOrNoopStreak} (this is not the length of the longest such streak during the task)`)
         this.opsCount = 0;
         this.noopCount = 0;
         this.failureCount = 0;
@@ -1003,6 +1021,51 @@ export class AgentController {
         // exception handling and control flow expectations wrt group management
         // If groupEnd throws when there's no group to escape, use a try catch and the catch block would break the loop
         this.terminationSignal = false;
+    }
+
+    exportTaskHistory = async (
+        givenTaskId: string, taskSpec: string, actionsHistory: ActionRecord[], numOps: number, numNoops: number,
+        numFailures: number, failOrNoopStreakAtEnd: number, startingWebUrl: string | undefined): Promise<void> => {
+        if (!dbConnHolder.dbConn) {
+            this.logger.error("no db connection available to export task history");
+            return;
+        }
+        let logsForTask: LogMessage[];
+        try {
+            logsForTask = await dbConnHolder.dbConn.getAllFromIndex(LOGS_OBJECT_STORE, "by-task", givenTaskId);
+        } catch (error: any) {
+            this.logger.error(`error while trying to get logs for task ${givenTaskId} from db for export to zip; error: ${renderUnknownValue(error)}`);
+            return;
+        }
+        const logFileContents = logsForTask.map(log => `${log.timestamp} ${log.loggerName} ${log.level}: ${log.msg}`)
+            .join("\n");
+        const zip = new JSZip();
+        zip.file("agent.log", logFileContents);
+
+        const taskResult = {
+            task: taskSpec,
+            website: startingWebUrl,
+            num_operations: numOps,
+            num_noops: numNoops,
+            num_failures: numFailures,
+            fail_or_noop_streak: failOrNoopStreakAtEnd,
+            action_history: actionsHistory
+        };
+        zip.file("result.json", JSON.stringify(taskResult, null, 4));
+
+        this.logger.info(`about to compress task info into virtual zip file for task ${givenTaskId}`);
+        zip.generateAsync(
+            {type: "blob", compression: "DEFLATE", compressionOptions: {level: 5}}).then((content) => {
+            this.logger.info(`successfully generated virtual zip file for task ${givenTaskId}; about to save it as a download`);
+            try {
+                saveAs(content, `task-${givenTaskId}-trace.zip`);
+            } catch (error: any) {
+                this.logger.error(`error while trying to save zip file for task ${givenTaskId}; error: ${renderUnknownValue(error)}`);
+            }
+            this.logger.info(`successfully saved zip file for task ${givenTaskId}`);
+        }, (error) => {
+            this.logger.error(`error while trying to generate zip file for task ${givenTaskId}; error: ${renderUnknownValue(error)}`);
+        });
     }
 
     //todo getActiveTab, sendEnterKeyPress, and hoverOnElem are good candidates for being moved out of AgentController (which is way too big)
