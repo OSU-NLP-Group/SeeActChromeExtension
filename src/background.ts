@@ -70,7 +70,7 @@ chrome.runtime.onInstalled.addListener(async function (details) {
             if (chrome.runtime.lastError) {
                 centralLogger.error("error opening installation greeting page:", chrome.runtime.lastError);
             } else {
-                centralLogger.info("opened installation greeting page in tab:", tab);
+                centralLogger.info("opened installation greeting page in tab:", JSON.stringify(tab));
             }
         });
     } else if (details.reason === "update") {

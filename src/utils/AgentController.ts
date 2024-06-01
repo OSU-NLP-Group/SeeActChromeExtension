@@ -17,7 +17,6 @@ import {getIndexFromOptionName} from "./format_prompt_utils";
 import {ChromeWrapper} from "./ChromeWrapper";
 import Port = chrome.runtime.Port;
 import JSZip from "jszip";
-import saveAs from "file-saver";
 
 /**
  * states for the agent controller Finite State Machine
@@ -974,9 +973,9 @@ export class AgentController {
             this.exportTaskHistory(this.taskId, this.taskSpecification, this.actionsSoFar, this.opsCount,
                 this.noopCount, this.failureCount, this.failureOrNoopStreak, this.initWebsiteForTask)
                 .then(() => {
-                    this.logger.info("task history exported successfully for task " + this.taskId);
+                    this.logger.debug("task history successfully sent to side panel (for export to file) for task " + taskIdBeingTerminated);
                 }, (error) => {
-                    this.logger.error(`error while trying to export task history for task ${this.taskId}; error: ${renderUnknownValue(error)}`);
+                    this.logger.error(`error while trying to export task history for task ${taskIdBeingTerminated}; error: ${renderUnknownValue(error)}`);
                 });
         }
         this.taskId = undefined;
@@ -1000,6 +999,18 @@ export class AgentController {
             this.killPageConnection(this.currPortToContentScript, true);
             this.currPortToContentScript = undefined;
         }
+        //not killing side panel port here because it's needed for task history export; it'll be killed by that process
+
+        //todo if aiEngine ever has its own nontrivial bits of task-specific state, should probably somehow reset them here
+
+        //todo if I use console.group elsewhere, should use console.groupEnd() here repeatedly (maybe 10 times) to be
+        // ~completely certain that any nested groups get escaped when the task ends, even if things went really wrong with
+        // exception handling and control flow expectations wrt group management
+        // If groupEnd throws when there's no group to escape, use a try catch and the catch block would break the loop
+        this.terminationSignal = false;
+    }
+
+    killSidePanelConnection = (taskIdBeingTerminated: string) => {
         if (this.currPortToSidePanel) {
             try {
                 //todo when I eventually give the terminateTask() method a 'reason' argument, I should pass that along
@@ -1014,13 +1025,6 @@ export class AgentController {
             this.killPageConnection(this.currPortToSidePanel, false);
             this.currPortToSidePanel = undefined;
         }
-        //todo if aiEngine ever has its own nontrivial bits of task-specific state, should probably somehow reset them here
-
-        //todo if I use console.group elsewhere, should use console.groupEnd() here repeatedly (maybe 10 times) to be
-        // ~completely certain that any nested groups get escaped when the task ends, even if things went really wrong with
-        // exception handling and control flow expectations wrt group management
-        // If groupEnd throws when there's no group to escape, use a try catch and the catch block would break the loop
-        this.terminationSignal = false;
     }
 
     exportTaskHistory = async (
@@ -1028,6 +1032,7 @@ export class AgentController {
         numFailures: number, failOrNoopStreakAtEnd: number, startingWebUrl: string | undefined): Promise<void> => {
         if (!dbConnHolder.dbConn) {
             this.logger.error("no db connection available to export task history");
+            this.killSidePanelConnection(givenTaskId);
             return;
         }
         let logsForTask: LogMessage[];
@@ -1035,10 +1040,13 @@ export class AgentController {
             logsForTask = await dbConnHolder.dbConn.getAllFromIndex(LOGS_OBJECT_STORE, "by-task", givenTaskId);
         } catch (error: any) {
             this.logger.error(`error while trying to get logs for task ${givenTaskId} from db for export to zip; error: ${renderUnknownValue(error)}`);
+            this.killSidePanelConnection(givenTaskId);
             return;
         }
-        const logFileContents = logsForTask.map(log => `${log.timestamp} ${log.loggerName} ${log.level}: ${log.msg}`)
+        const logFileContents = logsForTask.map(log =>
+            `${log.timestamp} ${log.loggerName} ${log.level.toUpperCase()}: ${log.msg}`)
             .join("\n");
+        this.logger.debug(`log file contents has length ${logFileContents.length}`);
         const zip = new JSZip();
         zip.file("agent.log", logFileContents);
 
@@ -1051,20 +1059,36 @@ export class AgentController {
             fail_or_noop_streak: failOrNoopStreakAtEnd,
             action_history: actionsHistory
         };
-        zip.file("result.json", JSON.stringify(taskResult, null, 4));
+        const resultStr = JSON.stringify(taskResult, null, 4);
+        this.logger.debug(`task history for task ${givenTaskId} has length: ${resultStr.length}`);
+        zip.file("result.json", resultStr);
 
         this.logger.info(`about to compress task info into virtual zip file for task ${givenTaskId}`);
         zip.generateAsync(
-            {type: "blob", compression: "DEFLATE", compressionOptions: {level: 5}}).then((content) => {
-            this.logger.info(`successfully generated virtual zip file for task ${givenTaskId}; about to save it as a download`);
-            try {
-                saveAs(content, `task-${givenTaskId}-trace.zip`);
-            } catch (error: any) {
-                this.logger.error(`error while trying to save zip file for task ${givenTaskId}; error: ${renderUnknownValue(error)}`);
+            {type: "blob", compression: "DEFLATE", compressionOptions: {level: 5}}).then(async (content) => {
+            this.logger.debug(`successfully generated virtual zip file for task ${givenTaskId}; about to send it to side panel so that it can be saved as a download`);
+            if (!this.currPortToSidePanel) {
+                this.logger.error(`no side panel connection available to send zip file to for download (for history of task ${givenTaskId})`);
+                return;
             }
-            this.logger.info(`successfully saved zip file for task ${givenTaskId}`);
+            this.logger.debug(`blob for virtual zip file for task ${givenTaskId} has byte length: ${content.size}`);
+            const arrBuffForTraceZip = await content.arrayBuffer();
+            this.logger.debug(`array buffer made from that blob has length: ${arrBuffForTraceZip.byteLength}`);
+            const arrForTraceZip = Array.from(new Uint8Array(arrBuffForTraceZip));
+            this.logger.debug(`array made from that buffer has length: ${arrForTraceZip.length}`);
+            try {
+                this.currPortToSidePanel.postMessage({
+                    type: Background2PanelPortMsgType.TASK_HISTORY_EXPORT, data: arrForTraceZip,
+                    fileName: `task-${givenTaskId}-trace.zip`
+                });
+            } catch (error: any) {
+                this.logger.error(`error while trying to send zip file for task ${givenTaskId} to side panel for download; error: ${renderUnknownValue(error)}`);
+            }
+            this.logger.debug(`sent zip file for task ${givenTaskId}'s history to side panel for download`);
+            this.killSidePanelConnection(givenTaskId);
         }, (error) => {
             this.logger.error(`error while trying to generate zip file for task ${givenTaskId}; error: ${renderUnknownValue(error)}`);
+            this.killSidePanelConnection(givenTaskId);
         });
     }
 

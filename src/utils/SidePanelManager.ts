@@ -8,6 +8,7 @@ import {
 } from "./misc";
 import {Mutex} from "async-mutex";
 import {ActionInfo} from "./AgentController";
+import saveAs from "file-saver";
 
 
 export interface SidePanelElements {
@@ -182,7 +183,7 @@ export class SidePanelManager {
     }
 
     handleAgentControllerMsg = async (message: any): Promise<void> => {
-        this.logger.trace(`message received from background script: ${JSON.stringify(message)} by side panel`);
+        this.logger.trace(`message received from background script: ${JSON.stringify(message).slice(0,100)} by side panel`);
         if (message.type === Background2PanelPortMsgType.AGENT_CONTROLLER_READY) {
             await this.mutex.runExclusive(() => this.processConnectionReady());
         } else if (message.type === Background2PanelPortMsgType.TASK_STARTED) {
@@ -195,8 +196,27 @@ export class SidePanelManager {
             await this.mutex.runExclusive(() => this.processTaskEndConfirmation(message));
         } else if (message.type === Background2PanelPortMsgType.ERROR) {
             await this.mutex.runExclusive(() => this.processErrorFromController(message));
+        } else if (message.type === Background2PanelPortMsgType.TASK_HISTORY_EXPORT) {
+            this.exportTaskHistoryToFileDownload(message);
         } else {
             this.logger.warn("unknown type of message from background script: " + JSON.stringify(message));
+        }
+    }
+
+    private exportTaskHistoryToFileDownload(message: any) {
+        try {
+            this.logger.debug(`received array of data from background script for a zip file, length: ${message.data.length}`);
+            const arrBuff = new Uint8Array(message.data).buffer;
+            this.logger.debug(`converted array of data to array buffer, length: ${arrBuff.byteLength}`);
+            const blob = new Blob([arrBuff]);
+            this.logger.debug(`after converting array buffer to blob, length is ${blob.size} bytes`);
+            this.logger.debug(`about to save zip file ${message.fileName} to user's computer`);
+            saveAs(blob, message.fileName);
+            this.logger.info(`successfully saved zip file ${message.fileName}`);
+        } catch (error: any) {
+            const errMsg = `error while trying to save zip file to user's computer: ${error.message}`;
+            this.logger.error(errMsg);
+            this.setStatusWithDelayedClear(errMsg);
         }
     }
 
