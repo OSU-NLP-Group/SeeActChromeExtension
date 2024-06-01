@@ -166,7 +166,7 @@ export class BrowserHelper {
                 return parentValue + "Selected Options: " + this.removeEolAndCollapseWhitespace(selectedOptionText.trim())
                     + " - Options: " + optionsText;
             } else {
-                this.logger.warn("No selected option found for select element (or selected option's text was empty string), processing it as a generic element");
+                this.logger.info("ELEMENT DESCRIPTION PROBLEM- No selected option found for select element (or selected option's text was empty string), processing it as a generic element");
             }
         }
 
@@ -188,7 +188,7 @@ export class BrowserHelper {
                     return inputValue + this.removeEolAndCollapseWhitespace(innerText);
                 } else {
                     //why are we completely skipping textContent if it's too long and innerText is empty? why not just truncate it?
-                    this.logger.warn("Element text is too long and innerText is empty, processing it as a generic element");
+                    this.logger.info("ELEMENT DESCRIPTION PROBLEM- Element text is too long and innerText is empty, processing it as a generic element");
                 }
             } else {
                 //possible improvement by including parentValue, but that would by default lead to duplication

@@ -3,7 +3,7 @@ import {
     assertIsValidLogLevelName,
     augmentLogMsg,
     createNamedLogger, DB_NAME, dbConnHolder, initializeDbConnection,
-    LOGS_OBJECT_STORE, taskIdHolder, taskIdPlaceholderVal
+    LOGS_OBJECT_STORE, SCREENSHOTS_OBJECT_STORE, taskIdHolder, taskIdPlaceholderVal
 } from "./utils/shared_logging_setup";
 import {OpenAiEngine} from "./utils/OpenAiEngine";
 import log from "loglevel";
@@ -44,6 +44,13 @@ chrome.runtime.onInstalled.addListener(async function (details) {
                             {keyPath: "key", autoIncrement: true});
                         logsObjStore.createIndex("by-ts", "timestamp", {unique: false});
                         logsObjStore.createIndex("by-task", "taskId", {unique: false});
+                    }
+                    if (!db.objectStoreNames.contains(SCREENSHOTS_OBJECT_STORE)) {
+                        centralLogger.info("creating object store for screenshots during initial install of extension");
+                        const screenshotsObjStore = db.createObjectStore(SCREENSHOTS_OBJECT_STORE,
+                            {keyPath: "screenshotId"});
+                        screenshotsObjStore.createIndex("by-ts", "timestamp", {unique: false});
+                        screenshotsObjStore.createIndex("by-task", "taskId", {unique: false});
                     }
                 }
             });

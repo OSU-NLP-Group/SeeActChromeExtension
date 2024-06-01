@@ -2,11 +2,17 @@ import {Mutex} from "async-mutex";
 import {SerializableElementData} from "./BrowserHelper";
 import {v4 as uuidV4} from 'uuid';
 import {Logger} from "loglevel";
-import {createNamedLogger, dbConnHolder, LogMessage, LOGS_OBJECT_STORE, taskIdHolder} from "./shared_logging_setup";
+import {
+    createNamedLogger,
+    dbConnHolder,
+    LogMessage,
+    LOGS_OBJECT_STORE, ScreenshotRecord, SCREENSHOTS_OBJECT_STORE,
+    taskIdHolder
+} from "./shared_logging_setup";
 import {OpenAiEngine} from "./OpenAiEngine";
 import {
     Action,
-    Background2PagePortMsgType, Background2PanelPortMsgType,
+    Background2PagePortMsgType, Background2PanelPortMsgType, base64ToByteArray,
     buildGenericActionDesc,
     expectedMsgForPortDisconnection,
     Page2BackgroundPortMsgType, Panel2BackgroundPortMsgType, renderUnknownValue, setupMonitorModeCache,
@@ -125,6 +131,8 @@ export class AgentController {
     cachedMonitorMode: boolean = false;
     wasPrevActionRejectedByMonitor: boolean = false;
     monitorFeedback: string = "";
+
+    numScreenshotsTakenForPromptingCurrentAction: number = 0;
 
 
     state: AgentControllerState = AgentControllerState.IDLE;
@@ -337,6 +345,10 @@ export class AgentController {
             this.logger.error("received 'sending interactive elements' message from content script while not waiting for elements, but rather in state " + AgentControllerState[this.state]);
             this.terminateTask();
             return;
+        } else if (this.taskId === undefined) {
+            this.logger.error("task id is undefined when receiving information about interactive elements; terminating task");
+            this.terminateTask();
+            return;
         }
         this.logger.trace("received interactive elements from content script")
 
@@ -359,18 +371,36 @@ export class AgentController {
         // use a non-ML software tool to check for the two images being too close to identical
         //      the latter could be easily thrown off by ads or other dynamic content. maybe getting a good solution for this would be more effort than it's worth
 
-        //todo? try catch for error when trying to get screenshot, if that fails, then terminate task
-        const screenshotDataUrl: string = await this.chromeWrapper.fetchVisibleTabScreenshot();
-        //TODO!! store screenshot in indexedDB for later export
-        // separate object store? key- based on task id, action step, picture index for that action?
-        //  "action step" need another thing there to distinguish between the image retrieved for the first prompting after 3 completed actions
-        //  vs the image retrieved for the 2nd prompting after 3 completed actions (because the 1st prompting's output was rejected/noop)
-        //  vs the image retrieved for the 3rd prompting after 3 completed actions (because user, in monitor mode, rejected the action proposed by the 2nd prompting's output)
-        //  etc.
-        //  Then, for "picture index", there's the screenshot taken for the prompting (already captured but not yet persisted)
-        //   but also, if the chosen action after that has a target element, I've been asked to capture a screenshot of the tab with the target element outlined in red (like when monitor mode is on)
-        //    distinguish with a string component of the key: "initial" vs "targetted", to allow for more types of screenshots in future
+        const initScreenshotTs = new Date().toISOString();
+        let screenshotDataUrl: string;
+        try {
+            screenshotDataUrl = await this.chromeWrapper.fetchVisibleTabScreenshot();
+        } catch (error: any) {
+            this.logger.error(`error while trying to get screenshot of current tab; terminating task; error: ${renderUnknownValue(error)}`);
+            this.terminateTask();
+            return;
+        }
         this.logger.debug(`screenshot data url (truncated): ${screenshotDataUrl.slice(0, 100)}...`);
+        if (dbConnHolder.dbConn) {
+            const screenshotIdStr = [this.taskId, this.actionsSoFar.length,
+                this.numScreenshotsTakenForPromptingCurrentAction, "initial"].join(",");
+            const indexOfStartBase64 = screenshotDataUrl.indexOf(',') + 1;
+            if (indexOfStartBase64 <= 0) {
+                this.logger.error("error while trying to add screenshot to indexeddb: screenshot data url does not contain expected prefix");
+                this.terminateTask();
+                return;
+            }
+            const screenshotBase64Content = screenshotDataUrl.substring(indexOfStartBase64);
+            dbConnHolder.dbConn.add(SCREENSHOTS_OBJECT_STORE, {
+                timestamp: initScreenshotTs, taskId: this.taskId, numPriorActions: this.actionsSoFar.length,
+                numPriorScreenshotsForPrompts: this.numScreenshotsTakenForPromptingCurrentAction,
+                screenshotType: "initial", screenshotId: screenshotIdStr, screenshot64: screenshotBase64Content
+            }).catch((error) => console.error("error adding screenshot to indexeddb:", renderUnknownValue(error)));
+        } else {
+            this.logger.warn("no db connection available, cannot save screenshot");
+        }
+
+        this.numScreenshotsTakenForPromptingCurrentAction++;
 
         let monitorRejectionInfo: string | undefined;
         if (this.wasPrevActionRejectedByMonitor) {
@@ -443,6 +473,7 @@ export class AgentController {
                     }
                 }
             } else {
+                this.numScreenshotsTakenForPromptingCurrentAction = 0;
                 this.state = AgentControllerState.WAITING_FOR_ACTION;
                 try {
                     pageActorPort.postMessage({
@@ -728,6 +759,7 @@ export class AgentController {
             this.terminateTask();
             return;
         }
+        this.numScreenshotsTakenForPromptingCurrentAction = 0;
         this.state = AgentControllerState.WAITING_FOR_ACTION;
         try {
             this.currPortToContentScript.postMessage({
@@ -966,16 +998,17 @@ export class AgentController {
         this.logger.info(`TERMINATING TASK ${this.taskId} which had specification: ${this.taskSpecification}; final this.state was ${AgentControllerState[this.state]}`);
         this.logger.info("action history for task: " + JSON.stringify(this.actionsSoFar));
         this.logger.info(`summary of actions in task: ${this.opsCount} operations, ${this.noopCount} no-ops, ${this.failureCount} failures; at end of task, the length of the failure-or-noop streak was ${this.failureOrNoopStreak} (this is not the length of the longest such streak during the task)`)
-        if (this.taskId === undefined) {
+        if (taskIdBeingTerminated === undefined) {
             this.logger.warn("no task id stored, so not storing logs for terminated task");
         } else {
             this.logger.info("starting process of exporting task history to zip file download");
-            this.exportTaskHistory(this.taskId, this.taskSpecification, this.actionsSoFar, this.opsCount,
+            this.exportTaskHistory(taskIdBeingTerminated, this.taskSpecification, this.actionsSoFar, this.opsCount,
                 this.noopCount, this.failureCount, this.failureOrNoopStreak, this.initWebsiteForTask)
                 .then(() => {
-                    this.logger.debug("task history successfully sent to side panel (for export to file) for task " + taskIdBeingTerminated);
+                    this.logger.debug(`for task ${taskIdBeingTerminated}, the process of trying to send task history to side panel (for export as downloaded file) concluded (possibly unsuccessfully but with a fully-handled error)`);
                 }, (error) => {
                     this.logger.error(`error while trying to export task history for task ${taskIdBeingTerminated}; error: ${renderUnknownValue(error)}`);
+                    this.killSidePanelConnection(taskIdBeingTerminated);
                 });
         }
         this.taskId = undefined;
@@ -994,6 +1027,7 @@ export class AgentController {
         this.failureOrNoopStreak = 0;
         this.wasPrevActionRejectedByMonitor = false;
         this.monitorFeedback = "";
+        this.numScreenshotsTakenForPromptingCurrentAction = 0;
         if (this.currPortToContentScript) {
             this.logger.info("terminating task while content script connection may still be open, attempting to close it")
             this.killPageConnection(this.currPortToContentScript, true);
@@ -1062,6 +1096,28 @@ export class AgentController {
         const resultStr = JSON.stringify(taskResult, null, 4);
         this.logger.debug(`task history for task ${givenTaskId} has length: ${resultStr.length}`);
         zip.file("result.json", resultStr);
+
+        const screenshotsFolder = zip.folder("screenshots") ?? zip;
+        if (screenshotsFolder == zip) {//using referential equality intentionally here
+            this.logger.error("while trying to make folder for screenshots in zip file for task history, JSZip misbehaved (returned null from zip.folder() call); defaulting to just adding the screenshots to the root of the zip file");
+        }
+
+        let screenshotsForTask: ScreenshotRecord[];
+        try {
+            screenshotsForTask = await dbConnHolder.dbConn.getAllFromIndex(SCREENSHOTS_OBJECT_STORE, "by-task", givenTaskId);
+        } catch (error: any) {
+            this.logger.error(`error while trying to get screenshots for task ${givenTaskId} from db for export to zip; error: ${renderUnknownValue(error)}`);
+            this.killSidePanelConnection(givenTaskId);
+            return;
+        }
+        for (const screenshotRecord of screenshotsForTask) {
+            this.logger.debug(`about to add screenshot to zip file for task with id ${screenshotRecord.screenshotId} and base64-data length: ${screenshotRecord.screenshot64.length}`);
+            const screenshotBytes = base64ToByteArray(screenshotRecord.screenshot64);
+            this.logger.debug(`after conversion from base64 to binary, screenshot bytes length: ${screenshotBytes.length}`);
+            const fileSafeTimestampStr = screenshotRecord.timestamp.replace(":", "-").replace(".", "_");
+            const screenshotFileName = `action-${screenshotRecord.numPriorActions}_ssPromptingIndexForAction-${screenshotRecord.numPriorScreenshotsForPrompts}_ssType-${screenshotRecord.screenshotType}_ts-${fileSafeTimestampStr}.png`;
+            screenshotsFolder.file(screenshotFileName, screenshotBytes);
+        }
 
         this.logger.info(`about to compress task info into virtual zip file for task ${givenTaskId}`);
         zip.generateAsync(

@@ -31,6 +31,7 @@ export const taskIdPlaceholderVal = "UNAFFILIATED";
 
 export const DB_NAME = "Browser_LMM_Agent";
 export const LOGS_OBJECT_STORE = "logs";
+export const SCREENSHOTS_OBJECT_STORE = "screenshots";
 
 export interface AgentDb extends DBSchema {
     logs: {
@@ -44,6 +45,24 @@ export interface AgentDb extends DBSchema {
         };
         indexes: { 'by-ts': string, 'by-task': string };
     };
+    screenshots: {
+        key: string;
+        value: {
+            timestamp: string;
+            taskId: string;
+            numPriorActions: number;
+            //this is just for when monitor rejection causes a new screenshot to be taken for the next prompting
+            numPriorScreenshotsForPrompts: number;
+            //"initial" for the one going into the prompt, "targeted" for the screenshot after the target element has
+            // been highlighted ("targeted" is not created for element-independent actions)
+            screenshotType: string,
+            //comma-separated-list of taskId, numPriorActions, numPriorPromptings, screenshotType; serves as key for
+            // the object store
+            screenshotId: string;
+            screenshot64: string;
+        };
+        indexes: { 'by-ts': string, 'by-task': string };
+    };
 }
 
 export interface LogMessage {
@@ -52,6 +71,15 @@ export interface LogMessage {
     level: LogLevelNames;
     taskId: string;
     msg: string;
+}
+export interface ScreenshotRecord {
+    timestamp: string;
+    taskId: string;
+    numPriorActions: number;
+    numPriorScreenshotsForPrompts: number;
+    screenshotType: string;
+    screenshotId: string;
+    screenshot64: string;
 }
 
 export const dbConnHolder: { dbConn: IDBPDatabase<AgentDb> | null } = {dbConn: null};
