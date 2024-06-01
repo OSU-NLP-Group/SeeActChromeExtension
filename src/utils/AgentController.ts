@@ -1114,8 +1114,8 @@ export class AgentController {
             this.logger.debug(`about to add screenshot to zip file for task with id ${screenshotRecord.screenshotId} and base64-data length: ${screenshotRecord.screenshot64.length}`);
             const screenshotBytes = base64ToByteArray(screenshotRecord.screenshot64);
             this.logger.debug(`after conversion from base64 to binary, screenshot bytes length: ${screenshotBytes.length}`);
-            const fileSafeTimestampStr = screenshotRecord.timestamp.replace(":", "-").replace(".", "_");
-            const screenshotFileName = `action-${screenshotRecord.numPriorActions}_ssPromptingIndexForAction-${screenshotRecord.numPriorScreenshotsForPrompts}_ssType-${screenshotRecord.screenshotType}_ts-${fileSafeTimestampStr}.png`;
+            const fileSafeTimestampStr = screenshotRecord.timestamp.split(":").join("-").split(".").join("_");
+            const screenshotFileName = `action-${screenshotRecord.numPriorActions}_promptingIndexForAction-${screenshotRecord.numPriorScreenshotsForPrompts}_type-${screenshotRecord.screenshotType}_ts-${fileSafeTimestampStr}.png`;
             screenshotsFolder.file(screenshotFileName, screenshotBytes);
         }
 

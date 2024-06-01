@@ -223,7 +223,7 @@ export class BrowserHelper {
             }
         }
 
-        this.logger.warn("unable to create element description for element at xpath " + getXPath(element));
+        this.logger.info("ELEMENT DESCRIPTION PROBLEM- unable to create element description for element at xpath " + getXPath(element));
         return null;
     }
 
