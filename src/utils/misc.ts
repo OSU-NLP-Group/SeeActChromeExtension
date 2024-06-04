@@ -11,10 +11,9 @@ export const panelToControllerPort = "side-panel-2-agent-controller";
  */
 export enum PageRequestType {
     LOG = "log",
-    START_TASK = "startTask",
-    END_TASK = "endTask",
     PRESS_ENTER = "pressEnter",
-    HOVER = "hover"
+    HOVER = "hover",
+    SCREENSHOT_WITH_TARGET_HIGHLIGHTED= "screenshotWithTargetElementHighlighted"
 }
 
 /**

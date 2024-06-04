@@ -6,23 +6,30 @@ import {
     createNamedLogger,
     dbConnHolder,
     LogMessage,
-    LOGS_OBJECT_STORE, ScreenshotRecord, SCREENSHOTS_OBJECT_STORE,
+    LOGS_OBJECT_STORE,
+    ScreenshotRecord,
+    SCREENSHOTS_OBJECT_STORE,
     taskIdHolder
 } from "./shared_logging_setup";
 import {OpenAiEngine} from "./OpenAiEngine";
 import {
     Action,
-    Background2PagePortMsgType, Background2PanelPortMsgType, base64ToByteArray,
+    Background2PagePortMsgType,
+    Background2PanelPortMsgType,
+    base64ToByteArray,
     buildGenericActionDesc,
     expectedMsgForPortDisconnection,
-    Page2BackgroundPortMsgType, Panel2BackgroundPortMsgType, renderUnknownValue, setupMonitorModeCache,
+    Page2BackgroundPortMsgType,
+    Panel2BackgroundPortMsgType,
+    renderUnknownValue,
+    setupMonitorModeCache,
     sleep
 } from "./misc";
 import {formatChoices, generatePrompt, LmmPrompts, postProcessActionLlm, StrTriple} from "./format_prompts";
 import {getIndexFromOptionName} from "./format_prompt_utils";
 import {ChromeWrapper} from "./ChromeWrapper";
-import Port = chrome.runtime.Port;
 import JSZip from "jszip";
+import Port = chrome.runtime.Port;
 
 /**
  * states for the agent controller Finite State Machine
@@ -345,10 +352,6 @@ export class AgentController {
             this.logger.error("received 'sending interactive elements' message from content script while not waiting for elements, but rather in state " + AgentControllerState[this.state]);
             this.terminateTask();
             return;
-        } else if (this.taskId === undefined) {
-            this.logger.error("task id is undefined when receiving information about interactive elements; terminating task");
-            this.terminateTask();
-            return;
         }
         this.logger.trace("received interactive elements from content script")
 
@@ -371,36 +374,8 @@ export class AgentController {
         // use a non-ML software tool to check for the two images being too close to identical
         //      the latter could be easily thrown off by ads or other dynamic content. maybe getting a good solution for this would be more effort than it's worth
 
-        const initScreenshotTs = new Date().toISOString();
-        let screenshotDataUrl: string;
-        try {
-            screenshotDataUrl = await this.chromeWrapper.fetchVisibleTabScreenshot();
-        } catch (error: any) {
-            this.logger.error(`error while trying to get screenshot of current tab; terminating task; error: ${renderUnknownValue(error)}`);
-            this.terminateTask();
-            return;
-        }
-        this.logger.debug(`screenshot data url (truncated): ${screenshotDataUrl.slice(0, 100)}...`);
-        if (dbConnHolder.dbConn) {
-            const screenshotIdStr = [this.taskId, this.actionsSoFar.length,
-                this.numScreenshotsTakenForPromptingCurrentAction, "initial"].join(",");
-            const indexOfStartBase64 = screenshotDataUrl.indexOf(',') + 1;
-            if (indexOfStartBase64 <= 0) {
-                this.logger.error("error while trying to add screenshot to indexeddb: screenshot data url does not contain expected prefix");
-                this.terminateTask();
-                return;
-            }
-            const screenshotBase64Content = screenshotDataUrl.substring(indexOfStartBase64);
-            dbConnHolder.dbConn.add(SCREENSHOTS_OBJECT_STORE, {
-                timestamp: initScreenshotTs, taskId: this.taskId, numPriorActions: this.actionsSoFar.length,
-                numPriorScreenshotsForPrompts: this.numScreenshotsTakenForPromptingCurrentAction,
-                screenshotType: "initial", screenshotId: screenshotIdStr, screenshot64: screenshotBase64Content
-            }).catch((error) => console.error("error adding screenshot to indexeddb:", renderUnknownValue(error)));
-        } else {
-            this.logger.warn("no db connection available, cannot save screenshot");
-        }
-
-        this.numScreenshotsTakenForPromptingCurrentAction++;
+        const screenshotDataUrl = await this.captureAndStoreScreenshot("initial");
+        if (screenshotDataUrl === undefined) { return; }//task will have been terminated by helper method
 
         let monitorRejectionInfo: string | undefined;
         if (this.wasPrevActionRejectedByMonitor) {
@@ -447,32 +422,40 @@ export class AgentController {
                 } catch (error: any) {
                     this.logger.error(`error while trying to inform side panel about pending action; terminating task; error: ${renderUnknownValue(error)}`);
                     this.terminateTask();
+                    return;
                 }
             } else {
                 this.logger.error("side panel connection lost at some point during action planning, terminating task");
                 this.terminateTask();
+                return;
+            }
+            if (this.tentativeActionInfo.elementIndex !== undefined) {
+                this.logger.info("about to instruct page actor to highlight the target element");
+                try {
+                    pageActorPort.postMessage({
+                        type: Background2PagePortMsgType.HIGHLIGHT_CANDIDATE_ELEM,
+                        elementIndex: this.tentativeActionInfo.elementIndex
+                    });
+                } catch (error: any) {
+                    if ('message' in error && error.message === expectedMsgForPortDisconnection) {
+                        this.logger.info("content script disconnected from service worker while processing interactive elements and before trying to highlight an element; task will resume after new content script connection is established");
+                        this.state = AgentControllerState.PENDING_RECONNECT;
+                        this.tentativeActionInfo = undefined;
+                    } else {
+                        this.logger.error(`unexpected error while trying to highlight an element for monitor mode; terminating task; error: ${renderUnknownValue(error)}`);
+                        this.terminateTask();
+                    }
+                    return;
+                }
             }
 
             if (this.cachedMonitorMode) {
                 this.state = AgentControllerState.WAITING_FOR_MONITOR_RESPONSE;
-                if (this.tentativeActionInfo.elementIndex !== undefined) {
-                    try {
-                        pageActorPort.postMessage({
-                            type: Background2PagePortMsgType.HIGHLIGHT_CANDIDATE_ELEM,
-                            elementIndex: this.tentativeActionInfo.elementIndex
-                        });
-                    } catch (error: any) {
-                        if ('message' in error && error.message === expectedMsgForPortDisconnection) {
-                            this.logger.info("content script disconnected from service worker while processing interactive elements and before trying to highlight an element; task will resume after new content script connection is established");
-                            this.state = AgentControllerState.PENDING_RECONNECT;
-                            this.tentativeActionInfo = undefined;
-                        } else {
-                            this.logger.error(`unexpected error while trying to highlight an element for monitor mode; terminating task; error: ${renderUnknownValue(error)}`);
-                            this.terminateTask();
-                        }
-                    }
-                }
             } else {
+                //to get high confidence that the screenshot with highlighted target element has been captured
+                if (this.tentativeActionInfo.elementIndex !== undefined) {await sleep(30);}//todo configurable?
+                //todo tune above sleep duration based on analyzing timestamps of the critical new log messages
+
                 this.numScreenshotsTakenForPromptingCurrentAction = 0;
                 this.state = AgentControllerState.WAITING_FOR_ACTION;
                 try {
@@ -558,7 +541,8 @@ export class AgentController {
 
         if (action === Action.TERMINATE) {
             this.logger.info("Task completed!");
-            this.actionsSoFar.push({actionDesc: "Terminate task as completed", success: true, explanation: explanation})
+            this.actionsSoFar.push(
+                {actionDesc: "Terminate task as completed", success: true, explanation: explanation});
             //when passing termination-reason to terminateTask(), include the explanation in that string
             this.terminateTask();
             return LmmOutputReaction.ABORT_TASK;
@@ -621,6 +605,44 @@ export class AgentController {
         return LmmOutputReaction.PROCEED_WITH_ACTION;
     }
 
+    captureAndStoreScreenshot = async (screenshotType: string): Promise<string | undefined> => {
+        let screenshotDataUrl: string | undefined;
+        if (this.taskId === undefined) {
+            this.logger.error(`task id is undefined when capturing screenshot of type ${screenshotType}; terminating task`);
+            this.terminateTask();
+            return;
+        }
+
+        const screenshotTs = new Date().toISOString();
+        try {
+            screenshotDataUrl = await this.chromeWrapper.fetchVisibleTabScreenshot();
+        } catch (error: any) {
+            this.logger.error(`error while trying to get screenshot of current tab; terminating task; error: ${renderUnknownValue(error)}`);
+            this.terminateTask();
+            return;
+        }
+        this.logger.debug(`screenshot data url (truncated): ${screenshotDataUrl.slice(0, 100)}...`);
+        if (dbConnHolder.dbConn) {
+            const screenshotIdStr = [this.taskId, this.actionsSoFar.length,
+                this.numScreenshotsTakenForPromptingCurrentAction, screenshotType].join(",");
+            const startIndexForBase64Data = screenshotDataUrl.indexOf(';base64,') + 8;
+            if (startIndexForBase64Data <= 0) {
+                this.logger.error("error while trying to add screenshot to indexeddb: screenshot data url does not contain expected prefix");
+                this.terminateTask();
+                return;
+            }
+            const screenshotBase64Content = screenshotDataUrl.substring(startIndexForBase64Data);
+            dbConnHolder.dbConn.add(SCREENSHOTS_OBJECT_STORE, {
+                timestamp: screenshotTs, taskId: this.taskId, numPriorActions: this.actionsSoFar.length,
+                numPriorScreenshotsForPrompts: this.numScreenshotsTakenForPromptingCurrentAction,
+                screenshotType: screenshotType, screenshotId: screenshotIdStr, screenshot64: screenshotBase64Content
+            }).catch((error) => console.error("error adding screenshot to indexeddb:", renderUnknownValue(error)));
+        } else {
+            this.logger.warn("no db connection available, cannot save screenshot");
+        }
+        if (screenshotType === "initial") { this.numScreenshotsTakenForPromptingCurrentAction++; }
+        return screenshotDataUrl;
+    }
 
     /**
      * @description Processes the confirmation from the content script that an action was performed, and then requests

@@ -425,6 +425,16 @@ export class PageActor {
         // https://developer.mozilla.org/en-US/docs/Web/CSS/outline
         // https://developer.mozilla.org/en-US/docs/Web/CSS/filter
         // https://developer.mozilla.org/en-US/docs/Web/CSS/border
+
+        try {
+            this.chromeWrapper.sendMessageToServiceWorker({type: PageRequestType.SCREENSHOT_WITH_TARGET_HIGHLIGHTED});
+        } catch (error: any) {
+            if ('message' in error && error.message === expectedMsgForPortDisconnection) {
+                this.logger.info("service worker disconnected from content script while content script was notifying service worker about highlighting of targeted element (requesting screenshot)");
+            } else {
+                this.logger.error(`unexpected error in content script while notifying service worker about highlighting of targeted element (requesting screenshot); error: ${renderUnknownValue(error)}`);
+            }
+        }
     }
 
     /**
