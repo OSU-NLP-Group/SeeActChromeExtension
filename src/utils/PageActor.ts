@@ -393,7 +393,7 @@ export class PageActor {
         }
     }
 
-    highlightCandidateElement = (message: any): void => {
+    highlightCandidateElement = async (message: any): Promise<void> => {
         if (!this.currInteractiveElements) {
             this.logger.error("highlight-candidate-element message received from background script but no interactive elements are currently stored");
             this.portToBackground.postMessage(
@@ -427,13 +427,17 @@ export class PageActor {
         // https://developer.mozilla.org/en-US/docs/Web/CSS/border
 
         try {
-            this.chromeWrapper.sendMessageToServiceWorker({type: PageRequestType.SCREENSHOT_WITH_TARGET_HIGHLIGHTED});
-        } catch (error: any) {
-            if ('message' in error && error.message === expectedMsgForPortDisconnection) {
-                this.logger.info("service worker disconnected from content script while content script was notifying service worker about highlighting of targeted element (requesting screenshot)");
+            const resp = await this.chromeWrapper.sendMessageToServiceWorker({
+                reqType: PageRequestType.SCREENSHOT_WITH_TARGET_HIGHLIGHTED,
+                promptingIndexForAction: message.promptingIndexForAction
+            });
+            if (resp.success) {
+                this.logger.trace("successfully got service worker to take screenshot after target element was highlighted")
             } else {
-                this.logger.error(`unexpected error in content script while notifying service worker about highlighting of targeted element (requesting screenshot); error: ${renderUnknownValue(error)}`);
+                this.logger.error("failed to get service worker to take screenshot after target element was highlighted; response message: " + resp.message);
             }
+        } catch (error: any) {
+            this.logger.error(`error in content script while notifying service worker about highlighting of targeted element (requesting screenshot); error: ${renderUnknownValue(error)}`);
         }
     }
 
@@ -450,7 +454,7 @@ export class PageActor {
         } else if (message.type === Background2PagePortMsgType.REQ_ACTION) {
             await this.performActionFromController(message);
         } else if (message.type === Background2PagePortMsgType.HIGHLIGHT_CANDIDATE_ELEM) {
-            this.highlightCandidateElement(message);
+            await this.highlightCandidateElement(message);
         } else {
             this.logger.warn("unknown message from background script: " + JSON.stringify(message));
         }

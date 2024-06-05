@@ -13,7 +13,8 @@ export enum PageRequestType {
     LOG = "log",
     PRESS_ENTER = "pressEnter",
     HOVER = "hover",
-    SCREENSHOT_WITH_TARGET_HIGHLIGHTED= "screenshotWithTargetElementHighlighted"
+    SCREENSHOT_WITH_TARGET_HIGHLIGHTED= "screenshotWithTargetElementHighlighted",
+    EXPORT_UNAFFILIATED_LOGS = "exportUnaffiliatedLogs"//i.e. logs not affiliated with any task (and so not included in any task's history export zip file)
 }
 
 /**
@@ -28,7 +29,7 @@ export enum Background2PanelPortMsgType {
     TASK_ENDED = "taskEnded",
     ERROR = "error",//cases where the agent controller wants to tell the side panel about a problem with some message from the side panel which was identified before a task id was generated
     //todo add NOTIFICATION type for agent notifying side panel of non-critical problem that will delay progress on the task (so the side panel can display that to user in status field and avoid user giving up on system)
-    TASK_HISTORY_EXPORT = "taskHistoryExport"//for when the controller has assembled a Blob for a trace.zip file for the just-finished task and needs to send it to the side panel so it can be downloaded to the user's computer
+    HISTORY_EXPORT = "historyExport"//for when the controller has assembled a Blob for a zip file containing logs and/or screenshots and needs to send it to the side panel so that it can be downloaded to the user's computer
 }
 
 /**

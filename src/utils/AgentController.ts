@@ -3,6 +3,7 @@ import {SerializableElementData} from "./BrowserHelper";
 import {v4 as uuidV4} from 'uuid';
 import {Logger} from "loglevel";
 import {
+    AgentDb,
     createNamedLogger,
     dbConnHolder,
     LogMessage,
@@ -30,6 +31,7 @@ import {getIndexFromOptionName} from "./format_prompt_utils";
 import {ChromeWrapper} from "./ChromeWrapper";
 import JSZip from "jszip";
 import Port = chrome.runtime.Port;
+import { IDBPDatabase } from "idb";
 
 /**
  * states for the agent controller Finite State Machine
@@ -139,7 +141,7 @@ export class AgentController {
     wasPrevActionRejectedByMonitor: boolean = false;
     monitorFeedback: string = "";
 
-    numScreenshotsTakenForPromptingCurrentAction: number = 0;
+    numPriorScreenshotsTakenForPromptingCurrentAction: number = 0;
 
 
     state: AgentControllerState = AgentControllerState.IDLE;
@@ -227,8 +229,6 @@ export class AgentController {
      * @param port the connection to the side panel which requested the start of the task
      */
     startTask = async (message: any, port: Port): Promise<void> => {
-        const logsSinceInstall = await dbConnHolder!.dbConn!.getAll(LOGS_OBJECT_STORE);
-        this.logger.info("log messages since install: ", logsSinceInstall.map(entry => entry.msg).join(";| "));
         if (this.taskId !== undefined) {
             const taskRejectMsg = `Task ${this.taskId} already in progress; not starting new task`;
             this.logger.warn(taskRejectMsg);
@@ -283,11 +283,13 @@ export class AgentController {
             this.currPortToSidePanel = port;
             this.currPortToSidePanel.onMessage.addListener(this.handlePanelMsgToController);
             this.currPortToSidePanel.onDisconnect.addListener(this.handlePanelDisconnectFromController);
+            this.logger.trace("about to notify side panel that agent controller is ready");
             try {
                 this.currPortToSidePanel.postMessage({type: Background2PanelPortMsgType.AGENT_CONTROLLER_READY});
             } catch (error: any) {
                 this.logger.error(`error while trying to inform side panel about agent controller's readiness for start of new task; error: ${renderUnknownValue(error)}`);
             }
+            this.logger.trace("sent notification to side panel that agent controller is ready");
         });
     }
 
@@ -373,8 +375,10 @@ export class AgentController {
         // Maybe could limit this to only some action types that are particularly prone to being ineffectual, or
         // use a non-ML software tool to check for the two images being too close to identical
         //      the latter could be easily thrown off by ads or other dynamic content. maybe getting a good solution for this would be more effort than it's worth
+        const numPromptingScreenshotsTakenForCurrentActionBeforeThisRound = this.numPriorScreenshotsTakenForPromptingCurrentAction;
 
-        const screenshotDataUrl = await this.captureAndStoreScreenshot("initial");
+        const screenshotDataUrl = await this.captureAndStoreScreenshot("initial",
+            numPromptingScreenshotsTakenForCurrentActionBeforeThisRound);
         if (screenshotDataUrl === undefined) { return; }//task will have been terminated by helper method
 
         let monitorRejectionInfo: string | undefined;
@@ -434,7 +438,8 @@ export class AgentController {
                 try {
                     pageActorPort.postMessage({
                         type: Background2PagePortMsgType.HIGHLIGHT_CANDIDATE_ELEM,
-                        elementIndex: this.tentativeActionInfo.elementIndex
+                        elementIndex: this.tentativeActionInfo.elementIndex,
+                        promptingIndexForAction: numPromptingScreenshotsTakenForCurrentActionBeforeThisRound
                     });
                 } catch (error: any) {
                     if ('message' in error && error.message === expectedMsgForPortDisconnection) {
@@ -453,10 +458,9 @@ export class AgentController {
                 this.state = AgentControllerState.WAITING_FOR_MONITOR_RESPONSE;
             } else {
                 //to get high confidence that the screenshot with highlighted target element has been captured
-                if (this.tentativeActionInfo.elementIndex !== undefined) {await sleep(30);}//todo configurable?
-                //todo tune above sleep duration based on analyzing timestamps of the critical new log messages
+                if (this.tentativeActionInfo.elementIndex !== undefined) {await sleep(40);}//todo configurable?
 
-                this.numScreenshotsTakenForPromptingCurrentAction = 0;
+                this.numPriorScreenshotsTakenForPromptingCurrentAction = 0;
                 this.state = AgentControllerState.WAITING_FOR_ACTION;
                 try {
                     pageActorPort.postMessage({
@@ -605,7 +609,7 @@ export class AgentController {
         return LmmOutputReaction.PROCEED_WITH_ACTION;
     }
 
-    captureAndStoreScreenshot = async (screenshotType: string): Promise<string | undefined> => {
+    captureAndStoreScreenshot = async (screenshotType: string, promptingIndexForAction: number): Promise<string | undefined> => {
         let screenshotDataUrl: string | undefined;
         if (this.taskId === undefined) {
             this.logger.error(`task id is undefined when capturing screenshot of type ${screenshotType}; terminating task`);
@@ -621,10 +625,10 @@ export class AgentController {
             this.terminateTask();
             return;
         }
-        this.logger.debug(`screenshot data url (truncated): ${screenshotDataUrl.slice(0, 100)}...`);
+        this.logger.debug(`${screenshotType} screenshot data url (truncated): ${screenshotDataUrl.slice(0, 100)}...`);
         if (dbConnHolder.dbConn) {
             const screenshotIdStr = [this.taskId, this.actionsSoFar.length,
-                this.numScreenshotsTakenForPromptingCurrentAction, screenshotType].join(",");
+                promptingIndexForAction, screenshotType].join(",");
             const startIndexForBase64Data = screenshotDataUrl.indexOf(';base64,') + 8;
             if (startIndexForBase64Data <= 0) {
                 this.logger.error("error while trying to add screenshot to indexeddb: screenshot data url does not contain expected prefix");
@@ -634,13 +638,13 @@ export class AgentController {
             const screenshotBase64Content = screenshotDataUrl.substring(startIndexForBase64Data);
             dbConnHolder.dbConn.add(SCREENSHOTS_OBJECT_STORE, {
                 timestamp: screenshotTs, taskId: this.taskId, numPriorActions: this.actionsSoFar.length,
-                numPriorScreenshotsForPrompts: this.numScreenshotsTakenForPromptingCurrentAction,
+                numPriorScreenshotsForPrompts: promptingIndexForAction,
                 screenshotType: screenshotType, screenshotId: screenshotIdStr, screenshot64: screenshotBase64Content
             }).catch((error) => console.error("error adding screenshot to indexeddb:", renderUnknownValue(error)));
         } else {
             this.logger.warn("no db connection available, cannot save screenshot");
         }
-        if (screenshotType === "initial") { this.numScreenshotsTakenForPromptingCurrentAction++; }
+        if (screenshotType === "initial") { this.numPriorScreenshotsTakenForPromptingCurrentAction++; }
         return screenshotDataUrl;
     }
 
@@ -781,7 +785,7 @@ export class AgentController {
             this.terminateTask();
             return;
         }
-        this.numScreenshotsTakenForPromptingCurrentAction = 0;
+        this.numPriorScreenshotsTakenForPromptingCurrentAction = 0;
         this.state = AgentControllerState.WAITING_FOR_ACTION;
         try {
             this.currPortToContentScript.postMessage({
@@ -1049,7 +1053,7 @@ export class AgentController {
         this.failureOrNoopStreak = 0;
         this.wasPrevActionRejectedByMonitor = false;
         this.monitorFeedback = "";
-        this.numScreenshotsTakenForPromptingCurrentAction = 0;
+        this.numPriorScreenshotsTakenForPromptingCurrentAction = 0;
         if (this.currPortToContentScript) {
             this.logger.info("terminating task while content script connection may still be open, attempting to close it")
             this.killPageConnection(this.currPortToContentScript, true);
@@ -1080,6 +1084,8 @@ export class AgentController {
             this.logger.info("terminating task while side panel connection may still be open, attempting to close it")
             this.killPageConnection(this.currPortToSidePanel, false);
             this.currPortToSidePanel = undefined;
+        } else {
+            this.logger.warn(`ordered to kill side panel connection for task id ${taskIdBeingTerminated}, but the side panel port is not available`);
         }
     }
 
@@ -1091,20 +1097,15 @@ export class AgentController {
             this.killSidePanelConnection(givenTaskId);
             return;
         }
-        let logsForTask: LogMessage[];
-        try {
-            logsForTask = await dbConnHolder.dbConn.getAllFromIndex(LOGS_OBJECT_STORE, "by-task", givenTaskId);
-        } catch (error: any) {
-            this.logger.error(`error while trying to get logs for task ${givenTaskId} from db for export to zip; error: ${renderUnknownValue(error)}`);
-            this.killSidePanelConnection(givenTaskId);
-            return;
-        }
-        const logFileContents = logsForTask.map(log =>
-            `${log.timestamp} ${log.loggerName} ${log.level.toUpperCase()}: ${log.msg}`)
-            .join("\n");
-        this.logger.debug(`log file contents has length ${logFileContents.length}`);
         const zip = new JSZip();
-        zip.file("agent.log", logFileContents);
+
+        const logFileContents = await this.retrieveLogsForTaskId(dbConnHolder.dbConn, givenTaskId);
+        if (logFileContents != undefined) {
+            zip.file("agent.log", logFileContents);
+        } else {
+            this.killSidePanelConnection(givenTaskId);
+            return;//error message already logged in retrieveLogsForTaskId()
+        }
 
         const taskResult = {
             task: taskSpec,
@@ -1141,6 +1142,26 @@ export class AgentController {
             screenshotsFolder.file(screenshotFileName, screenshotBytes);
         }
 
+        this.sendZipToSidePanelForDownload(givenTaskId, zip);
+    }
+
+    retrieveLogsForTaskId = async (dbConnection: IDBPDatabase<AgentDb>, taskId: string): Promise<string | undefined> => {
+        let logsForTask: LogMessage[];
+        try {
+            logsForTask = await dbConnection.getAllFromIndex(LOGS_OBJECT_STORE, "by-task", taskId);
+        } catch (error: any) {
+            this.logger.error(`error while trying to get logs for task ${taskId} from db for export to zip; error: ${renderUnknownValue(error)}`);
+            return undefined;
+        }
+        const logFileContents = logsForTask.map(log =>
+            `${log.timestamp} ${log.loggerName} ${log.level.toUpperCase()}: ${log.msg}`)
+            .join("\n");
+        this.logger.debug(`log file contents has length ${logFileContents.length}`);
+        return logFileContents;
+    }
+
+
+    private sendZipToSidePanelForDownload(givenTaskId: string, zip: JSZip) {
         this.logger.info(`about to compress task info into virtual zip file for task ${givenTaskId}`);
         zip.generateAsync(
             {type: "blob", compression: "DEFLATE", compressionOptions: {level: 5}}).then(async (content) => {
@@ -1156,7 +1177,7 @@ export class AgentController {
             this.logger.debug(`array made from that buffer has length: ${arrForTraceZip.length}`);
             try {
                 this.currPortToSidePanel.postMessage({
-                    type: Background2PanelPortMsgType.TASK_HISTORY_EXPORT, data: arrForTraceZip,
+                    type: Background2PanelPortMsgType.HISTORY_EXPORT, data: arrForTraceZip,
                     fileName: `task-${givenTaskId}-trace.zip`
                 });
             } catch (error: any) {
@@ -1169,6 +1190,14 @@ export class AgentController {
             this.killSidePanelConnection(givenTaskId);
         });
     }
+
+
+
+    exportUnaffiliatedLogs = async (): Promise<void> => {
+        //todo implement this once things have been changed so that side panel connection persists as long as side panel is open
+
+    }
+
 
     //todo getActiveTab, sendEnterKeyPress, and hoverOnElem are good candidates for being moved out of AgentController (which is way too big)
 

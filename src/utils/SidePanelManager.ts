@@ -59,7 +59,12 @@ export class SidePanelManager {
 
     private state: SidePanelMgrState = SidePanelMgrState.IDLE;
     public serviceWorkerPort?: chrome.runtime.Port;
+    //todo boolean flag for whether we've gotten connection init confirmation from service worker (i.e. whether we can be confident that the service worker is ready to receive messages)
 
+    //todo idea - when side panel opens, send connection request to service worker to make sure it's ready to quickly
+    // respond to new task starts?
+    // And, for as long as side panel remains open, send periodic (every 25sec) keep-alive pings to service worker on
+    // that port so chrome doesn't kill it?
 
     constructor(elements: SidePanelElements, chromeWrapper?: ChromeWrapper, logger?: Logger, overrideDoc?: Document) {
         this.startButton = elements.startButton;
@@ -140,6 +145,15 @@ export class SidePanelManager {
         }
     }
 
+    unaffiliatedLogsExportButtonClickHandler = async (): Promise<void> => {
+        this.logger.trace('export unaffiliated logs button clicked');
+        //todo make sure connection is established?
+
+        //todo send request to background script to export non-task-affiliated logs
+
+        //todo use
+    }
+
     monitorApproveButtonClickHandler = async (): Promise<void> => {
         if (!this.cachedMonitorMode) {
             this.logger.error("monitor mode not enabled, approve button shouldn't be clickable; ignoring");
@@ -196,14 +210,14 @@ export class SidePanelManager {
             await this.mutex.runExclusive(() => this.processTaskEndConfirmation(message));
         } else if (message.type === Background2PanelPortMsgType.ERROR) {
             await this.mutex.runExclusive(() => this.processErrorFromController(message));
-        } else if (message.type === Background2PanelPortMsgType.TASK_HISTORY_EXPORT) {
-            this.exportTaskHistoryToFileDownload(message);
+        } else if (message.type === Background2PanelPortMsgType.HISTORY_EXPORT) {
+            this.exportHistoryToFileDownload(message);
         } else {
             this.logger.warn("unknown type of message from background script: " + JSON.stringify(message));
         }
     }
 
-    private exportTaskHistoryToFileDownload(message: any) {
+    private exportHistoryToFileDownload(message: any) {
         try {
             this.logger.debug(`received array of data from background script for a zip file, length: ${message.data.length}`);
             const arrBuff = new Uint8Array(message.data).buffer;
@@ -249,6 +263,7 @@ export class SidePanelManager {
             this.logger.error('received READY message from service worker port but serviceWorkerPort is undefined');
             return;
         }
+        this.logger.trace("agent controller notified side panel of its readiness, will now have it start a task");
         const taskSpec = this.taskSpecField.value;
         if (taskSpec.trim() === '') {
             const cantStartErrMsg = 'task specification field became empty (or all whitespace) since Start Task button was clicked, cannot start task';
@@ -260,6 +275,7 @@ export class SidePanelManager {
             this.serviceWorkerPort.postMessage(
                 {type: Panel2BackgroundPortMsgType.START_TASK, taskSpecification: taskSpec});
             this.state = SidePanelMgrState.WAIT_FOR_TASK_STARTED;
+            this.logger.trace("sent START_TASK message to service worker port");
         }
     }
 
@@ -270,6 +286,7 @@ export class SidePanelManager {
         }
         let newStatus = '';
         if (message.success) {
+            this.logger.trace("received notification of successful task start from agent controller");
             newStatus = `Task ${message.taskId} started successfully`;
             this.state = SidePanelMgrState.WAIT_FOR_PENDING_ACTION_INFO;
             //wipe history from previous task

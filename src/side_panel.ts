@@ -18,6 +18,9 @@ if (!killButton) throw new Error('endTask button not found');
 const optionsButton = document.getElementById('options');
 if (!optionsButton) throw new Error('options button not found');
 
+const unaffiliatedLogsExportButton = document.getElementById('export-unaffiliated-logs');
+if (!unaffiliatedLogsExportButton) throw new Error('export-unaffiliated-logs button not found');
+
 const historyList = document.getElementById('history');
 if (!historyList) throw new Error('history list not found');
 
@@ -50,6 +53,7 @@ startButton.addEventListener('click', manager.startTaskClickHandler);
 killButton.addEventListener('click', manager.killTaskClickHandler);
 
 optionsButton.addEventListener('click', manager.optionsButtonClickHandler);
+unaffiliatedLogsExportButton.addEventListener('click', manager.unaffiliatedLogsExportButtonClickHandler);
 
 monitorApproveButton.addEventListener('click', manager.monitorApproveButtonClickHandler);
 monitorRejectButton.addEventListener('click', manager.monitorRejectButtonClickHandler);

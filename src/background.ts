@@ -178,14 +178,14 @@ let agentController: AgentController | undefined;
  * @return true to indicate to chrome that the requester's connection should be held open to wait for a response
  */
 function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (response?: any) => void): boolean {
+    if (!centralLogger) {
+        centralLogger = createNamedLogger('service-worker', true);
+    }
     if (request.reqType !== PageRequestType.LOG) {
         centralLogger.trace("request received by service worker", sender.tab ?
             `from a content script:${sender.tab.url}` : "from the extension");
     }
     if (request.reqType === PageRequestType.LOG) {
-        if (!centralLogger) {
-            centralLogger = createNamedLogger('service-worker', true);
-        }
 
         const timestamp = String(request.timestamp);
         const loggerName = String(request.loggerName);
@@ -243,7 +243,7 @@ function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (r
                 centralLogger.warn("received request for screenshot with target element highlighted when agent controller has already sent the action command to the content script- NEED TO INCREASE HOW LONG AGENT CONTROLLER SLEEPS BEFORE PERFORMING ELEMENT-SPECIFIC ACTIONS");
             }
 
-            agentController.captureAndStoreScreenshot("targeted").then(() => {
+            agentController.captureAndStoreScreenshot("targeted", request.promptingIndexForAction).then(() => {
                     centralLogger.info("took screenshot of page with target element highlighted");
                     sendResponse({success: true, message: "Took screenshot with target element highlighted"});
                 }, (error) => {
@@ -256,6 +256,24 @@ function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (r
         //idea for later space-efficiency refinement - when saving a "targeted" screenshot, maybe could reduce its
         // quality drastically b/c you only care about an indication of which element in the screen was being targeted,
         // and you can consult the corresponding "initial" screenshot for more detail?
+    } else if (request.reqType === PageRequestType.EXPORT_UNAFFILIATED_LOGS) {
+        //todo if I make side panel always keep active connection to a live service worker, it would be simpler to
+        // just send this via the port rather than chrome.runtime.sendMessage()
+        if (!agentController) {
+            centralLogger.debug("have to initialize agent controller to handle export of unaffiliated logs");
+            initializeAgentController().then((controller) => {
+                agentController = controller;
+                //todo?
+
+            }, (error) => {
+                //todo error message
+
+            });
+        }
+
+        //todo
+
+
     } else {
         centralLogger.error("unrecognized request type:", request.reqType);
     }
@@ -284,13 +302,16 @@ async function handleConnectionFromPage(port: Port): Promise<void> {
         agentController.addPageConnection(port).then(
             () => centralLogger.trace("page actor connected to agent controller in service worker"));
     } else if (port.name === panelToControllerPort) {
+        centralLogger.trace("side panel opened new connection to service worker");
         if (!agentController) {
+            centralLogger.debug("have to initialize agent controller to handle connection from side panel");
             // if (controllerIsInitializing) { todo remove this chunk of commented-out code if not needed in practice
             // todo do what? sleep and then check the boolean again, in a loop with maximum number of iterations?
             //  see comments above about how this could use await if I revised the lazy initialization code
             // } else {
             agentController = await initializeAgentController();
             //}
+            centralLogger.trace("finished initializing agent controller to handle connection from side panel");
         }
         agentController.addSidePanelConnection(port).then(
             () => centralLogger.trace("side panel connected to agent controller in service worker"));
