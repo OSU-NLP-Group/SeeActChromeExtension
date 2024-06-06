@@ -1,5 +1,5 @@
 import {createNamedLogger} from "./utils/shared_logging_setup";
-import {Page2BackgroundPortMsgType, pageToControllerPort, sleep} from "./utils/misc";
+import {Page2BackgroundPortMsgType, pageToControllerPort, renderUnknownValue, sleep} from "./utils/misc";
 import {PageActor} from "./utils/PageActor";
 
 
@@ -14,17 +14,24 @@ const pageActor = new PageActor(portToBackground);
 
 portToBackground.onMessage.addListener(pageActor.handleRequestFromAgentController);
 
+window.addEventListener('load', async () => {
+    logger.debug('page has loaded, sending READY message to background');
+    await sleep(20);//just in case page loaded super-quickly and the service worker was delayed in setting up the port's listeners
+    try {
+        portToBackground.postMessage({type: Page2BackgroundPortMsgType.READY});
+    } catch (error: any) {
+        logger.error(`error sending READY message to background: ${renderUnknownValue(error)}`);
+    }
+});
 
-//todo use window.onload listener instead of dumb 5sec wait
-// but still have the wait-and-conditionally-poll-the-backend, just in case we run this (including attaching an onload
-// listener) after the page has already finished loading
-
-//todo! wait here until page is loaded/stable!
-await sleep(5000);
-
-portToBackground.postMessage({type: Page2BackgroundPortMsgType.READY});
-
-await sleep(1000);
-if (!pageActor.hasControllerEverResponded) {
-    portToBackground.postMessage({type: Page2BackgroundPortMsgType.READY});
-}
+(async () => {
+    await sleep(1000);
+    if (!pageActor.hasControllerEverResponded) {
+        logger.info("sending backup ready message to background because controller hasn't responded yet");
+        try {
+            portToBackground.postMessage({type: Page2BackgroundPortMsgType.READY});
+        } catch (error: any) {
+            logger.error(`error sending backup READY message to background: ${renderUnknownValue(error)}`);
+        }
+    }
+})();

@@ -4,7 +4,7 @@ import {createNamedLogger} from "./shared_logging_setup";
 import {
     Action,
     Background2PagePortMsgType,
-    buildGenericActionDesc,
+    buildGenericActionDesc, elementHighlightRenderDelay,
     expectedMsgForPortDisconnection,
     Page2BackgroundPortMsgType,
     PageRequestType, renderUnknownValue,
@@ -426,6 +426,7 @@ export class PageActor {
         // https://developer.mozilla.org/en-US/docs/Web/CSS/filter
         // https://developer.mozilla.org/en-US/docs/Web/CSS/border
 
+        await sleep(elementHighlightRenderDelay);
         try {
             const resp = await this.chromeWrapper.sendMessageToServiceWorker({
                 reqType: PageRequestType.SCREENSHOT_WITH_TARGET_HIGHLIGHTED,

@@ -18,7 +18,7 @@ import {
     Background2PagePortMsgType,
     Background2PanelPortMsgType,
     base64ToByteArray,
-    buildGenericActionDesc,
+    buildGenericActionDesc, elementHighlightRenderDelay,
     expectedMsgForPortDisconnection,
     Page2BackgroundPortMsgType,
     Panel2BackgroundPortMsgType,
@@ -458,7 +458,7 @@ export class AgentController {
                 this.state = AgentControllerState.WAITING_FOR_MONITOR_RESPONSE;
             } else {
                 //to get high confidence that the screenshot with highlighted target element has been captured
-                if (this.tentativeActionInfo.elementIndex !== undefined) {await sleep(40);}//todo configurable?
+                if (this.tentativeActionInfo.elementIndex !== undefined) { await sleep(40 + elementHighlightRenderDelay); }
 
                 this.numPriorScreenshotsTakenForPromptingCurrentAction = 0;
                 this.state = AgentControllerState.WAITING_FOR_ACTION;
@@ -1183,14 +1183,6 @@ export class AgentController {
             this.logger.error(`error while trying to generate zip file for task ${givenTaskId}; error: ${renderUnknownValue(error)}`);
         });
     }
-
-
-
-    exportUnaffiliatedLogs = async (): Promise<void> => {
-        //todo implement this once things have been changed so that side panel connection persists as long as side panel is open
-
-    }
-
 
     //todo getActiveTab, sendEnterKeyPress, and hoverOnElem are good candidates for being moved out of AgentController (which is way too big)
 
