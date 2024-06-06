@@ -256,24 +256,6 @@ function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (r
         //idea for later space-efficiency refinement - when saving a "targeted" screenshot, maybe could reduce its
         // quality drastically b/c you only care about an indication of which element in the screen was being targeted,
         // and you can consult the corresponding "initial" screenshot for more detail?
-    } else if (request.reqType === PageRequestType.EXPORT_UNAFFILIATED_LOGS) {
-        //todo if I make side panel always keep active connection to a live service worker, it would be simpler to
-        // just send this via the port rather than chrome.runtime.sendMessage()
-        if (!agentController) {
-            centralLogger.debug("have to initialize agent controller to handle export of unaffiliated logs");
-            initializeAgentController().then((controller) => {
-                agentController = controller;
-                //todo?
-
-            }, (error) => {
-                //todo error message
-
-            });
-        }
-
-        //todo
-
-
     } else {
         centralLogger.error("unrecognized request type:", request.reqType);
     }

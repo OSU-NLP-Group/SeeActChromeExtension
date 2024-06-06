@@ -113,10 +113,12 @@ export const createNamedLogger = (loggerName: string, inServiceWorker: boolean):
             const actualLoggerName: string = typeof loggerName === "string" ? loggerName :
                 (Symbol.keyFor(loggerName) ?? loggerName.toString());
             return function (...args: unknown[]) {
-                rawMethod(augmentLogMsg(new Date().toISOString(), loggerName, methodName, args));
+                const timestampStr = new Date().toISOString();
+                //if chrome ever supports cross-origin isolation in service workers, this can use performance precise timestamps too
+                rawMethod(augmentLogMsg(timestampStr, loggerName, methodName, args));
                 if (dbConnHolder.dbConn) {
                     dbConnHolder.dbConn.add(LOGS_OBJECT_STORE, {
-                        timestamp: new Date().toISOString(), loggerName: actualLoggerName, level: methodName,
+                        timestamp: timestampStr, loggerName: actualLoggerName, level: methodName,
                         taskId: taskIdHolder.currTaskId ?? taskIdPlaceholderVal, msg: args.join(" ")
                     }).catch((error) =>
                         console.error("error adding log message to indexeddb:", renderUnknownValue(error)));
@@ -127,7 +129,14 @@ export const createNamedLogger = (loggerName: string, inServiceWorker: boolean):
         newLogger.methodFactory = function (methodName, logLevel, loggerName) {
             const rawMethod = origLoggerFactory(methodName, logLevel, loggerName);
             return function (...args: unknown[]) {
-                const timestampStr = new Date().toISOString();
+                let timestampStr = new Date().toISOString();
+                if (window?.crossOriginIsolated) {
+                    const preciseTimestamp = performance.timeOrigin + performance.now();
+                    const fractionOfMs = preciseTimestamp % 1;
+                    timestampStr = new Date(preciseTimestamp).toISOString();
+                    timestampStr = timestampStr.slice(0, timestampStr.length - 1)
+                        + fractionOfMs.toFixed(3).slice(2) + "Z" ;
+                }
                 const msg = augmentLogMsg(timestampStr, loggerName, methodName, undefined, args);
                 rawMethod(msg);
 

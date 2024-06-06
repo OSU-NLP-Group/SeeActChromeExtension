@@ -10,7 +10,7 @@ import {
     LOGS_OBJECT_STORE,
     ScreenshotRecord,
     SCREENSHOTS_OBJECT_STORE,
-    taskIdHolder
+    taskIdHolder, taskIdPlaceholderVal
 } from "./shared_logging_setup";
 import {OpenAiEngine} from "./OpenAiEngine";
 import {
@@ -30,8 +30,8 @@ import {formatChoices, generatePrompt, LmmPrompts, postProcessActionLlm, StrTrip
 import {getIndexFromOptionName} from "./format_prompt_utils";
 import {ChromeWrapper} from "./ChromeWrapper";
 import JSZip from "jszip";
+import {IDBPDatabase} from "idb";
 import Port = chrome.runtime.Port;
-import { IDBPDatabase } from "idb";
 
 /**
  * states for the agent controller Finite State Machine
@@ -690,7 +690,7 @@ export class AgentController {
         } else if (wasPageNav) {
             this.logger.info("tab id changed after action was performed, so killing connection to " +
                 "old tab and injecting content script in new tab " + tab?.title);
-            this.killPageConnection(port, true);
+            this.killPageConnection(port);
             await this.injectPageActorScript(false, tab);
             //only resetting this after script injection because script injection needs to know whether it's ok
             // that the tab id might've changed
@@ -859,6 +859,18 @@ export class AgentController {
             await this.mutex.runExclusive(() => this.processMonitorApproval());
         } else if (message.type === Panel2BackgroundPortMsgType.MONITOR_REJECTED) {
             await this.mutex.runExclusive(() => this.processMonitorRejection(message));
+        } else if (message.type === Panel2BackgroundPortMsgType.KEEP_ALIVE) {
+            //ignore this message; just receiving it serves the purpose of keeping Chrome from killing the service
+            // worker for another 30sec
+        } else if (message.type === Panel2BackgroundPortMsgType.EXPORT_UNAFFILIATED_LOGS) {
+            if (dbConnHolder.dbConn) {
+                const zip = new JSZip();
+                const logFileContents = await this.retrieveLogsForTaskId(dbConnHolder.dbConn, taskIdPlaceholderVal);
+                if (logFileContents != undefined) {
+                    zip.file("non_task_specific.log", logFileContents);
+                    this.sendZipToSidePanelForDownload(taskIdPlaceholderVal, zip);
+                } //error message already logged in retrieveLogsForTaskId()
+            } else { this.logger.error("no db connection available to export non-task-specific logs"); }
         } else {
             this.logger.error("unknown message from side panel:", JSON.stringify(message));
         }
@@ -968,18 +980,16 @@ export class AgentController {
      * @description ends any connection the service worker may still have to the content script, which should
      * eliminate any further computation in the targeted content script
      * @param pageConn the port object representing the connection between the service worker and the content script
-     * @param isForContentScript whether the connection is to the content script (true) or the side panel (false)
      */
-    killPageConnection = (pageConn: Port, isForContentScript: boolean): void => {
-        const connectionTarget = isForContentScript ? "content script" : "side panel";
+    killPageConnection = (pageConn: Port): void => {
         try {
             pageConn.disconnect();
-            this.logger.info(`successfully cleaned up ${connectionTarget} connection ${pageConn.name}`);
+            this.logger.info(`successfully cleaned up content script connection ${pageConn.name}`);
         } catch (error: any) {
             if ('message' in error && error.message === expectedMsgForPortDisconnection) {
-                this.logger.info(`unable to clean up ${connectionTarget} connection ${pageConn.name} because the connection to the ${connectionTarget} was already closed`);
+                this.logger.info(`unable to clean up content script connection ${pageConn.name} because the connection to the content script was already closed`);
             } else {
-                this.logger.error(`unexpected error while cleaning up ${connectionTarget} connection ${pageConn.name}; error: ${renderUnknownValue(error)}`);
+                this.logger.error(`unexpected error while cleaning up content script connection ${pageConn.name}; error: ${renderUnknownValue(error)}`);
             }
         }
     }
@@ -1034,7 +1044,6 @@ export class AgentController {
                     this.logger.debug(`for task ${taskIdBeingTerminated}, the process of trying to send task history to side panel (for export as downloaded file) concluded (possibly unsuccessfully but with a fully-handled error)`);
                 }, (error) => {
                     this.logger.error(`error while trying to export task history for task ${taskIdBeingTerminated}; error: ${renderUnknownValue(error)}`);
-                    this.killSidePanelConnection(taskIdBeingTerminated);
                 });
         }
         this.taskId = undefined;
@@ -1056,10 +1065,9 @@ export class AgentController {
         this.numPriorScreenshotsTakenForPromptingCurrentAction = 0;
         if (this.currPortToContentScript) {
             this.logger.info("terminating task while content script connection may still be open, attempting to close it")
-            this.killPageConnection(this.currPortToContentScript, true);
+            this.killPageConnection(this.currPortToContentScript);
             this.currPortToContentScript = undefined;
         }
-        //not killing side panel port here because it's needed for task history export; it'll be killed by that process
 
         //todo if aiEngine ever has its own nontrivial bits of task-specific state, should probably somehow reset them here
 
@@ -1070,31 +1078,11 @@ export class AgentController {
         this.terminationSignal = false;
     }
 
-    killSidePanelConnection = (taskIdBeingTerminated: string) => {
-        if (this.currPortToSidePanel) {
-            try {
-                //todo when I eventually give the terminateTask() method a 'reason' argument, I should pass that along
-                // here and then have the side panel display it to the user
-                this.currPortToSidePanel.postMessage(
-                    {type: Background2PanelPortMsgType.TASK_ENDED, taskId: taskIdBeingTerminated});
-            } catch (error: any) {
-                this.logger.error(`error while trying to inform side panel about agent controller having terminated the current task; error: ${renderUnknownValue(error)}`);
-            }
-
-            this.logger.info("terminating task while side panel connection may still be open, attempting to close it")
-            this.killPageConnection(this.currPortToSidePanel, false);
-            this.currPortToSidePanel = undefined;
-        } else {
-            this.logger.warn(`ordered to kill side panel connection for task id ${taskIdBeingTerminated}, but the side panel port is not available`);
-        }
-    }
-
     exportTaskHistory = async (
         givenTaskId: string, taskSpec: string, actionsHistory: ActionRecord[], numOps: number, numNoops: number,
         numFailures: number, failOrNoopStreakAtEnd: number, startingWebUrl: string | undefined): Promise<void> => {
         if (!dbConnHolder.dbConn) {
             this.logger.error("no db connection available to export task history");
-            this.killSidePanelConnection(givenTaskId);
             return;
         }
         const zip = new JSZip();
@@ -1103,7 +1091,6 @@ export class AgentController {
         if (logFileContents != undefined) {
             zip.file("agent.log", logFileContents);
         } else {
-            this.killSidePanelConnection(givenTaskId);
             return;//error message already logged in retrieveLogsForTaskId()
         }
 
@@ -1130,7 +1117,6 @@ export class AgentController {
             screenshotsForTask = await dbConnHolder.dbConn.getAllFromIndex(SCREENSHOTS_OBJECT_STORE, "by-task", givenTaskId);
         } catch (error: any) {
             this.logger.error(`error while trying to get screenshots for task ${givenTaskId} from db for export to zip; error: ${renderUnknownValue(error)}`);
-            this.killSidePanelConnection(givenTaskId);
             return;
         }
         for (const screenshotRecord of screenshotsForTask) {
@@ -1153,6 +1139,15 @@ export class AgentController {
             this.logger.error(`error while trying to get logs for task ${taskId} from db for export to zip; error: ${renderUnknownValue(error)}`);
             return undefined;
         }
+        logsForTask.sort((msg1, msg2) => {
+            //trimming Z timezone indicator to avoid throwing off comparison, since all timestamps are in UTC+0 and end with 'Z'
+            const msg1TzAgnosticTs = msg1.timestamp.slice(0, -1);
+            const msg2TzAgnosticTs = msg2.timestamp.slice(0, -1);
+            if (msg1TzAgnosticTs < msg2TzAgnosticTs) return -1;
+            if (msg1TzAgnosticTs > msg2TzAgnosticTs) return 1;
+            return 0;
+        });
+
         const logFileContents = logsForTask.map(log =>
             `${log.timestamp} ${log.loggerName} ${log.level.toUpperCase()}: ${log.msg}`)
             .join("\n");
@@ -1184,10 +1179,8 @@ export class AgentController {
                 this.logger.error(`error while trying to send zip file for task ${givenTaskId} to side panel for download; error: ${renderUnknownValue(error)}`);
             }
             this.logger.debug(`sent zip file for task ${givenTaskId}'s history to side panel for download`);
-            this.killSidePanelConnection(givenTaskId);
         }, (error) => {
             this.logger.error(`error while trying to generate zip file for task ${givenTaskId}; error: ${renderUnknownValue(error)}`);
-            this.killSidePanelConnection(givenTaskId);
         });
     }
 

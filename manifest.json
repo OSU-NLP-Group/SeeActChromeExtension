@@ -48,5 +48,11 @@
             },
             "description": "Reject the pending action (in monitor mode)"
         }
+    },
+    "cross_origin_embedder_policy": {
+        "value": "require-corp"
+    },
+    "cross_origin_opener_policy": {
+        "value": "same-origin"
     }
 }

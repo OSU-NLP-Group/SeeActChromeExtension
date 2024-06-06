@@ -13,8 +13,7 @@ export enum PageRequestType {
     LOG = "log",
     PRESS_ENTER = "pressEnter",
     HOVER = "hover",
-    SCREENSHOT_WITH_TARGET_HIGHLIGHTED= "screenshotWithTargetElementHighlighted",
-    EXPORT_UNAFFILIATED_LOGS = "exportUnaffiliatedLogs"//i.e. logs not affiliated with any task (and so not included in any task's history export zip file)
+    SCREENSHOT_WITH_TARGET_HIGHLIGHTED= "screenshotWithTargetElementHighlighted"
 }
 
 /**
@@ -39,7 +38,9 @@ export enum Panel2BackgroundPortMsgType {
     START_TASK = "mustStartTask",
     KILL_TASK = "mustKillTask",
     MONITOR_APPROVED = "monitorApproved",
-    MONITOR_REJECTED = "monitorRejected"
+    MONITOR_REJECTED = "monitorRejected",
+    KEEP_ALIVE = "keepAlive",
+    EXPORT_UNAFFILIATED_LOGS = "exportUnaffiliatedLogs"//i.e. logs not affiliated with any task (and so not included in any task's history export zip file)
 }
 
 /**
