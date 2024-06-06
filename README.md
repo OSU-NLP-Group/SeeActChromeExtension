@@ -93,3 +93,7 @@ TODO really need to standardize naming conventions for certain entities at some 
  - manager in side panel- "SidePanelManager"/"Panel"/"SidePanel"
  - task_history_entry vs action_performed_record  etc.
  - etc.
+
+
+Open question for chrome.debugger api: how to handle the case where the tab is already being
+ debugged by another extension? tell the LLM that it can't use HOVER for now and must try to click instead?

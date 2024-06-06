@@ -78,6 +78,15 @@ export type ActionInfo = {
  */
 type ActionRecord = { actionDesc: string, success: boolean, noopType?: NoopType, explanation: string };
 
+type PredictionRecord = {
+    modelPlanningOutput: string,
+    modelGroundingOutput: string,
+    targetElementData?: SerializableElementData,
+    actionName: string
+    value?: string
+    explanation: string
+};
+
 //todo explore whether it might be possible to break this into multiple classes, or at least if there are
 // pure/non-state-affecting helper functions that could be extracted from existing code and then moved to
 // controller_utils file
@@ -101,6 +110,7 @@ export class AgentController {
     private mightNextActionCausePageNav: boolean = false;
 
     private actionsSoFar: ActionRecord[] = [];
+    private predictionsInTask: PredictionRecord[] = [];
 
     /**
      * total number of operations (successful or not) within current task (excluding noops)
@@ -542,6 +552,15 @@ export class AgentController {
         const [element, action, value, explanation] = postProcessActionLlm(groundingOutput);
         //if it proves to be a problem, can add validation to reject explanations which contain multiple periods that're each followed by space or end of string
         this.logger.debug(`suggested action: ${action}; value: ${value}; explanation: ${explanation}`);
+        let chosenCandidateIndex = getIndexFromOptionName(element);
+
+
+        this.predictionsInTask.push({
+            modelPlanningOutput: planningOutput, modelGroundingOutput: groundingOutput,
+            targetElementData: chosenCandidateIndex && chosenCandidateIndex < candidateIds.length
+                ? interactiveElements[candidateIds[chosenCandidateIndex]] : undefined,
+            actionName: action, value: value, explanation: explanation
+        });
 
         if (action === Action.TERMINATE) {
             this.logger.info("Task completed!");
@@ -564,7 +583,6 @@ export class AgentController {
         const actionNeedsNoElement = action === Action.SCROLL_UP || action === Action.SCROLL_DOWN
             || action === Action.PRESS_ENTER;
 
-        let chosenCandidateIndex = getIndexFromOptionName(element);
 
         if ((!chosenCandidateIndex || chosenCandidateIndex > candidateIds.length) && !actionNeedsNoElement) {
             this.logger.warn(`ai selected invalid option ${element} ` + (chosenCandidateIndex
@@ -1039,12 +1057,12 @@ export class AgentController {
         } else {
             this.logger.info("starting process of exporting task history to zip file download");
             this.exportTaskHistory(taskIdBeingTerminated, this.taskSpecification, this.actionsSoFar, this.opsCount,
-                this.noopCount, this.failureCount, this.failureOrNoopStreak, this.initWebsiteForTask)
-                .then(() => {
-                    this.logger.debug(`for task ${taskIdBeingTerminated}, the process of trying to send task history to side panel (for export as downloaded file) concluded (possibly unsuccessfully but with a fully-handled error)`);
-                }, (error) => {
-                    this.logger.error(`error while trying to export task history for task ${taskIdBeingTerminated}; error: ${renderUnknownValue(error)}`);
-                });
+                this.noopCount, this.failureCount, this.failureOrNoopStreak, this.initWebsiteForTask,
+                this.predictionsInTask).then(() => {
+                this.logger.debug(`for task ${taskIdBeingTerminated}, the process of trying to send task history to side panel (for export as downloaded file) concluded (possibly unsuccessfully but with a fully-handled error)`);
+            }, (error) => {
+                this.logger.error(`error while trying to export task history for task ${taskIdBeingTerminated}; error: ${renderUnknownValue(error)}`);
+            });
         }
         this.taskId = undefined;
         taskIdHolder.currTaskId = undefined;
@@ -1056,6 +1074,7 @@ export class AgentController {
         this.tentativeActionInfo = undefined;
         this.mightNextActionCausePageNav = false;
         this.actionsSoFar = [];
+        this.predictionsInTask = [];
         this.opsCount = 0;
         this.noopCount = 0;
         this.failureCount = 0;
@@ -1080,7 +1099,8 @@ export class AgentController {
 
     exportTaskHistory = async (
         givenTaskId: string, taskSpec: string, actionsHistory: ActionRecord[], numOps: number, numNoops: number,
-        numFailures: number, failOrNoopStreakAtEnd: number, startingWebUrl: string | undefined): Promise<void> => {
+        numFailures: number, failOrNoopStreakAtEnd: number, startingWebUrl: string | undefined,
+        predictions: PredictionRecord[]): Promise<void> => {
         if (!dbConnHolder.dbConn) {
             this.logger.error("no db connection available to export task history");
             return;
@@ -1127,6 +1147,11 @@ export class AgentController {
             const screenshotFileName = `action-${screenshotRecord.numPriorActions}_promptingIndexForAction-${screenshotRecord.numPriorScreenshotsForPrompts}_type-${screenshotRecord.screenshotType}_ts-${fileSafeTimestampStr}.png`;
             screenshotsFolder.file(screenshotFileName, screenshotBytes);
         }
+
+        function replaceUndefinedWithNull(key: any, value: any) {return value === undefined ? null : value;}
+
+        const predictionsStr = JSON.stringify(predictions, replaceUndefinedWithNull, 4);
+        zip.file("all_predictions.json", predictionsStr);
 
         this.sendZipToSidePanelForDownload(givenTaskId, zip);
     }

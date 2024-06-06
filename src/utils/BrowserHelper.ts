@@ -325,9 +325,5 @@ export class BrowserHelper {
 
         return Array.from(uniqueInteractiveElements).map(element => this.getElementData(element))
             .filter(Boolean) as ElementData[];
-        //dummy impl for confirming that unit tests initially fail
-        // return [{centerCoords: [-1, -1], description: "test", tagHead: "test", boundingBox: {tLx: -1, tLy: -1, bRx: -1, bRy: -1}, tagName: "test"}];
     }
-
-    //TODO port and unit test the select_option() method
 }

@@ -10,9 +10,29 @@ logger.trace(`successfully injected page_interaction script in browser for page 
 const portToBackground: chrome.runtime.Port = chrome.runtime.connect({name: pageToControllerPort});
 
 const pageActor = new PageActor(portToBackground);
-
-
 portToBackground.onMessage.addListener(pageActor.handleRequestFromAgentController);
+
+window.addEventListener('beforeunload', () => {
+    pageActor.isPageBeingUnloaded = true;
+});
+
+const mutationObserverOptions = {childList: true, subtree: true, attributes: true, characterData: true};
+const mutationCallback = (mutationsList: MutationRecord[], observer: MutationObserver) => {
+    //filtering logic would go here if I identify problematic patterns where mutations are happening in the dom
+    // which don't affect what elements the agent can interact with, whether/how those elements are displayed, or
+    // other information on the page which would be important for the agent's next decision
+    pageActor.lastPageModificationTimestamp = Date.now();
+}
+
+const headMutationObserver = new MutationObserver(mutationCallback);
+headMutationObserver.observe(document.head, mutationObserverOptions);
+
+const bodyMutationObserver = new MutationObserver(mutationCallback);
+bodyMutationObserver.observe(document.body, mutationObserverOptions);
+//if there's a substantial general performance impact, it might be worth exploring the idea of keeping the head/body
+// mutation observers disconnected most of the time but reconnecting them after an action to allow waiting until
+// the page became stable
+
 
 window.addEventListener('load', async () => {
     logger.debug('page has loaded, sending READY message to background');
