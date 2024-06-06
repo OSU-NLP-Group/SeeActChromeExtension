@@ -111,8 +111,8 @@ export class SidePanelManager {
             return;
         }
         this.serviceWorkerPort.postMessage({type: Panel2BackgroundPortMsgType.KEEP_ALIVE});
-        const five_sec_less_than_chrome_service_worker_timeout = 25000;
-        setTimeout(this.pingServiceWorkerForKeepAlive, five_sec_less_than_chrome_service_worker_timeout);
+        const half_chrome_service_worker_timeout = 15000;
+        setTimeout(this.pingServiceWorkerForKeepAlive, half_chrome_service_worker_timeout);
     }
 
 

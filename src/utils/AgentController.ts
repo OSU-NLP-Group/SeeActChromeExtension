@@ -1090,6 +1090,16 @@ export class AgentController {
             this.currPortToContentScript = undefined;
         }
 
+        if (this.currPortToSidePanel !== undefined) {
+            try {
+                //todo when I eventually give the terminateTask() method a 'reason' argument, I should pass that along
+                // here and then have the side panel display it to the user
+                this.currPortToSidePanel.postMessage(
+                    {type: Background2PanelPortMsgType.TASK_ENDED, taskId: taskIdBeingTerminated});
+            } catch (error: any) {
+                this.logger.error(`error while trying to inform side panel about agent controller having terminated the current task; error: ${renderUnknownValue(error)}`);
+            }
+        } else {this.logger.error(`no side panel available to notify about end of task ${taskIdBeingTerminated}`)}
         //todo if aiEngine ever has its own nontrivial bits of task-specific state, should probably somehow reset them here
 
         //todo if I use console.group elsewhere, should use console.groupEnd() here repeatedly (maybe 10 times) to be
