@@ -33,10 +33,11 @@ bodyMutationObserver.observe(document.body, mutationObserverOptions);
 // mutation observers disconnected most of the time but reconnecting them after an action to allow waiting until
 // the page became stable
 
-
+const startOfPageLoadWait = Date.now();
 window.addEventListener('load', async () => {
     logger.debug('page has loaded, sending READY message to background');
     await sleep(20);//just in case page loaded super-quickly and the service worker was delayed in setting up the port's listeners
+    logger.debug(`length of page load wait: ${(Date.now() - startOfPageLoadWait)}ms`);
     try {
         portToBackground.postMessage({type: Page2BackgroundPortMsgType.READY});
     } catch (error: any) {

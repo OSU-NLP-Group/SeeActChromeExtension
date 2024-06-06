@@ -525,6 +525,7 @@ export class AgentController {
         }
 
         this.logger.debug("prompts: " + JSON.stringify(prompts));
+        const startOfAiQuerying = Date.now();
         let planningOutput: string;
         let groundingOutput: string;
         const aiApiBaseDelay = 1_000;
@@ -547,6 +548,7 @@ export class AgentController {
             this.terminateTask();
             return LmmOutputReaction.ABORT_TASK;
         }
+        this.logger.debug(`ai querying took ${Date.now() - startOfAiQuerying}ms`);
         this.logger.info("grounding output: " + groundingOutput);
 
         const [element, action, value, explanation] = postProcessActionLlm(groundingOutput);

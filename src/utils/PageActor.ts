@@ -4,10 +4,12 @@ import {createNamedLogger} from "./shared_logging_setup";
 import {
     Action,
     Background2PagePortMsgType,
-    buildGenericActionDesc, elementHighlightRenderDelay,
+    buildGenericActionDesc,
+    elementHighlightRenderDelay,
     expectedMsgForPortDisconnection,
     Page2BackgroundPortMsgType,
-    PageRequestType, renderUnknownValue,
+    PageRequestType,
+    renderUnknownValue,
     sleep
 } from "./misc";
 import {ChromeWrapper} from "./ChromeWrapper";
@@ -377,6 +379,7 @@ export class PageActor {
             }
         }
 
+        const startOfPostActionStabilityWait = Date.now();
         const pollingIncrement = 100;//ms
         const maxPollingTime = 10_000;//ms
         const numPollingIterations = maxPollingTime / pollingIncrement;
@@ -399,6 +402,7 @@ export class PageActor {
         }
         //todo double check whether/how much mutation observers on 'body' and 'head' slow down the page (and whether
         // it causes any other issues)
+        this.logger.debug(`waited ${(Date.now() - startOfPostActionStabilityWait)}ms after action for page to become stable`);
 
         this.currInteractiveElements = undefined;
         //this part would only be reached if the action didn't cause page navigation in current tab
