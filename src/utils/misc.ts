@@ -6,15 +6,31 @@ export const expectedMsgForPortDisconnection = "Attempting to use a disconnected
 export const pageToControllerPort = `page-actor-2-agent-controller`;
 export const panelToControllerPort = "side-panel-2-agent-controller";
 
+//ms, how long to sleep (after editing an element for highlighting) before telling the service worker to take a
+// screenshot; i.e. longest realistic amount of time the browser might take to re-render the modified element
+export const elementHighlightRenderDelay = 5;
+
+export const defaultIsMonitorMode = false;
+export const defaultShouldWipeActionHistoryOnStart = true;
+
+export const defaultMaxOps = 20;
+export const defaultMaxNoops = 3;
+export const defaultMaxFailures = 4;
+export const defaultMaxFailureOrNoopStreak = 2;
+
+export const validateIntegerLimitUpdate = (newLimitVal: unknown, min: number = 0): newLimitVal is number => {
+    return typeof newLimitVal === "number" && Number.isInteger(newLimitVal) && newLimitVal >= min;
+}
+
+
 /**
  * types of one-off messages that might be sent to the service worker, either from the content script or the popup
  */
 export enum PageRequestType {
     LOG = "log",
-    START_TASK = "startTask",
-    END_TASK = "endTask",
     PRESS_ENTER = "pressEnter",
-    HOVER = "hover"
+    HOVER = "hover",
+    SCREENSHOT_WITH_TARGET_HIGHLIGHTED= "screenshotWithTargetElementHighlighted"
 }
 
 /**
@@ -28,8 +44,8 @@ export enum Background2PanelPortMsgType {
     TASK_HISTORY_ENTRY = "taskHistoryEntry",
     TASK_ENDED = "taskEnded",
     ERROR = "error",//cases where the agent controller wants to tell the side panel about a problem with some message from the side panel which was identified before a task id was generated
-    //todo add NOTIFICATION type for agent notifying side panel of non-critical problem that will delay progress on the task (so the side panel can display that to user in status field and avoid user giving up on system)
-    TASK_HISTORY_EXPORT = "taskHistoryExport"//for when the controller has assembled a Blob for a trace.zip file for the just-finished task and needs to send it to the side panel so it can be downloaded to the user's computer
+    NOTIFICATION="notification",//for agent notifying side panel of non-critical problem that will delay progress on the task (so the side panel can display that to user in status field and avoid user giving up on system)
+    HISTORY_EXPORT = "historyExport"//for when the controller has assembled a Blob for a zip file containing logs and/or screenshots and needs to send it to the side panel so that it can be downloaded to the user's computer
 }
 
 /**
@@ -39,7 +55,9 @@ export enum Panel2BackgroundPortMsgType {
     START_TASK = "mustStartTask",
     KILL_TASK = "mustKillTask",
     MONITOR_APPROVED = "monitorApproved",
-    MONITOR_REJECTED = "monitorRejected"
+    MONITOR_REJECTED = "monitorRejected",
+    KEEP_ALIVE = "keepAlive",
+    EXPORT_UNAFFILIATED_LOGS = "exportUnaffiliatedLogs"//i.e. logs not affiliated with any task (and so not included in any task's history export zip file)
 }
 
 /**

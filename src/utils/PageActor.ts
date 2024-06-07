@@ -5,9 +5,11 @@ import {
     Action,
     Background2PagePortMsgType,
     buildGenericActionDesc,
+    elementHighlightRenderDelay,
     expectedMsgForPortDisconnection,
     Page2BackgroundPortMsgType,
-    PageRequestType, renderUnknownValue,
+    PageRequestType,
+    renderUnknownValue,
     sleep
 } from "./misc";
 import {ChromeWrapper} from "./ChromeWrapper";
@@ -30,13 +32,15 @@ export class PageActor {
     private browserHelper: BrowserHelper;
     private domWrapper: DomWrapper;
     private chromeWrapper: ChromeWrapper;
-    //todo remove 'curr' prefix
-    currInteractiveElements: ElementData[] | undefined;
+    interactiveElements: ElementData[] | undefined;
     //if significant mutable state at some point extends beyond currInteractiveElements,
     // consider making a mutex for the state
     hasControllerEverResponded: boolean = false;
     portToBackground: chrome.runtime.Port;
     readonly logger: Logger;
+
+    lastPageModificationTimestamp: number = 0;
+    isPageBeingUnloaded: boolean = false;
 
     /**
      * Constructor for the PageActor class.
@@ -62,15 +66,15 @@ export class PageActor {
      * controller
      */
     getPageInfoForController = (): void => {
-        if (this.currInteractiveElements) {
+        if (this.interactiveElements) {
             this.logger.error("interactive elements already exist; background script might've asked for interactive elements twice in a row without in between instructing that an action be performed or without waiting for the action to be finished")
             this.portToBackground.postMessage(
                 {type: Page2BackgroundPortMsgType.TERMINAL, error: "interactive elements already exist"});
             return;
         }
 
-        this.currInteractiveElements = this.browserHelper.getInteractiveElements();
-        const elementsInSerializableForm = this.currInteractiveElements.map((elementData) => {
+        this.interactiveElements = this.browserHelper.getInteractiveElements();
+        const elementsInSerializableForm = this.interactiveElements.map((elementData) => {
             const serializableElementData: SerializableElementData = {...elementData};
             if ('element' in serializableElementData) {
                 delete serializableElementData['element'];
@@ -291,7 +295,7 @@ export class PageActor {
      * @param message the message received from the background script that describes the action to perform
      */
     performActionFromController = async (message: any): Promise<void> => {
-        if (!this.currInteractiveElements) {
+        if (!this.interactiveElements) {
             this.logger.error("perform-action message received from background script but no interactive elements are currently stored");
             this.portToBackground.postMessage(
                 {type: Page2BackgroundPortMsgType.TERMINAL, error: "no interactive elements stored to be acted on"});
@@ -300,26 +304,29 @@ export class PageActor {
         const actionToPerform: Action = message.action;
         const valueForAction: string | undefined = message.value;
 
-        const elementIndexValid = (typeof message.elementIndex === "number") && message.elementIndex < this.currInteractiveElements.length;
+        const elementIndexValid = (typeof message.elementIndex === "number") && message.elementIndex < this.interactiveElements.length;
         const actionOutcome: ActionOutcome = {
             success: false, result: buildGenericActionDesc(actionToPerform,
-                elementIndexValid ? this.currInteractiveElements[message.elementIndex] : undefined, valueForAction)
+                elementIndexValid ? this.interactiveElements[message.elementIndex] : undefined, valueForAction)
         };
 
+        //maybe get current time and current this.lastPageModificationTimestamp and, if they're too close,
+        // ignore the head/body mutation observers for this action and log a warning with as much info as possible
+        // (on the theory that the current page's js is unstable and makes incessant updates to the dom, so the
+        // broad-coverage mutation observers don't tell us whether the page is basically stable in practice)
+        // Maybe only do that if there's a very short difference there for 2 actions in a row on the same page
+
         if (elementIndexValid) {
-            const elementToActOnData = this.currInteractiveElements[message.elementIndex];
+            const elementToActOnData = this.interactiveElements[message.elementIndex];
             const elementToActOn = elementToActOnData.element;
             /*
             todo consider implementing in js a conditional polling/wait for 'stability'
              https://playwright.dev/docs/actionability#stable
-            todo might also need to implement a 'receives events' polling check (no idea how this would be implemented in js)
-             https://playwright.dev/docs/actionability#receives-events
-            todo note that a given action type would only need some of the actionability checks
+             note that a given action type would only need some of the actionability checks
              https://playwright.dev/docs/actionability#introduction
-            todo above goals for conditional polling/waiting could be one (or a few) helper methods
+             above goals for conditional polling/waiting could be one (or a few) helper methods
+             This might be redundant with the wait for overall page stability _after_ each action
              */
-            //good modern-approach starting point for conditional polling/waiting:
-            // https://stackoverflow.com/a/56399194/10808625 (it only checks for existence, but shouldn't be too hard to extend the logic)
 
             this.logger.trace("performing action <" + actionToPerform + "> on element <" + elementToActOnData.tagHead + "> " + elementToActOnData.description);
 
@@ -338,8 +345,8 @@ export class PageActor {
                 this.typeIntoElement(elementToActOn, valueForAction, actionOutcome);
             } else if (actionToPerform === Action.PRESS_ENTER) {
                 elementToActOn.focus();
-                //todo explore focusVisible:true option, and/or a conditional poll/wait approach to ensure the element is
-                // focused before we send the Enter key event
+                //if sleep proves unreliable or unacceptably slow, explore a conditional poll/wait approach to ensure
+                // the element is focused before we send the Enter key event
                 await sleep(50);
                 await this.performPressEnterAction(actionOutcome, "a particular element");
             } else if (actionToPerform === Action.SELECT) {
@@ -354,29 +361,47 @@ export class PageActor {
                 actionOutcome.result += "; action type not supported for a specific element: " + actionToPerform;
             }
 
-
         } else {
             if (actionToPerform === Action.SCROLL_UP || actionToPerform === Action.SCROLL_DOWN) {
                 await this.performScrollAction(actionToPerform, actionOutcome);
             } else if (actionToPerform === Action.PRESS_ENTER) {
                 await this.performPressEnterAction(actionOutcome, "whatever element had focus in the tab")
-                //todo open question for chrome.debugger api: how to handle the case where the tab is already being
-                // debugged by another extension (or if chrome dev tools side panel is open??)? tell the LLM that
-                // it can't use PRESS_ENTER for now and must try to click instead?
             } else {
+                //The TERMINATE action is handled in the background script
                 this.logger.warn("no element index provided in message from background script; can't perform action "
                     + actionToPerform);
-                //The TERMINATE action is handled in the background script
                 actionOutcome.result += "; no element index provided in message from background script; can't perform action "
                     + actionToPerform;
             }
         }
 
-        //todo find better way to wait for action to finish than just waiting a fixed amount of time
-        // maybe inspired by playwright's page stability checks?
-        await sleep(3000);
+        const startOfPostActionStabilityWait = Date.now();
+        const pollingIncrement = 100;//ms
+        const maxPollingTime = 10_000;//ms
+        const numPollingIterations = maxPollingTime / pollingIncrement;
+        for (let i = 0; i < numPollingIterations; i++) {
+            await sleep(pollingIncrement);
 
-        this.currInteractiveElements = undefined;
+            if (this.isPageBeingUnloaded) {
+                this.logger.info("page is being unloaded; will not try to notify background script of action outcome");
+                return;
+            }
+            const currTime = Date.now();
+            if (currTime - this.lastPageModificationTimestamp > pollingIncrement) {
+                this.logger.debug(`page has been stable for at least ${pollingIncrement}ms; notifying background script of action outcome`);
+                break;
+            }
+            //on the topic of pages potentially having weird js that's forever constantly updating the dom, maybe worth
+            // checking if that can be detected here by seeing if the difference between currTime and this.lastPageModificationTimestamp
+            // is _below_ some threshold like 10ms; if so, log an info message and at minimum do some extra
+            // incrementing of the loop variable (so total waiting is ~3sec), maybe even break out of loop
+
+        }
+        //todo double check whether/how much mutation observers on 'body' and 'head' slow down the page (and whether
+        // it causes any other issues)
+        this.logger.debug(`waited ${(Date.now() - startOfPostActionStabilityWait)}ms after action for page to become stable`);
+
+        this.interactiveElements = undefined;
         //this part would only be reached if the action didn't cause page navigation in current tab
 
         try {
@@ -393,19 +418,19 @@ export class PageActor {
         }
     }
 
-    highlightCandidateElement = (message: any): void => {
-        if (!this.currInteractiveElements) {
+    highlightCandidateElement = async (message: any): Promise<void> => {
+        if (!this.interactiveElements) {
             this.logger.error("highlight-candidate-element message received from background script but no interactive elements are currently stored");
             this.portToBackground.postMessage(
                 {type: Page2BackgroundPortMsgType.TERMINAL, error: "no interactive elements stored to be highlighted"});
             return;
-        } else if ((typeof message.elementIndex !== "number") || message.elementIndex >= this.currInteractiveElements.length) {
+        } else if ((typeof message.elementIndex !== "number") || message.elementIndex >= this.interactiveElements.length) {
             this.logger.error("highlight-candidate-element message received from background script but element index is invalid");
             this.portToBackground.postMessage(
                 {type: Page2BackgroundPortMsgType.TERMINAL, error: "invalid element index provided to highlight"});
             return;
         }
-        const elementToActOnData = this.currInteractiveElements[message.elementIndex];
+        const elementToActOnData = this.interactiveElements[message.elementIndex];
         const elementToActOn = elementToActOnData.element;
         const elemStyle = elementToActOn.style;
 
@@ -425,6 +450,21 @@ export class PageActor {
         // https://developer.mozilla.org/en-US/docs/Web/CSS/outline
         // https://developer.mozilla.org/en-US/docs/Web/CSS/filter
         // https://developer.mozilla.org/en-US/docs/Web/CSS/border
+
+        await sleep(elementHighlightRenderDelay);
+        try {
+            const resp = await this.chromeWrapper.sendMessageToServiceWorker({
+                reqType: PageRequestType.SCREENSHOT_WITH_TARGET_HIGHLIGHTED,
+                promptingIndexForAction: message.promptingIndexForAction
+            });
+            if (resp.success) {
+                this.logger.trace("successfully got service worker to take screenshot after target element was highlighted")
+            } else {
+                this.logger.error("failed to get service worker to take screenshot after target element was highlighted; response message: " + resp.message);
+            }
+        } catch (error: any) {
+            this.logger.error(`error in content script while notifying service worker about highlighting of targeted element (requesting screenshot); error: ${renderUnknownValue(error)}`);
+        }
     }
 
     /**
@@ -435,12 +475,12 @@ export class PageActor {
         this.logger.trace(`message received from background script: ${JSON.stringify(message)} by page ${document.URL}`);
         this.hasControllerEverResponded = true;
         if (message.type === Background2PagePortMsgType.REQ_PAGE_STATE) {
-            if (message.isMonitorRetry) {this.currInteractiveElements = undefined;}
+            if (message.isMonitorRetry) {this.interactiveElements = undefined;}
             this.getPageInfoForController();
         } else if (message.type === Background2PagePortMsgType.REQ_ACTION) {
             await this.performActionFromController(message);
         } else if (message.type === Background2PagePortMsgType.HIGHLIGHT_CANDIDATE_ELEM) {
-            this.highlightCandidateElement(message);
+            await this.highlightCandidateElement(message);
         } else {
             this.logger.warn("unknown message from background script: " + JSON.stringify(message));
         }

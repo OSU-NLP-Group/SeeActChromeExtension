@@ -2,6 +2,7 @@
     "manifest_version": 3,
     "name": "SeeAct Web Agent for Chrome",
     "version": "1.0",
+    "minimum_chrome_version": "114",
     "description": "Allows the user to invoke the SeeAct web agent to perform tasks in the current browser tab/window.",
     "permissions": [
         "tabCapture", "scripting", "debugger", "tabs", "debugger", "storage", "sidePanel"
@@ -47,5 +48,11 @@
             },
             "description": "Reject the pending action (in monitor mode)"
         }
+    },
+    "cross_origin_embedder_policy": {
+        "value": "require-corp"
+    },
+    "cross_origin_opener_policy": {
+        "value": "same-origin"
     }
 }

@@ -2,9 +2,9 @@ import {ChromeWrapper} from "./ChromeWrapper";
 import {createNamedLogger} from "./shared_logging_setup";
 import {Logger} from "loglevel";
 import {
-    Background2PanelPortMsgType, buildGenericActionDesc,
+    Background2PanelPortMsgType, buildGenericActionDesc, defaultIsMonitorMode, defaultShouldWipeActionHistoryOnStart,
     Panel2BackgroundPortMsgType,
-    panelToControllerPort, setupMonitorModeCache
+    panelToControllerPort, renderUnknownValue, setupMonitorModeCache, sleep
 } from "./misc";
 import {Mutex} from "async-mutex";
 import {ActionInfo} from "./AgentController";
@@ -54,12 +54,13 @@ export class SidePanelManager {
     readonly mutex = new Mutex();
 
     //allow read access to this without mutex because none of this class's code should _ever_ mutate it (only updated by storage change listener that was set up in constructor)
-    cachedMonitorMode = false;
+    cachedMonitorMode = defaultIsMonitorMode;
+    shouldWipeActionHistoryOnTaskStart = defaultShouldWipeActionHistoryOnStart;
 
 
     private state: SidePanelMgrState = SidePanelMgrState.IDLE;
     public serviceWorkerPort?: chrome.runtime.Port;
-
+    public serviceWorkerReady = false;
 
     constructor(elements: SidePanelElements, chromeWrapper?: ChromeWrapper, logger?: Logger, overrideDoc?: Document) {
         this.startButton = elements.startButton;
@@ -77,7 +78,59 @@ export class SidePanelManager {
         this.dom = overrideDoc ?? document;
 
         setupMonitorModeCache(this);
+        if (chrome?.storage?.local) {
+            chrome.storage.local.get(["shouldWipeHistoryOnTaskStart"], (items) => {
+                this.validateAndApplySidePanelOptions(true, items.shouldWipeHistoryOnTaskStart);
+            });
+            chrome.storage.local.onChanged.addListener((changes: { [p: string]: chrome.storage.StorageChange }) => {
+                this.validateAndApplySidePanelOptions(false, changes.shouldWipeHistoryOnTaskStart?.newValue);
+            });
+        }
+
+        try {
+            this.establishServiceWorkerConnection();
+        } catch (error: any) {
+            this.logger.error('error while establishing service worker connection:', renderUnknownValue(error));
+            try {
+                this.establishServiceWorkerConnection();
+            } catch (error: any) {
+                this.logger.error('error while retrying to establish service worker connection:', renderUnknownValue(error));
+                this.setStatusWithDelayedClear('Persistent errors while trying to establish connection to agent controller; Please close and reopen the side panel to try again');
+            }
+        }
     }
+
+    validateAndApplySidePanelOptions = (initOrUpdate: boolean, newShouldWipeHistoryOnTaskStartVal: unknown): void => {
+        const contextStr = initOrUpdate ? "when loading options from storage" : "when processing an update from storage";
+        if (typeof newShouldWipeHistoryOnTaskStartVal === "boolean") {
+            this.shouldWipeActionHistoryOnTaskStart = newShouldWipeHistoryOnTaskStartVal;
+        } else if (typeof newShouldWipeHistoryOnTaskStartVal !== "undefined") {this.logger.error(`invalid shouldWipeHistoryOnTaskStart value ${newShouldWipeHistoryOnTaskStartVal} detected in local storage ${contextStr}, ignoring it`)}
+    }
+
+    establishServiceWorkerConnection = (): void => {
+        this.serviceWorkerReady = false;
+
+        this.state = SidePanelMgrState.WAIT_FOR_CONNECTION_INIT;
+        this.serviceWorkerPort = chrome.runtime.connect({name: panelToControllerPort});
+        this.serviceWorkerPort.onMessage.addListener(this.handleAgentControllerMsg);
+        this.serviceWorkerPort.onDisconnect.addListener(this.handleAgentControllerDisconnect);
+    }
+
+    pingServiceWorkerForKeepAlive = async (): Promise<void> => {
+        if (!this.serviceWorkerPort) {
+            this.logger.error('pingServiceWorkerForKeepalive called but serviceWorkerPort is undefined');
+            return;
+        }
+        try {
+            this.serviceWorkerPort.postMessage({type: Panel2BackgroundPortMsgType.KEEP_ALIVE});
+        } catch (error: any) {
+            this.logger.error('error while pinging service worker for keepalive:', renderUnknownValue(error));
+            return;
+        }
+        const five_less_than_chrome_service_worker_timeout = 25000;
+        setTimeout(this.pingServiceWorkerForKeepAlive, five_less_than_chrome_service_worker_timeout);
+    }
+
 
     startTaskClickHandler = async (): Promise<void> => {
         this.logger.trace('startAgent button clicked');
@@ -87,21 +140,46 @@ export class SidePanelManager {
                 const taskEmptyWhenStartMsg = "task specification field is empty (or all whitespace), can't start agent";
                 this.logger.warn(taskEmptyWhenStartMsg);
                 this.setStatusWithDelayedClear(taskEmptyWhenStartMsg, 3);
-                return;
             } else if (this.state !== SidePanelMgrState.IDLE) {
                 const existingTaskMsg = 'another task is already running, cannot start task';
                 this.logger.warn(existingTaskMsg);
                 this.setStatusWithDelayedClear(existingTaskMsg, 3);
-                return;
-            } else if (this.serviceWorkerPort) {
-                this.logger.error('service worker port still exists despite state being IDLE, something probably went wrong; restarting service worker port');
-                this.serviceWorkerPort.disconnect();
-            }
+            } else if (!this.serviceWorkerPort) {
+                this.logger.error('service worker port is broken or missing, cannot start task');
+                this.setStatusWithDelayedClear('Connection to agent controller is missing, so cannot start task (starting it up again); please try again after status display shows that connection is working again', 3);
 
-            this.state = SidePanelMgrState.WAIT_FOR_CONNECTION_INIT;
-            this.serviceWorkerPort = chrome.runtime.connect({name: panelToControllerPort});
-            this.serviceWorkerPort.onMessage.addListener(this.handleAgentControllerMsg);
-            this.serviceWorkerPort.onDisconnect.addListener(this.handleAgentControllerDisconnect);
+                try {
+                    this.establishServiceWorkerConnection();
+                } catch (error: any) {
+                    this.setStatusWithDelayedClear('Error while trying to establish connection to agent controller; Please close and reopen the side panel to try again');
+                    this.logger.error('error while establishing service worker connection after start task button clicked', renderUnknownValue(error));
+                }
+            } else if (!this.serviceWorkerReady) {
+                this.logger.info("start task button clicked when port to service worker exists but service worker has not yet confirmed its readiness; ignoring");
+                this.setStatusWithDelayedClear("Agent controller not ready yet, please wait a moment and try again");
+            } else {
+                const taskSpec = this.taskSpecField.value;
+                if (taskSpec.trim() === '') {
+                    const cantStartErrMsg = 'task specification field became empty (or all whitespace) since Start Task button was clicked, cannot start task';
+                    this.logger.error(cantStartErrMsg);
+                    this.setStatusWithDelayedClear(cantStartErrMsg);
+                    this.state = SidePanelMgrState.IDLE;
+                } else {
+                    try {
+                        this.serviceWorkerPort.postMessage(
+                            {type: Panel2BackgroundPortMsgType.START_TASK, taskSpecification: taskSpec});
+                    } catch (error: any) {
+                        this.logger.error(`error while sending task start command to service worker: ${error.message}`);
+                        this.reset();
+                        return;
+                    }
+                    this.state = SidePanelMgrState.WAIT_FOR_TASK_STARTED;
+                    this.logger.trace("sent START_TASK message to service worker port");
+                    if (this.shouldWipeActionHistoryOnTaskStart) {
+                        while (this.historyList.firstChild) { this.historyList.removeChild(this.historyList.firstChild);}
+                    }
+                }
+            }
         });
     }
 
@@ -120,7 +198,13 @@ export class SidePanelManager {
                 this.setStatusWithDelayedClear(missingConnectionMsg, 3);
                 return;
             }
-            this.serviceWorkerPort.postMessage({type: Panel2BackgroundPortMsgType.KILL_TASK});
+            try {
+                this.serviceWorkerPort.postMessage({type: Panel2BackgroundPortMsgType.KILL_TASK});
+            } catch (error: any) {
+                this.logger.error(`error while sending task termination command to service worker: ${error.message}`);
+                this.reset();
+                return;
+            }
             this.state = SidePanelMgrState.WAIT_FOR_TASK_ENDED;
         });
     }
@@ -140,6 +224,34 @@ export class SidePanelManager {
         }
     }
 
+    unaffiliatedLogsExportButtonClickHandler = async (): Promise<void> => {
+        this.logger.trace('export unaffiliated logs button clicked');
+        await this.mutex.runExclusive(async () => {
+            if (!this.serviceWorkerPort) {
+                this.logger.error('service worker port is broken or missing, cannot export non-task-specific logs');
+                this.setStatusWithDelayedClear('Connection to agent controller is missing, so cannot export non-task-specific logs (reopening the connection in background); please try again after status display shows that connection is working again', 3);
+
+                try {
+                    this.establishServiceWorkerConnection();
+                } catch (error: any) {
+                    this.setStatusWithDelayedClear('Error while trying to establish connection to agent controller; Please close and reopen the side panel to try again');
+                    this.logger.error('error while establishing service worker connection after unaffiliated logs export button clicked', renderUnknownValue(error));
+                }
+            } else if (!this.serviceWorkerReady) {
+                this.logger.info("unaffiliated logs export button clicked when port to service worker exists but service worker has not yet confirmed its readiness; ignoring");
+                this.setStatusWithDelayedClear("Agent controller not ready yet, please wait a moment and try again");
+            } else {
+                try {
+                    this.serviceWorkerPort.postMessage({type: Panel2BackgroundPortMsgType.EXPORT_UNAFFILIATED_LOGS});
+                } catch (error: any) {
+                    this.logger.error(`error while sending "export non-task-specific logs" command to service worker: ${error.message}`);
+                    this.reset();
+                    return;
+                }
+            }
+        });
+    }
+
     monitorApproveButtonClickHandler = async (): Promise<void> => {
         if (!this.cachedMonitorMode) {
             this.logger.error("monitor mode not enabled, approve button shouldn't be clickable; ignoring");
@@ -153,7 +265,13 @@ export class SidePanelManager {
                 this.logger.error("service worker port doesn't exist, can't approve the pending action");
                 return;
             }
-            this.serviceWorkerPort.postMessage({type: Panel2BackgroundPortMsgType.MONITOR_APPROVED});
+            try {
+                this.serviceWorkerPort.postMessage({type: Panel2BackgroundPortMsgType.MONITOR_APPROVED});
+            } catch (error: any) {
+                this.logger.error(`error while sending monitor approval message to service worker: ${error.message}`);
+                this.reset();
+                return;
+            }
             this.state = SidePanelMgrState.WAIT_FOR_ACTION_PERFORMED_RECORD;
             this.pendingActionDiv.textContent = '';
             this.pendingActionDiv.title = '';
@@ -174,8 +292,14 @@ export class SidePanelManager {
                 return;
             }
             const feedbackText = this.monitorFeedbackField.value;
-            this.serviceWorkerPort.postMessage(
-                {type: Panel2BackgroundPortMsgType.MONITOR_REJECTED, feedback: feedbackText});
+            try {
+                this.serviceWorkerPort.postMessage(
+                    {type: Panel2BackgroundPortMsgType.MONITOR_REJECTED, feedback: feedbackText});
+            } catch (error: any) {
+                this.logger.error(`error while sending monitor rejection message to service worker: ${error.message}`);
+                this.reset();
+                return;
+            }
             this.state = SidePanelMgrState.WAIT_FOR_PENDING_ACTION_INFO;
             this.pendingActionDiv.textContent = '';
             this.pendingActionDiv.title = '';
@@ -183,7 +307,8 @@ export class SidePanelManager {
     }
 
     handleAgentControllerMsg = async (message: any): Promise<void> => {
-        this.logger.trace(`message received from background script: ${JSON.stringify(message).slice(0,100)} by side panel`);
+        this.logger.trace(`message received from background script by side panel: ${JSON.stringify(message)
+            .slice(0, 100)}...`);
         if (message.type === Background2PanelPortMsgType.AGENT_CONTROLLER_READY) {
             await this.mutex.runExclusive(() => this.processConnectionReady());
         } else if (message.type === Background2PanelPortMsgType.TASK_STARTED) {
@@ -196,14 +321,16 @@ export class SidePanelManager {
             await this.mutex.runExclusive(() => this.processTaskEndConfirmation(message));
         } else if (message.type === Background2PanelPortMsgType.ERROR) {
             await this.mutex.runExclusive(() => this.processErrorFromController(message));
-        } else if (message.type === Background2PanelPortMsgType.TASK_HISTORY_EXPORT) {
-            this.exportTaskHistoryToFileDownload(message);
+        } else if (message.type === Background2PanelPortMsgType.HISTORY_EXPORT) {
+            this.exportHistoryToFileDownload(message);
+        } else if (message.type === Background2PanelPortMsgType.NOTIFICATION) {
+            this.setStatusWithDelayedClear(message.msg, 30, message.details);//give user plenty of time to read details
         } else {
             this.logger.warn("unknown type of message from background script: " + JSON.stringify(message));
         }
     }
 
-    private exportTaskHistoryToFileDownload(message: any) {
+    private exportHistoryToFileDownload(message: any) {
         try {
             this.logger.debug(`received array of data from background script for a zip file, length: ${message.data.length}`);
             const arrBuff = new Uint8Array(message.data).buffer;
@@ -223,13 +350,11 @@ export class SidePanelManager {
     private processErrorFromController(message: any) {
         this.logger.error(`error message from background script: ${message.msg}`);
         this.setStatusWithDelayedClear(`Error: ${message.msg}`, 5);
-        this.serviceWorkerPort?.disconnect();
         this.reset();
     }
 
     private reset() {
         this.state = SidePanelMgrState.IDLE;
-        this.serviceWorkerPort = undefined;
         this.taskSpecField.value = '';
         this.startButton.disabled = false;
         this.killButton.disabled = true;
@@ -248,19 +373,18 @@ export class SidePanelManager {
         } else if (!this.serviceWorkerPort) {
             this.logger.error('received READY message from service worker port but serviceWorkerPort is undefined');
             return;
+        } else if (this.serviceWorkerReady) {
+            this.logger.warn("received notification of readiness from agent controller when side panel already thought agent controller was active and ready")
         }
-        const taskSpec = this.taskSpecField.value;
-        if (taskSpec.trim() === '') {
-            const cantStartErrMsg = 'task specification field became empty (or all whitespace) since Start Task button was clicked, cannot start task';
-            this.logger.error(cantStartErrMsg);
-            this.setStatusWithDelayedClear(cantStartErrMsg);
-            this.serviceWorkerPort.disconnect();
-            this.state = SidePanelMgrState.IDLE;
-        } else {
-            this.serviceWorkerPort.postMessage(
-                {type: Panel2BackgroundPortMsgType.START_TASK, taskSpecification: taskSpec});
-            this.state = SidePanelMgrState.WAIT_FOR_TASK_STARTED;
-        }
+        this.logger.trace("agent controller notified side panel of its readiness");
+        this.serviceWorkerReady = true;
+        this.setStatusWithDelayedClear('Agent controller connection ready; you can now start a task, export non-task-specific logs, etc.');
+
+        this.pingServiceWorkerForKeepAlive().catch((error) => {
+            this.logger.error('error while starting keepalive pings to service worker:', renderUnknownValue(error));
+        });
+
+        this.state = SidePanelMgrState.IDLE;
     }
 
     processTaskStartConfirmation = (message: any): void => {
@@ -270,10 +394,9 @@ export class SidePanelManager {
         }
         let newStatus = '';
         if (message.success) {
+            this.logger.trace("received notification of successful task start from agent controller");
             newStatus = `Task ${message.taskId} started successfully`;
             this.state = SidePanelMgrState.WAIT_FOR_PENDING_ACTION_INFO;
-            //wipe history from previous task
-            while (this.historyList.firstChild) { this.historyList.removeChild(this.historyList.firstChild);}
 
             this.addHistoryEntry(`Task started: ${message.taskSpec}`, `Task ID: ${message.taskId}`, "task_start")
             this.startButton.disabled = true;
@@ -298,7 +421,7 @@ export class SidePanelManager {
         }
 
         if (this.cachedMonitorMode) {
-            this.monitorApproveButton.disabled= false;
+            this.monitorApproveButton.disabled = false;
             this.monitorRejectButton.disabled = false;
 
             this.state = SidePanelMgrState.WAIT_FOR_MONITOR_RESPONSE;
@@ -357,38 +480,39 @@ export class SidePanelManager {
     processTaskEndConfirmation = (message: any): void => {
         if (this.state === SidePanelMgrState.WAIT_FOR_TASK_STARTED) {
             this.logger.warn("task start failed");
-            this.setStatusWithDelayedClear(`Task start failed`);
+            this.setStatusWithDelayedClear(`Task start failed`, 10, message.details);
         } else {
             if (this.state !== SidePanelMgrState.WAIT_FOR_PENDING_ACTION_INFO
                 && this.state !== SidePanelMgrState.WAIT_FOR_TASK_ENDED) {
                 this.logger.error(`received TASK_ENDED message from service worker port unexpectedly (while in state ${SidePanelMgrState[this.state]})`);
             }
-            this.setStatusWithDelayedClear(`Task ${message.taskId} ended`);
-            this.addHistoryEntry(`Task ended`, `Ended task id: ${message.taskId}`, "task_end");
+            this.setStatusWithDelayedClear(`Task ${message.taskId} ended`, 20, message.details);
+            this.addHistoryEntry(`Task ended`, `Ended task id: ${message.taskId} for reason ${message.details}`, "task_end");
         }
         this.reset();
     }
 
 
-    private setStatusWithDelayedClear(status: string, delay: number = 10) {
+    private setStatusWithDelayedClear(status: string, delay: number = 10, hovertext: string = "") {
         this.statusDiv.style.display = 'block';
         this.statusDiv.textContent = status;
+        this.statusDiv.title = hovertext;
         setTimeout(() => {
             this.statusDiv.style.display = 'none';
             this.statusDiv.textContent = '';
+            this.statusDiv.title = '';
         }, delay * 1000)
     }
 
-    handleAgentControllerDisconnect = (): void => {
-        if (this.state === SidePanelMgrState.WAIT_FOR_TASK_ENDED || this.state === SidePanelMgrState.IDLE) {
-            //including IDLE in addition to WAIT_FOR_TASK_ENDED because the service worker would usually disconnect the
-            // port right after sending the "task ended" message to us, so most of the time this will've received that
-            // message and gone to IDLE state before the port disconnects
-            this.logger.trace('service worker port disconnected as expected at end of task');
-        } else {
-            this.logger.error('service worker port disconnected unexpectedly');
-        }
-        this.serviceWorkerPort = undefined;
+    handleAgentControllerDisconnect = async (): Promise<void> => {
+        this.logger.warn('service worker port disconnected unexpectedly; attempting to reestablish connection');
+        this.setStatusWithDelayedClear("Agent controller connection lost. Please wait while it is started up again");
+        await this.mutex.runExclusive(() => {
+            this.reset();
+            try {
+                this.establishServiceWorkerConnection();
+            } catch (error: any) {this.logger.error('error while reestablishing service worker connection:', renderUnknownValue(error));}
+        });
     }
 
     addHistoryEntry = (displayedText: string, hoverText: string, specialClass?: string): void => {

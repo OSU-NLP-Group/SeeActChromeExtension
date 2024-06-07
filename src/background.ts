@@ -2,16 +2,22 @@ import {
     AgentDb,
     assertIsValidLogLevelName,
     augmentLogMsg,
-    createNamedLogger, DB_NAME, dbConnHolder, initializeDbConnection,
-    LOGS_OBJECT_STORE, SCREENSHOTS_OBJECT_STORE, taskIdHolder, taskIdPlaceholderVal
+    createNamedLogger,
+    DB_NAME,
+    dbConnHolder,
+    initializeDbConnection,
+    LOGS_OBJECT_STORE,
+    SCREENSHOTS_OBJECT_STORE,
+    taskIdHolder,
+    taskIdPlaceholderVal
 } from "./utils/shared_logging_setup";
 import {OpenAiEngine} from "./utils/OpenAiEngine";
 import log from "loglevel";
-import {AgentController} from "./utils/AgentController";
+import {AgentController, AgentControllerState} from "./utils/AgentController";
 import {PageRequestType, pageToControllerPort, panelToControllerPort, renderUnknownValue, sleep} from "./utils/misc";
+import {openDB} from "idb";
 import Port = chrome.runtime.Port;
 import MessageSender = chrome.runtime.MessageSender;
-import {openDB} from "idb";
 
 
 console.log("successfully loaded background script in browser");
@@ -172,14 +178,14 @@ let agentController: AgentController | undefined;
  * @return true to indicate to chrome that the requester's connection should be held open to wait for a response
  */
 function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (response?: any) => void): boolean {
+    if (!centralLogger) {
+        centralLogger = createNamedLogger('service-worker', true);
+    }
     if (request.reqType !== PageRequestType.LOG) {
         centralLogger.trace("request received by service worker", sender.tab ?
             `from a content script:${sender.tab.url}` : "from the extension");
     }
     if (request.reqType === PageRequestType.LOG) {
-        if (!centralLogger) {
-            centralLogger = createNamedLogger('service-worker', true);
-        }
 
         const timestamp = String(request.timestamp);
         const loggerName = String(request.loggerName);
@@ -194,7 +200,7 @@ function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (r
         if (dbConnHolder.dbConn) {
             dbConnHolder.dbConn.add(LOGS_OBJECT_STORE, {
                 timestamp: timestamp, loggerName: loggerName, level: level,
-                taskId: taskIdHolder.currTaskId  ?? taskIdPlaceholderVal, msg: args.join(" ")
+                taskId: taskIdHolder.currTaskId ?? taskIdPlaceholderVal, msg: args.join(" ")
             }).catch((error) => console.error("error adding log message to indexeddb:", renderUnknownValue(error)));
         }
         sendResponse({success: true});
@@ -226,6 +232,30 @@ function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (r
                 sendResponse({success: false, message: errMsg});
             });
         }
+    } else if (request.reqType === PageRequestType.SCREENSHOT_WITH_TARGET_HIGHLIGHTED) {
+        if (!agentController) {
+            sendResponse({
+                success: false,
+                message: "Cannot take screenshot of highlighted element when agent controller is not initialized"
+            });
+        } else {
+            if (agentController.state === AgentControllerState.WAITING_FOR_ACTION) {
+                centralLogger.warn("received request for screenshot with target element highlighted when agent controller has already sent the action command to the content script- NEED TO INCREASE HOW LONG AGENT CONTROLLER SLEEPS BEFORE PERFORMING ELEMENT-SPECIFIC ACTIONS");
+            }
+
+            agentController.captureAndStoreScreenshot("targeted", request.promptingIndexForAction).then(() => {
+                    centralLogger.info("took screenshot of page with target element highlighted");
+                    sendResponse({success: true, message: "Took screenshot with target element highlighted"});
+                }, (error) => {
+                    const errMsg = `error taking screenshot of highlighted element; error: ${renderUnknownValue(error)}`;
+                    centralLogger.error(errMsg);
+                    sendResponse({success: false, message: errMsg});
+                }
+            );
+        }
+        //idea for later space-efficiency refinement - when saving a "targeted" screenshot, maybe could reduce its
+        // quality drastically b/c you only care about an indication of which element in the screen was being targeted,
+        // and you can consult the corresponding "initial" screenshot for more detail?
     } else {
         centralLogger.error("unrecognized request type:", request.reqType);
     }
@@ -245,8 +275,7 @@ chrome.runtime.onMessage.addListener(handleMsgFromPage);
  */
 async function handleConnectionFromPage(port: Port): Promise<void> {
     if (!centralLogger) { centralLogger = createNamedLogger("service-worker", true)}
-    //todo if make port names unique (for each injected content script), change this to a "starts with" check
-    if (port.name === pageToControllerPort) {
+    if (port.name.startsWith(pageToControllerPort)) {
         if (!agentController) {
             centralLogger.error(`agentController not initialized when page actor ${port.name} tried to connect to agent controller in service worker`);
             return;
@@ -254,13 +283,11 @@ async function handleConnectionFromPage(port: Port): Promise<void> {
         agentController.addPageConnection(port).then(
             () => centralLogger.trace("page actor connected to agent controller in service worker"));
     } else if (port.name === panelToControllerPort) {
+        centralLogger.trace("side panel opened new connection to service worker");
         if (!agentController) {
-            // if (controllerIsInitializing) { todo remove this chunk of commented-out code if not needed in practice
-            // todo do what? sleep and then check the boolean again, in a loop with maximum number of iterations?
-            //  see comments above about how this could use await if I revised the lazy initialization code
-            // } else {
+            centralLogger.debug("have to initialize agent controller to handle connection from side panel");
             agentController = await initializeAgentController();
-            //}
+            centralLogger.trace("finished initializing agent controller to handle connection from side panel");
         }
         agentController.addSidePanelConnection(port).then(
             () => centralLogger.trace("side panel connected to agent controller in service worker"));

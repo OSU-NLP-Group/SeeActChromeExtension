@@ -26,14 +26,6 @@ Once you have extracted the contents of the repo, please follow these steps to l
 
 # Usage
 
-## Overview
-
-For observability (and, for now, stability of the agent), you may wish to open the extension's DevTools window
-before starting a task, making that window thin/tall, and putting it next to the window which you want the agent to act in.
-
-However, please be sure not to click anything outside of the web agent's window/tab while a task is running, as this
-will cause an error and the task will be terminated.
-
 ## Opening the Extension's DevTools Window
 1. Open a new tab in Chrome.
 2. Enter "chrome://extensions" in the address bar and press enter.
@@ -47,6 +39,10 @@ TODO add updated screenshots that reflect side-panel-based ui
 agent to act in, just before starting a task.
 2. Click the extension's icon (robot next to monitor) to open the extension's side-panel.
 3. Type a task description into the "Task Specification" text box and click the "Start Task" button.  
+
+Please be sure not to click anything outside of the web agent's window/tab while a task is running, as this
+will cause an error and the task will be terminated.
+
 
 ## Terminating a Task
 If the agent does something undesirable, becomes stuck in a loop, goes in a non-viable direction, etc.,
@@ -62,23 +58,29 @@ in the extension's side panel.
 
 ## Typescript
 
-Files which export multiple utility methods will have all_lowercase names. Files which export a single class will have
-PascalCase names.
+Files which export multiple utility methods will have all_lowercase names. Files which export a single main class will 
+have PascalCase names.
 
 ## Testing
 
 White-box as well as black-box types of unit tests (both using jest).
 
-TODO if we decide to open-source this, b4 doing that, go through code and mark things private or something similar
-wherever possible (to leave room for maneuver in later updates)
-
 ## Logging
 
-TRACE log level has the same meaning as in java/c#/etc, not the meaning it has in js console.trace() (which prints out a stack trace to the calling line of code)
+TRACE log level has the same meaning as in java/c#/etc, not the meaning it has in js console.trace() (which prints out 
+a stack trace to the calling line of code)
 
-Use WARN for problems from user input or ai model outputs being bad (even if those problems cause task failure)  
-Only use ERROR if one of the assumptions/expectations in the extension's design is violated (e.g. unexpected type of error, controller is in a particular state at a point in code execution where that shouldn't be possible, etc.)
+Use WARN for problems from user input or AI model outputs being bad (even if those problems cause task failure)  
+Only use ERROR if one of the assumptions/expectations in the extension's design is violated (e.g. unexpected type of 
+error, controller is in a particular state at a point in code execution where that shouldn't be possible, etc.)
 
+Some timestamps are higher precision (5 to 100 microseconds precision rather than 1 millisecond precision). They use the
+Performance browser API. Please [beware](https://developer.mozilla.org/en-US/docs/Web/API/Performance/now#description) 
+possible confusion from system clock adjustments (e.g. DST) or clock skew when comparing high-precision vs normal timestamps.
+
+
+
+## Developer notes
 
 TODO consider replacing "utils" folder with frontend, serviceworker, and shared folders
 
@@ -91,3 +93,7 @@ TODO really need to standardize naming conventions for certain entities at some 
  - manager in side panel- "SidePanelManager"/"Panel"/"SidePanel"
  - task_history_entry vs action_performed_record  etc.
  - etc.
+
+
+Open question for chrome.debugger api: how to handle the case where the tab is already being
+ debugged by another extension? tell the LLM that it can't use HOVER for now and must try to click instead?
