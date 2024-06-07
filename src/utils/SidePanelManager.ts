@@ -87,17 +87,17 @@ export class SidePanelManager {
             });
         }
 
-        this.establishServiceWorkerConnection().then(() => {
-            this.logger.trace('service worker connection started after side panel opened');
-        }, (error) => {
-            this.logger.error('error while establishing service worker connection on side panel open, retrying:', renderUnknownValue(error));
-            this.establishServiceWorkerConnection().then(() => {
-                this.logger.trace('service worker connection started after side panel opened (had to retry after one error)');
-            }, (error) => {
-                this.logger.error('second error while establishing service worker connection on side panel open:', renderUnknownValue(error));
+        try {
+            this.establishServiceWorkerConnection();
+        } catch (error: any) {
+            this.logger.error('error while establishing service worker connection:', renderUnknownValue(error));
+            try {
+                this.establishServiceWorkerConnection();
+            } catch (error: any) {
+                this.logger.error('error while retrying to establish service worker connection:', renderUnknownValue(error));
                 this.setStatusWithDelayedClear('Persistent errors while trying to establish connection to agent controller; Please close and reopen the side panel to try again');
-            });
-        });
+            }
+        }
     }
 
     validateAndApplySidePanelOptions = (initOrUpdate: boolean, newShouldWipeHistoryOnTaskStartVal: unknown): void => {
@@ -107,7 +107,7 @@ export class SidePanelManager {
         } else if (typeof newShouldWipeHistoryOnTaskStartVal !== "undefined") {this.logger.error(`invalid shouldWipeHistoryOnTaskStart value ${newShouldWipeHistoryOnTaskStartVal} detected in local storage ${contextStr}, ignoring it`)}
     }
 
-    establishServiceWorkerConnection = async (): Promise<void> => {
+    establishServiceWorkerConnection = (): void => {
         this.serviceWorkerReady = false;
 
         this.state = SidePanelMgrState.WAIT_FOR_CONNECTION_INIT;
@@ -127,6 +127,7 @@ export class SidePanelManager {
             this.logger.error('error while pinging service worker for keepalive:', renderUnknownValue(error));
             return;
         }
+        //todo consider doing this every 10 seconds
         const half_chrome_service_worker_timeout = 15000;
         setTimeout(this.pingServiceWorkerForKeepAlive, half_chrome_service_worker_timeout);
     }
@@ -148,12 +149,12 @@ export class SidePanelManager {
                 this.logger.error('service worker port is broken or missing, cannot start task');
                 this.setStatusWithDelayedClear('Connection to agent controller is missing, so cannot start task (starting it up again); please try again after status display shows that connection is working again', 3);
 
-                this.establishServiceWorkerConnection().then(() => {
-                    this.logger.trace('service worker connection started after start task button clicked');
-                }, (error) => {
+                try {
+                    this.establishServiceWorkerConnection();
+                } catch (error: any) {
                     this.setStatusWithDelayedClear('Error while trying to establish connection to agent controller; Please close and reopen the side panel to try again');
                     this.logger.error('error while establishing service worker connection after start task button clicked', renderUnknownValue(error));
-                });
+                }
             } else if (!this.serviceWorkerReady) {
                 this.logger.info("start task button clicked when port to service worker exists but service worker has not yet confirmed its readiness; ignoring");
                 this.setStatusWithDelayedClear("Agent controller not ready yet, please wait a moment and try again");
@@ -231,12 +232,12 @@ export class SidePanelManager {
                 this.logger.error('service worker port is broken or missing, cannot export non-task-specific logs');
                 this.setStatusWithDelayedClear('Connection to agent controller is missing, so cannot export non-task-specific logs (reopening the connection in background); please try again after status display shows that connection is working again', 3);
 
-                this.establishServiceWorkerConnection().then(() => {
-                    this.logger.trace('service worker connection started after unaffiliated logs export button clicked');
-                }, (error) => {
+                try {
+                    this.establishServiceWorkerConnection();
+                } catch (error: any) {
                     this.setStatusWithDelayedClear('Error while trying to establish connection to agent controller; Please close and reopen the side panel to try again');
                     this.logger.error('error while establishing service worker connection after unaffiliated logs export button clicked', renderUnknownValue(error));
-                });
+                }
             } else if (!this.serviceWorkerReady) {
                 this.logger.info("unaffiliated logs export button clicked when port to service worker exists but service worker has not yet confirmed its readiness; ignoring");
                 this.setStatusWithDelayedClear("Agent controller not ready yet, please wait a moment and try again");
@@ -503,14 +504,14 @@ export class SidePanelManager {
         }, delay * 1000)
     }
 
-    handleAgentControllerDisconnect = (): void => {
+    handleAgentControllerDisconnect = async (): Promise<void> => {
         this.logger.warn('service worker port disconnected unexpectedly; attempting to reestablish connection');
         this.setStatusWithDelayedClear("Agent controller connection lost. Please wait while it is started up again");
-        this.reset();
-        this.establishServiceWorkerConnection().then(() => {
-            this.logger.trace('service worker connection reestablished after disconnect');
-        }, (error) => {
-            this.logger.error('error while reestablishing service worker connection:', renderUnknownValue(error));
+        await this.mutex.runExclusive(() => {
+            this.reset();
+            try {
+                this.establishServiceWorkerConnection();
+            } catch (error: any) {this.logger.error('error while reestablishing service worker connection:', renderUnknownValue(error));}
         });
     }
 
