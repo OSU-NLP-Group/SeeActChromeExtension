@@ -96,7 +96,7 @@ describe("PageActor.getPageInfoForController", () => {
     });
 
     it("should not send interactive elements to controller when they already exist", () => {
-        pageActor.currInteractiveElements = interactElems;
+        pageActor.interactiveElements = interactElems;
 
         pageActor.getPageInfoForController();
 
@@ -515,7 +515,7 @@ describe('PageActor.performActionFromController', () => {
         const typingVal = "test";
         const message =
             {msg: Background2PagePortMsgType.REQ_ACTION, action: Action.TYPE, elementIndex: 0, value: typingVal};
-        pageActor.currInteractiveElements = interactiveElems;
+        pageActor.interactiveElements = interactiveElems;
         await pageActor.performActionFromController(message);
         expect((interactiveElems[0].element as HTMLInputElement).value).toEqual(typingVal);
         expect(mockPort.postMessage).toHaveBeenCalledWith(
@@ -527,7 +527,7 @@ describe('PageActor.performActionFromController', () => {
 
     it('should click a specific element', async () => {
         const message = {msg: Background2PagePortMsgType.REQ_ACTION, action: Action.CLICK, elementIndex: 2};
-        pageActor.currInteractiveElements = interactiveElems;
+        pageActor.interactiveElements = interactiveElems;
         const clickSpy = jest.spyOn(interactiveElems[2].element, 'click');
         await pageActor.performActionFromController(message);
         expect(clickSpy).toHaveBeenCalled();
@@ -542,7 +542,7 @@ describe('PageActor.performActionFromController', () => {
         const selectVal = "option1";
         const message =
             {msg: Background2PagePortMsgType.REQ_ACTION, action: Action.SELECT, elementIndex: 1, value: selectVal};
-        pageActor.currInteractiveElements = interactiveElems;
+        pageActor.interactiveElements = interactiveElems;
         await pageActor.performActionFromController(message);
         expect(mockPort.postMessage).toHaveBeenCalledWith(
             {
@@ -554,7 +554,7 @@ describe('PageActor.performActionFromController', () => {
     it('should press enter on a specific element', async () => {
         const message =
             {msg: Background2PagePortMsgType.REQ_ACTION, action: Action.PRESS_ENTER, elementIndex: 0};
-        pageActor.currInteractiveElements = interactiveElems;
+        pageActor.interactiveElements = interactiveElems;
         const mockOfSendMsgToServWorker = jest.fn().mockResolvedValue({success: true});
         chromeWrapper.sendMessageToServiceWorker = mockOfSendMsgToServWorker;
         await pageActor.performActionFromController(message);
@@ -568,7 +568,7 @@ describe('PageActor.performActionFromController', () => {
 
     it('should handle unknown action for a specific element', async () => {
         const message = {msg: Background2PagePortMsgType.REQ_ACTION, action: Action.SCROLL_DOWN, elementIndex: 0};
-        pageActor.currInteractiveElements = interactiveElems;
+        pageActor.interactiveElements = interactiveElems;
         await pageActor.performActionFromController(message);
         expect(mockPort.postMessage).toHaveBeenCalledWith(
             {
@@ -579,7 +579,7 @@ describe('PageActor.performActionFromController', () => {
 
     it('should handle SCROLL_UP action without a specific element', async () => {
         const message = {msg: Background2PagePortMsgType.REQ_ACTION, action: Action.SCROLL_UP};
-        pageActor.currInteractiveElements = interactiveElems;
+        pageActor.interactiveElements = interactiveElems;
         domWrapper.getVertScrollPos = jest.fn().mockReturnValueOnce(374).mockReturnValueOnce(0)
             .mockReturnValueOnce(0);
         await pageActor.performActionFromController(message);
@@ -592,7 +592,7 @@ describe('PageActor.performActionFromController', () => {
 
     it('should handle PRESS_ENTER action without a specific element', async () => {
         const message = {msg: Background2PagePortMsgType.REQ_ACTION, action: Action.PRESS_ENTER};
-        pageActor.currInteractiveElements = interactiveElems;
+        pageActor.interactiveElements = interactiveElems;
         chromeWrapper.sendMessageToServiceWorker = jest.fn().mockResolvedValue({success: true});
         await pageActor.performActionFromController(message);
         expect(mockPort.postMessage).toHaveBeenCalledWith(
@@ -604,7 +604,7 @@ describe('PageActor.performActionFromController', () => {
 
     it('should handle unknown action without a specific element', async () => {
         const message = {msg: Background2PagePortMsgType.REQ_ACTION, action: Action.SELECT};
-        pageActor.currInteractiveElements = interactiveElems;
+        pageActor.interactiveElements = interactiveElems;
         await pageActor.performActionFromController(message);
         expect(mockPort.postMessage).toHaveBeenCalledWith(
             {
@@ -617,7 +617,7 @@ describe('PageActor.performActionFromController', () => {
     it('should handle standard port disconnected error when sending confirmation to controller', async () => {
         const message =
             {msg: Background2PagePortMsgType.REQ_ACTION, action: Action.TYPE, elementIndex: 0, value: "some string"};
-        pageActor.currInteractiveElements = interactiveElems;
+        pageActor.interactiveElements = interactiveElems;
         mockPort.postMessage = jest.fn().mockImplementation(
             () => {throw new Error(expectedMsgForPortDisconnection);});
         jest.spyOn(testLogger, 'info');
@@ -628,7 +628,7 @@ describe('PageActor.performActionFromController', () => {
 
     it('should handle unexpected error when sending confirmation to controller', async () => {
         const message = {msg: Background2PagePortMsgType.REQ_ACTION, action: Action.CLICK, elementIndex: 2};
-        pageActor.currInteractiveElements = interactiveElems;
+        pageActor.interactiveElements = interactiveElems;
         mockPort.postMessage = jest.fn().mockImplementation(
             () => {throw new Error("some strange chrome error");});
         jest.spyOn(testLogger, 'error');

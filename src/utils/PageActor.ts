@@ -32,8 +32,7 @@ export class PageActor {
     private browserHelper: BrowserHelper;
     private domWrapper: DomWrapper;
     private chromeWrapper: ChromeWrapper;
-    //todo remove 'curr' prefix
-    currInteractiveElements: ElementData[] | undefined;
+    interactiveElements: ElementData[] | undefined;
     //if significant mutable state at some point extends beyond currInteractiveElements,
     // consider making a mutex for the state
     hasControllerEverResponded: boolean = false;
@@ -67,15 +66,15 @@ export class PageActor {
      * controller
      */
     getPageInfoForController = (): void => {
-        if (this.currInteractiveElements) {
+        if (this.interactiveElements) {
             this.logger.error("interactive elements already exist; background script might've asked for interactive elements twice in a row without in between instructing that an action be performed or without waiting for the action to be finished")
             this.portToBackground.postMessage(
                 {type: Page2BackgroundPortMsgType.TERMINAL, error: "interactive elements already exist"});
             return;
         }
 
-        this.currInteractiveElements = this.browserHelper.getInteractiveElements();
-        const elementsInSerializableForm = this.currInteractiveElements.map((elementData) => {
+        this.interactiveElements = this.browserHelper.getInteractiveElements();
+        const elementsInSerializableForm = this.interactiveElements.map((elementData) => {
             const serializableElementData: SerializableElementData = {...elementData};
             if ('element' in serializableElementData) {
                 delete serializableElementData['element'];
@@ -296,7 +295,7 @@ export class PageActor {
      * @param message the message received from the background script that describes the action to perform
      */
     performActionFromController = async (message: any): Promise<void> => {
-        if (!this.currInteractiveElements) {
+        if (!this.interactiveElements) {
             this.logger.error("perform-action message received from background script but no interactive elements are currently stored");
             this.portToBackground.postMessage(
                 {type: Page2BackgroundPortMsgType.TERMINAL, error: "no interactive elements stored to be acted on"});
@@ -305,10 +304,10 @@ export class PageActor {
         const actionToPerform: Action = message.action;
         const valueForAction: string | undefined = message.value;
 
-        const elementIndexValid = (typeof message.elementIndex === "number") && message.elementIndex < this.currInteractiveElements.length;
+        const elementIndexValid = (typeof message.elementIndex === "number") && message.elementIndex < this.interactiveElements.length;
         const actionOutcome: ActionOutcome = {
             success: false, result: buildGenericActionDesc(actionToPerform,
-                elementIndexValid ? this.currInteractiveElements[message.elementIndex] : undefined, valueForAction)
+                elementIndexValid ? this.interactiveElements[message.elementIndex] : undefined, valueForAction)
         };
 
         //maybe get current time and current this.lastPageModificationTimestamp and, if they're too close,
@@ -318,7 +317,7 @@ export class PageActor {
         // Maybe only do that if there's a very short difference there for 2 actions in a row on the same page
 
         if (elementIndexValid) {
-            const elementToActOnData = this.currInteractiveElements[message.elementIndex];
+            const elementToActOnData = this.interactiveElements[message.elementIndex];
             const elementToActOn = elementToActOnData.element;
             /*
             todo consider implementing in js a conditional polling/wait for 'stability'
@@ -402,7 +401,7 @@ export class PageActor {
         // it causes any other issues)
         this.logger.debug(`waited ${(Date.now() - startOfPostActionStabilityWait)}ms after action for page to become stable`);
 
-        this.currInteractiveElements = undefined;
+        this.interactiveElements = undefined;
         //this part would only be reached if the action didn't cause page navigation in current tab
 
         try {
@@ -420,18 +419,18 @@ export class PageActor {
     }
 
     highlightCandidateElement = async (message: any): Promise<void> => {
-        if (!this.currInteractiveElements) {
+        if (!this.interactiveElements) {
             this.logger.error("highlight-candidate-element message received from background script but no interactive elements are currently stored");
             this.portToBackground.postMessage(
                 {type: Page2BackgroundPortMsgType.TERMINAL, error: "no interactive elements stored to be highlighted"});
             return;
-        } else if ((typeof message.elementIndex !== "number") || message.elementIndex >= this.currInteractiveElements.length) {
+        } else if ((typeof message.elementIndex !== "number") || message.elementIndex >= this.interactiveElements.length) {
             this.logger.error("highlight-candidate-element message received from background script but element index is invalid");
             this.portToBackground.postMessage(
                 {type: Page2BackgroundPortMsgType.TERMINAL, error: "invalid element index provided to highlight"});
             return;
         }
-        const elementToActOnData = this.currInteractiveElements[message.elementIndex];
+        const elementToActOnData = this.interactiveElements[message.elementIndex];
         const elementToActOn = elementToActOnData.element;
         const elemStyle = elementToActOn.style;
 
@@ -476,7 +475,7 @@ export class PageActor {
         this.logger.trace(`message received from background script: ${JSON.stringify(message)} by page ${document.URL}`);
         this.hasControllerEverResponded = true;
         if (message.type === Background2PagePortMsgType.REQ_PAGE_STATE) {
-            if (message.isMonitorRetry) {this.currInteractiveElements = undefined;}
+            if (message.isMonitorRetry) {this.interactiveElements = undefined;}
             this.getPageInfoForController();
         } else if (message.type === Background2PagePortMsgType.REQ_ACTION) {
             await this.performActionFromController(message);

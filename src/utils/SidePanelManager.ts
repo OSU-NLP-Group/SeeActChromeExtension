@@ -61,11 +61,6 @@ export class SidePanelManager {
     public serviceWorkerPort?: chrome.runtime.Port;
     public serviceWorkerReady = false;
 
-    //todo idea - when side panel opens, send connection request to service worker to make sure it's ready to quickly
-    // respond to new task starts?
-    // And, for as long as side panel remains open, send periodic (every 25sec) keep-alive pings to service worker on
-    // that port so chrome doesn't kill it?
-
     constructor(elements: SidePanelElements, chromeWrapper?: ChromeWrapper, logger?: Logger, overrideDoc?: Document) {
         this.startButton = elements.startButton;
         this.taskSpecField = elements.taskSpecField;
