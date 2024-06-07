@@ -517,6 +517,12 @@ export class AgentController {
     private queryLmmAndProcessResponsesForAction = async (
         interactiveChoices: string[], screenshotDataUrl: string, candidateIds: number[],
         interactiveElements: SerializableElementData[], monitorRejectionContext?: string): Promise<LmmOutputReaction> => {
+        if (this.currPortToSidePanel === undefined) {
+            this.logger.error("no side panel connection to send query prompt to; abandoning task");
+            //terminateTask() will be called by the onDisconnect listener
+            return LmmOutputReaction.ABORT_TASK;
+        }
+
         const prompts: LmmPrompts = generatePrompt(this.taskSpecification,
             this.actionsSoFar.map(entry => `${entry.success ? "SUCCEEDED" : "FAILED"}-${entry.actionDesc}; explanation: ${entry.explanation}`),
             interactiveChoices);
@@ -540,6 +546,17 @@ export class AgentController {
             planningOutput = await this.aiEngine.generateWithRetry(
                 {prompts: prompts, turnInStep: 0, imgDataUrl: screenshotDataUrl}, aiApiBaseDelay);
             this.logger.info("planning output: " + planningOutput);
+            try {
+                this.currPortToSidePanel.postMessage({
+                    type: Background2PanelPortMsgType.NOTIFICATION, details: planningOutput,
+                    msg: "AI planning complete, now asking model to specify what exactly it should do next to advance that plan"
+                });
+            } catch (error: any) {
+                this.logger.error(`error while trying to send notification to side panel about planning completion; error: ${renderUnknownValue(error)}`);
+                this.terminateTask();
+                return LmmOutputReaction.ABORT_TASK;
+            }
+
             groundingOutput = await this.aiEngine.generateWithRetry(
                 {prompts: prompts, turnInStep: 1, imgDataUrl: screenshotDataUrl, priorTurnOutput: planningOutput},
                 aiApiBaseDelay);
@@ -580,6 +597,16 @@ export class AgentController {
                 actionDesc: `NOOP: ai selected NONE action type`, explanation: explanation,
                 success: false, noopType: NoopType.AI_SELECTED_NONE_ACTION
             });
+            try {
+                this.currPortToSidePanel.postMessage({
+                    type: Background2PanelPortMsgType.NOTIFICATION, details: groundingOutput,
+                    msg: "AI refused to specify a next action; reprompting"
+                });
+            } catch (error: any) {
+                this.logger.error(`error while trying to send notification to side panel about refusal to specify next action; error: ${renderUnknownValue(error)}`);
+                this.terminateTask();
+                return LmmOutputReaction.ABORT_TASK;
+            }
             return LmmOutputReaction.TRY_REPROMPT;
         }
         const actionNeedsNoElement = action === Action.SCROLL_UP || action === Action.SCROLL_DOWN
@@ -592,22 +619,40 @@ export class AgentController {
                 : `(cannot be parsed into an index)`) + ", counting as noop action and reprompting");
             this.noopCount++;
             this.failureOrNoopStreak++;
-            //todo send some kind of message to the side panel about the noop
             this.actionsSoFar.push({
                 actionDesc: `NOOP: ai selected invalid option ${element}`,
                 success: false, noopType: NoopType.INVALID_ELEMENT, explanation: explanation
             });
+            try {
+                this.currPortToSidePanel.postMessage({
+                    type: Background2PanelPortMsgType.NOTIFICATION, details: groundingOutput,
+                    msg: "AI gave invalid specification of element to act on; reprompting"
+                });
+            } catch (error: any) {
+                this.logger.error(`error while trying to send notification to side panel about failure to specify valid target element for next action; error: ${renderUnknownValue(error)}`);
+                this.terminateTask();
+                return LmmOutputReaction.ABORT_TASK;
+            }
             return LmmOutputReaction.TRY_REPROMPT;
         } else if (chosenCandidateIndex === candidateIds.length && !actionNeedsNoElement) {
             this.logger.info("ai selected 'none of the above' option for element selection when action targets specific element, marking action as noop");
             this.noopCount++;
             this.failureOrNoopStreak++;
-            //todo send some kind of message to the side panel about the noop
             this.actionsSoFar.push({
                 actionDesc: `NOOP: ai selected 'none of the above' option for element selection when action ${action} targets specific element`,
                 success: false, noopType: NoopType.ACTION_INCOMPATIBLE_WITH_NONE_OF_ABOVE_ELEMENT,
                 explanation: explanation
             });
+            try {
+                this.currPortToSidePanel.postMessage({
+                    type: Background2PanelPortMsgType.NOTIFICATION, details: groundingOutput,
+                    msg: "AI specified a next action that requires a target element but didn't provide a valid target element identifier; reprompting"
+                });
+            } catch (error: any) {
+                this.logger.error(`error while trying to send notification to side panel about inconsistency in specification of next action; error: ${renderUnknownValue(error)}`);
+                this.terminateTask();
+                return LmmOutputReaction.ABORT_TASK;
+            }
             return LmmOutputReaction.TRY_REPROMPT;
         }
 

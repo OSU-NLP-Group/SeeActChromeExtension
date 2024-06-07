@@ -323,14 +323,11 @@ export class PageActor {
             /*
             todo consider implementing in js a conditional polling/wait for 'stability'
              https://playwright.dev/docs/actionability#stable
-            todo might also need to implement a 'receives events' polling check (no idea how this would be implemented in js)
-             https://playwright.dev/docs/actionability#receives-events
-            todo note that a given action type would only need some of the actionability checks
+             note that a given action type would only need some of the actionability checks
              https://playwright.dev/docs/actionability#introduction
-            todo above goals for conditional polling/waiting could be one (or a few) helper methods
+             above goals for conditional polling/waiting could be one (or a few) helper methods
+             This might be redundant with the wait for overall page stability _after_ each action
              */
-            //good modern-approach starting point for conditional polling/waiting:
-            // https://stackoverflow.com/a/56399194/10808625 (it only checks for existence, but shouldn't be too hard to extend the logic)
 
             this.logger.trace("performing action <" + actionToPerform + "> on element <" + elementToActOnData.tagHead + "> " + elementToActOnData.description);
 
@@ -384,6 +381,8 @@ export class PageActor {
         const maxPollingTime = 10_000;//ms
         const numPollingIterations = maxPollingTime / pollingIncrement;
         for (let i = 0; i < numPollingIterations; i++) {
+            await sleep(pollingIncrement);
+
             if (this.isPageBeingUnloaded) {
                 this.logger.info("page is being unloaded; will not try to notify background script of action outcome");
                 return;
@@ -398,7 +397,6 @@ export class PageActor {
             // is _below_ some threshold like 10ms; if so, log an info message and at minimum do some extra
             // incrementing of the loop variable (so total waiting is ~3sec), maybe even break out of loop
 
-            await sleep(pollingIncrement);
         }
         //todo double check whether/how much mutation observers on 'body' and 'head' slow down the page (and whether
         // it causes any other issues)
