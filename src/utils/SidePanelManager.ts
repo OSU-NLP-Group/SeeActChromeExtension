@@ -383,19 +383,7 @@ export class SidePanelManager {
         this.pingServiceWorkerForKeepAlive().catch((error) => {
             this.logger.error('error while starting keepalive pings to service worker:', renderUnknownValue(error));
         });
-        sleep(10_000).then(() => {
-            this.pingServiceWorkerForKeepAlive().catch((error) => {
-                this.logger.error('error while starting secondary generator of  keepalive pings to service worker:', renderUnknownValue(error));
-            });
-        });
-        sleep(20_000).then(() => {
-            this.pingServiceWorkerForKeepAlive().catch((error) => {
-                this.logger.error('error while starting tertiary generator of keepalive pings to service worker:', renderUnknownValue(error));
-            });
-        });
-        //redundancy - when I only had one repeating call of pingServiceWorkerForKeepAlive(), even every 15sec,
-        // it would mostly reach the service worker on time, but every 2-4 minutes there would be a 45-second gap and
-        // so the service worker would be killed
+
         this.state = SidePanelMgrState.IDLE;
     }
 

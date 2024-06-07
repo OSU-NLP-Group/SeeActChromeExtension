@@ -295,6 +295,7 @@ export class AgentController {
             taskIdHolder.currTaskId = this.taskId;
             this.taskSpecification = message.taskSpecification;
             this.logger.info(`STARTING TASK ${this.taskId} with specification: ${this.taskSpecification}`);
+            this.logger.debug(`maxOps: ${this.maxOpsLimit}, maxNoops: ${this.maxNoopLimit}, maxFailures: ${this.maxFailureLimit}, maxFailureOrNoopStreak: ${this.maxFailureOrNoopStreakLimit}`);
             try {
                 await this.injectPageActorScript(true);
             } catch (error: any) {
@@ -317,6 +318,7 @@ export class AgentController {
             port.onMessage.addListener(this.handlePageMsgToAgentController);
             port.onDisconnect.addListener(this.handlePageDisconnectFromAgentController);
             this.portToContentScript = port;
+            //todo set up repeating chrome.alarm to keep this alive while it's connected to side panel
         });
     }
 
@@ -454,6 +456,7 @@ export class AgentController {
         }
 
         while (this.noopCount <= this.maxNoopLimit && this.failureOrNoopStreak <= this.maxFailureOrNoopStreakLimit) {
+            this.logger.debug(`noop count: ${this.noopCount}, failure-or-noop streak: ${this.failureOrNoopStreak}; noopLimit: ${this.maxNoopLimit}, failure-or-noop streak limit: ${this.maxFailureOrNoopStreakLimit}`);
             const reactionToLmmOutput = await this.queryLmmAndProcessResponsesForAction(interactiveChoices,
                 screenshotDataUrl, candidateIds, interactiveElements, monitorRejectionInfo);
             if (reactionToLmmOutput === LmmOutputReaction.ABORT_TASK) {
@@ -1091,6 +1094,7 @@ export class AgentController {
                 const termReason = "content script disconnected while no side panel connection was open";
                 this.logger.error(termReason + "; terminating task");
                 this.terminateTask(termReason);
+                //todo clear the alarm that had been set up to keep the service worker alive
                 return;
             }
 
