@@ -462,14 +462,14 @@ export class SidePanelManager {
     processTaskEndConfirmation = (message: any): void => {
         if (this.state === SidePanelMgrState.WAIT_FOR_TASK_STARTED) {
             this.logger.warn("task start failed");
-            this.setStatusWithDelayedClear(`Task start failed`);
+            this.setStatusWithDelayedClear(`Task start failed`, 10, message.details);
         } else {
             if (this.state !== SidePanelMgrState.WAIT_FOR_PENDING_ACTION_INFO
                 && this.state !== SidePanelMgrState.WAIT_FOR_TASK_ENDED) {
                 this.logger.error(`received TASK_ENDED message from service worker port unexpectedly (while in state ${SidePanelMgrState[this.state]})`);
             }
-            this.setStatusWithDelayedClear(`Task ${message.taskId} ended`);
-            this.addHistoryEntry(`Task ended`, `Ended task id: ${message.taskId}`, "task_end");
+            this.setStatusWithDelayedClear(`Task ${message.taskId} ended`, 20, message.details);
+            this.addHistoryEntry(`Task ended`, `Ended task id: ${message.taskId} for reason ${message.details}`, "task_end");
         }
         this.reset();
     }
