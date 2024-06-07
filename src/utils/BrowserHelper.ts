@@ -129,6 +129,9 @@ export class BrowserHelper {
         const roleValue = element.getAttribute("role");
         const typeValue = element.getAttribute("type");
 
+        //todo put a flag/warning in the description if the element's dimensions are suspiciously tiny (e.g. 1px by 1px)
+
+
         const salientAttributes = ["alt", "aria-describedby", "aria-label", "aria-role", "input-checked",
             "label", "name", "option_selected", "placeholder", "readonly", "text-value", "title", "value"];
 
@@ -319,9 +322,6 @@ export class BrowserHelper {
         });
         //based on https://developer.mozilla.org/en-US/docs/Web/API/Node/isSameNode, I'm pretty confident that simple
         // element === element checks by the Set class will prevent duplicates
-
-        //todo once MVP delivered, ask Boyuan about filtering out elements whose client bounding rect is 0x0
-        // (at least on github there are a lot of those)
 
         return Array.from(uniqueInteractiveElements).map(element => this.getElementData(element))
             .filter(Boolean) as ElementData[];

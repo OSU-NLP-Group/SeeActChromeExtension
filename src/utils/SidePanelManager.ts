@@ -4,7 +4,7 @@ import {Logger} from "loglevel";
 import {
     Background2PanelPortMsgType, buildGenericActionDesc, defaultIsMonitorMode, defaultShouldWipeActionHistoryOnStart,
     Panel2BackgroundPortMsgType,
-    panelToControllerPort, renderUnknownValue, setupMonitorModeCache
+    panelToControllerPort, renderUnknownValue, setupMonitorModeCache, sleep
 } from "./misc";
 import {Mutex} from "async-mutex";
 import {ActionInfo} from "./AgentController";
@@ -127,9 +127,8 @@ export class SidePanelManager {
             this.logger.error('error while pinging service worker for keepalive:', renderUnknownValue(error));
             return;
         }
-        //todo consider doing this every 10 seconds
-        const half_chrome_service_worker_timeout = 15000;
-        setTimeout(this.pingServiceWorkerForKeepAlive, half_chrome_service_worker_timeout);
+        const five_less_than_chrome_service_worker_timeout = 25000;
+        setTimeout(this.pingServiceWorkerForKeepAlive, five_less_than_chrome_service_worker_timeout);
     }
 
 
@@ -384,6 +383,19 @@ export class SidePanelManager {
         this.pingServiceWorkerForKeepAlive().catch((error) => {
             this.logger.error('error while starting keepalive pings to service worker:', renderUnknownValue(error));
         });
+        sleep(10_000).then(() => {
+            this.pingServiceWorkerForKeepAlive().catch((error) => {
+                this.logger.error('error while starting secondary generator of  keepalive pings to service worker:', renderUnknownValue(error));
+            });
+        });
+        sleep(20_000).then(() => {
+            this.pingServiceWorkerForKeepAlive().catch((error) => {
+                this.logger.error('error while starting tertiary generator of keepalive pings to service worker:', renderUnknownValue(error));
+            });
+        });
+        //redundancy - when I only had one repeating call of pingServiceWorkerForKeepAlive(), even every 15sec,
+        // it would mostly reach the service worker on time, but every 2-4 minutes there would be a 45-second gap and
+        // so the service worker would be killed
         this.state = SidePanelMgrState.IDLE;
     }
 

@@ -1179,8 +1179,6 @@ export class AgentController {
     }
 
 
-    //todo b4 release, make this take an error message param and make it show an alert so the user doesn't need to look
-    // at the extension's dev console to see why the actions stopped (if param null, alert would just say task completed)
     /**
      * @description Terminates the current task, resetting any state and cleaning up the page connection if it's still
      * open
