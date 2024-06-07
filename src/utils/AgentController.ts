@@ -1010,12 +1010,26 @@ export class AgentController {
         await this.mutex.runExclusive(async () => {
             this.logger.debug("content script disconnected from service worker; port name:", port.name);
             this.portToContentScript = undefined;
+            if (this.portToSidePanel === undefined) {
+                this.logger.error("content script disconnected while no side panel connection was open; terminating task");
+                this.terminateTask();
+                return;
+            }
 
             if (this.state === AgentControllerState.WAITING_FOR_ACTION) {
                 await this.processActorDisconnectDuringAction();
             } else if (this.state === AgentControllerState.PENDING_RECONNECT) {
                 this.logger.info("service worker's connection to content script was lost partway through the controller's processing of some step; reestablishing connection")
-                //todo like with noops, it might be worth sending a message to side panel when these content-script-disconnects happen so user wouldn't fear that the agent had frozen
+                try {
+                    this.portToSidePanel.postMessage({
+                        type: Background2PanelPortMsgType.NOTIFICATION,
+                        msg: "Reestablishing connection to content script after it broke unexpectedly"
+                    });
+                } catch (error: any) {
+                    this.logger.error("error while trying to notify side panel about reestablishing connection to content script; terminating task; error: ", renderUnknownValue(error));
+                    this.terminateTask();
+                    return;
+                }
                 await this.injectPageActorScript(false);
             } else {
                 this.logger.error("service worker's connection to content script was lost while not waiting for action, " +
