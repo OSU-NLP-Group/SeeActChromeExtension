@@ -275,8 +275,7 @@ chrome.runtime.onMessage.addListener(handleMsgFromPage);
  */
 async function handleConnectionFromPage(port: Port): Promise<void> {
     if (!centralLogger) { centralLogger = createNamedLogger("service-worker", true)}
-    //todo if make port names unique (for each injected content script), change this to a "starts with" check
-    if (port.name === pageToControllerPort) {
+    if (port.name.startsWith(pageToControllerPort)) {
         if (!agentController) {
             centralLogger.error(`agentController not initialized when page actor ${port.name} tried to connect to agent controller in service worker`);
             return;
@@ -287,12 +286,7 @@ async function handleConnectionFromPage(port: Port): Promise<void> {
         centralLogger.trace("side panel opened new connection to service worker");
         if (!agentController) {
             centralLogger.debug("have to initialize agent controller to handle connection from side panel");
-            // if (controllerIsInitializing) { todo remove this chunk of commented-out code if not needed in practice
-            // todo do what? sleep and then check the boolean again, in a loop with maximum number of iterations?
-            //  see comments above about how this could use await if I revised the lazy initialization code
-            // } else {
             agentController = await initializeAgentController();
-            //}
             centralLogger.trace("finished initializing agent controller to handle connection from side panel");
         }
         agentController.addSidePanelConnection(port).then(

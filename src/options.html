@@ -7,7 +7,7 @@
 <body>
 
 
-<label for="open-ai-api-key">OpenAI API Key</label>
+<label for="open-ai-api-key" title="The agent will crash if it is not given the ability to query an AI model">OpenAI API Key (REQUIRED)</label>
 <input type="text" id="open-ai-api-key" placeholder="Enter OpenAI API key here">
 <br>
 <!--
@@ -34,17 +34,33 @@
 <br>
 <label for="monitor-mode" title="Turning this on will force the web agent to confirm with you before each action">Monitor Mode</label>
 <input type="checkbox" id="monitor-mode">
+<label for="wipe-prior-history-on-task-start" title="Turning this on will cause the side panel to wipe the display of prior tasks' actions when starting a new task">Wipe History Display on Task Start</label>
+<input type="checkbox" id="wipe-prior-history-on-task-start">
 <br>
+<br>
+<br>
+<label for="max-operations" title="The maximum number of operations that the agent will perform before stopping">Max Operations</label>
+<input type="number" id="max-operations" min="1" value="100" step="1">
+<label for="max-noops" title="The maximum number of times that the agent can fail to produce a valid action without being immediately terminated">Max No-Ops</label>
+<input type="number" id="max-noops" min="0" value="20" step="1">
+<br>
+<br>
+<label for="max-failures" title="The maximum number of times that the agent can choose an action whose execution fails without being immediately terminated">Max Failed Actions</label>
+<input type="number" id="max-failures" min="0" value="20" step="1">
+<label for="max-failure-or-noop-streak" title="The maximum number of times in a row that the agent can produce an invalid action or choose an action whose execution fails without being immediately terminated">Max Length of Failure-or-No-Op Streak</label>
+<input type="number" id="max-failure-or-noop-streak" min="0" value="10" step="1">
+<br>
+
+
 <!--todo add options for the following:
-        max operations
-        max total noops
-        max total failures
-        max length of failure-or-noop streak
-        maybe the fraction of viewport-height that is used when doing a vertical scroll action
+        maybe the fraction of viewport-height that is used when doing a vertical scroll action?
         maybe some configurability around how the target-element highlighting works in monitor mode (e.g. outline color, thickness, highlighting-timeout, etc.)
-        configure whether previous tasks' history should be wiped when new task starts
-        configure compression level for saving history at end of task
-        flag to disable the exporting of history at end of each task
+        maybe configure compression level for saving history at end of task?
+        maybe a flag to disable the exporting of history at end of each task?
+            Adding this would require also introducing ui somewhere to enter a task id and get the history for that task
+            Since user probably wouldn't store task id's, it might really only be nice from user perspective if there
+             was a dropdown with timestamps and task specifications instead of a text field to enter the task id
+
 -->
 <br>
 <div id="status-display">Initializing</div>

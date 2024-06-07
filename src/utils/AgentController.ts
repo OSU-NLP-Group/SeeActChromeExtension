@@ -10,7 +10,8 @@ import {
     LOGS_OBJECT_STORE,
     ScreenshotRecord,
     SCREENSHOTS_OBJECT_STORE,
-    taskIdHolder, taskIdPlaceholderVal
+    taskIdHolder,
+    taskIdPlaceholderVal
 } from "./shared_logging_setup";
 import {OpenAiEngine} from "./OpenAiEngine";
 import {
@@ -18,13 +19,18 @@ import {
     Background2PagePortMsgType,
     Background2PanelPortMsgType,
     base64ToByteArray,
-    buildGenericActionDesc, elementHighlightRenderDelay,
+    buildGenericActionDesc, defaultIsMonitorMode,
+    defaultMaxFailureOrNoopStreak,
+    defaultMaxFailures,
+    defaultMaxNoops,
+    defaultMaxOps,
+    elementHighlightRenderDelay,
     expectedMsgForPortDisconnection,
     Page2BackgroundPortMsgType,
     Panel2BackgroundPortMsgType,
     renderUnknownValue,
     setupMonitorModeCache,
-    sleep
+    sleep, validateIntegerLimitUpdate
 } from "./misc";
 import {formatChoices, generatePrompt, LmmPrompts, postProcessActionLlm, StrTriple} from "./format_prompts";
 import {getIndexFromOptionName} from "./format_prompt_utils";
@@ -128,25 +134,24 @@ export class AgentController {
      */
     failureOrNoopStreak: number = 0;
 
-    //todo get below limits from chrome.storage (do retrieval and change-listening in constructor) rather than hard-coding
     /**
      * max number of total operations (successful or not) allowed in a task
      */
-    maxOpsLimit: number = 20;
+    maxOpsLimit: number = defaultMaxOps;
     /**
      * max number of total noops allowed in a task before it is terminated
      */
-    maxNoopLimit: number = 4;
+    maxNoopLimit: number = defaultMaxNoops;
     /**
      * max number of total failed operations allowed in a task before it is terminated
      */
-    maxFailureLimit: number = 5;
+    maxFailureLimit: number = defaultMaxFailures;
     /**
      * max length of streak of noops and/or failures allowed in a task before it is terminated
      */
-    maxFailureOrNoopStreakLimit: number = 2;
+    maxFailureOrNoopStreakLimit: number = defaultMaxFailureOrNoopStreak;
 
-    cachedMonitorMode: boolean = false;
+    cachedMonitorMode: boolean = defaultIsMonitorMode;
     wasPrevActionRejectedByMonitor: boolean = false;
     monitorFeedback: string = "";
 
@@ -175,8 +180,37 @@ export class AgentController {
         this.logger.debug(`max ops limit: ${this.maxOpsLimit}, max noop limit: ${this.maxNoopLimit}, max failure limit: ${this.maxFailureLimit}, max failure-or-noop streak limit: ${this.maxFailureOrNoopStreakLimit}`);
 
         setupMonitorModeCache(this);
+        if (chrome?.storage?.local) {
+            chrome.storage.local.get(["maxOps", "maxNoops", "maxFailures", "maxFailureOrNoopStreak"], (items) => {
+                this.validateAndApplyAgentOptions(true, items.maxOps, items.maxNoops, items.maxFailures, items.maxFailureOrNoopStreak);
+            });
+            chrome.storage.local.onChanged.addListener((changes: { [p: string]: chrome.storage.StorageChange }) => {
+                this.validateAndApplyAgentOptions(false, changes.maxOps?.newValue, changes.maxNoops?.newValue,
+                    changes.maxFailures?.newValue, changes.maxFailureOrNoopStreak?.newValue);
+            });
+        }
     }
 
+    validateAndApplyAgentOptions = (
+        initOrUpdate: boolean, newMaxOps: unknown, newMaxNoops: unknown, newMaxFailures: unknown,
+        newMaxFailureOrNoopStreak: unknown): void => {
+        const contextStr = initOrUpdate ? "when loading options from storage" : "when processing an update from storage";
+        if (validateIntegerLimitUpdate(newMaxOps, 1)) {
+            this.maxOpsLimit = newMaxOps;
+        } else if (newMaxOps !== undefined) {this.logger.error(`invalid maxOps value ${newMaxOps} in chrome.storage detected ${contextStr}; ignoring it`);}
+
+        if (validateIntegerLimitUpdate(newMaxNoops)) {
+            this.maxNoopLimit = newMaxNoops;
+        } else if (newMaxNoops !== undefined) {this.logger.error(`invalid maxNoops value ${newMaxNoops} in chrome.storage detected ${contextStr}; ignoring it`);}
+
+        if (validateIntegerLimitUpdate(newMaxFailures)) {
+            this.maxFailureLimit = newMaxFailures;
+        } else if (newMaxFailures !== undefined) {this.logger.error(`invalid maxFailures value ${newMaxFailures} in chrome.storage detected ${contextStr}; ignoring it`);}
+
+        if (validateIntegerLimitUpdate(newMaxFailureOrNoopStreak)) {
+            this.maxFailureOrNoopStreakLimit = newMaxFailureOrNoopStreak;
+        } else if (newMaxFailureOrNoopStreak !== undefined) {this.logger.error(`invalid maxFailureOrNoopStreak value ${newMaxFailureOrNoopStreak} in chrome.storage detected ${contextStr}; ignoring it`);}
+    }
 
     /**
      * @description Injects the agent's page-interaction/data-gathering script into the current tab
@@ -399,6 +433,9 @@ export class AgentController {
         const screenshotDataUrl = await this.captureAndStoreScreenshot("initial",
             numPromptingScreenshotsTakenForCurrentActionBeforeThisRound);
         if (screenshotDataUrl === undefined) { return; }//task will have been terminated by helper method
+        //note for future reference - resizing the prompting screenshot to 512x512 (to reduce cost/latency:
+        // https://platform.openai.com/docs/guides/vision/low-or-high-fidelity-image-understanding)
+        // degrades readability of text too much to be worth serious consideration
 
         let monitorRejectionInfo: string | undefined;
         if (this.wasPrevActionRejectedByMonitor) {
@@ -1190,8 +1227,6 @@ export class AgentController {
 
         if (this.portToSidePanel !== undefined) {
             try {
-                //todo when I eventually give the terminateTask() method a 'reason' argument, I should pass that along
-                // here and then have the side panel display it to the user
                 this.portToSidePanel.postMessage({
                     type: Background2PanelPortMsgType.TASK_ENDED, taskId: taskIdBeingTerminated,
                     details: terminationReason

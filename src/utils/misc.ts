@@ -10,6 +10,19 @@ export const panelToControllerPort = "side-panel-2-agent-controller";
 // screenshot; i.e. longest realistic amount of time the browser might take to re-render the modified element
 export const elementHighlightRenderDelay = 5;
 
+export const defaultIsMonitorMode = false;
+export const defaultShouldWipeActionHistoryOnStart = true;
+
+export const defaultMaxOps = 20;
+export const defaultMaxNoops = 3;
+export const defaultMaxFailures = 4;
+export const defaultMaxFailureOrNoopStreak = 2;
+
+export const validateIntegerLimitUpdate = (newLimitVal: unknown, min: number = 0): newLimitVal is number => {
+    return typeof newLimitVal === "number" && Number.isInteger(newLimitVal) && newLimitVal >= min;
+}
+
+
 /**
  * types of one-off messages that might be sent to the service worker, either from the content script or the popup
  */

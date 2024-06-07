@@ -72,6 +72,7 @@ export interface LogMessage {
     taskId: string;
     msg: string;
 }
+
 export interface ScreenshotRecord {
     timestamp: string;
     taskId: string;
@@ -135,7 +136,7 @@ export const createNamedLogger = (loggerName: string, inServiceWorker: boolean):
                     const fractionOfMs = preciseTimestamp % 1;
                     timestampStr = new Date(preciseTimestamp).toISOString();
                     timestampStr = timestampStr.slice(0, timestampStr.length - 1)
-                        + fractionOfMs.toFixed(3).slice(2) + "Z" ;
+                        + fractionOfMs.toFixed(3).slice(2) + "Z";
                 }
                 const msg = augmentLogMsg(timestampStr, loggerName, methodName, undefined, args);
                 rawMethod(msg);
@@ -156,22 +157,18 @@ export const createNamedLogger = (loggerName: string, inServiceWorker: boolean):
 
     if (chrome?.storage?.local) {
         chrome.storage.local.get("logLevel", (items) => {
-            const storedLevel: string = items.logLevel;
-            if (storedLevel) {
-                if (isLogLevelName(storedLevel)) {
-                    newLogger.setLevel(storedLevel);
-                    newLogger.rebuild();
-                    logLevelCache.chosenLogLevel = storedLevel;
-                } else {
-                    newLogger.error(`invalid log level was inserted into local storage: ${storedLevel}, ignoring it when initializing a logger`)
-                }
-            }
+            const storedLevel: unknown = items.logLevel;
+            if (isLogLevelName(storedLevel)) {
+                newLogger.setLevel(storedLevel);
+                newLogger.rebuild();
+                logLevelCache.chosenLogLevel = storedLevel;
+            } else if (storedLevel !== undefined) {newLogger.error(`invalid log level was detected in local storage: ${storedLevel}, ignoring it when initializing a logger`)}
         });
 
         //todo unit testing this? maybe create a function that takes a logger and returns a "local storage changes handler" function, then just unit test that
         chrome.storage.local.onChanged.addListener((changes: { [p: string]: chrome.storage.StorageChange }) => {
             if (changes.logLevel) {
-                const newLogLevel: string = changes.logLevel.newValue;
+                const newLogLevel: unknown = changes.logLevel.newValue;
                 if (isLogLevelName(newLogLevel)) {
                     const existingLogLevel = LogLevelDict[newLogger.getLevel()];
                     if (newLogLevel !== existingLogLevel) {
@@ -180,9 +177,7 @@ export const createNamedLogger = (loggerName: string, inServiceWorker: boolean):
                         newLogger.rebuild();
                         logLevelCache.chosenLogLevel = newLogLevel;
                     }
-                } else {
-                    newLogger.error(`invalid log level was inserted into local storage: ${newLogLevel}, ignoring it when processing a possible update to the log level setting`)
-                }
+                } else if (newLogLevel !== undefined) {newLogger.error(`invalid log level was detected in local storage: ${newLogLevel}, ignoring it when processing a possible update to the log level setting`)}
             }
         });
     }

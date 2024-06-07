@@ -2,7 +2,7 @@ import {ChromeWrapper} from "./ChromeWrapper";
 import {createNamedLogger} from "./shared_logging_setup";
 import {Logger} from "loglevel";
 import {
-    Background2PanelPortMsgType, buildGenericActionDesc,
+    Background2PanelPortMsgType, buildGenericActionDesc, defaultIsMonitorMode, defaultShouldWipeActionHistoryOnStart,
     Panel2BackgroundPortMsgType,
     panelToControllerPort, renderUnknownValue, setupMonitorModeCache
 } from "./misc";
@@ -54,7 +54,8 @@ export class SidePanelManager {
     readonly mutex = new Mutex();
 
     //allow read access to this without mutex because none of this class's code should _ever_ mutate it (only updated by storage change listener that was set up in constructor)
-    cachedMonitorMode = false;
+    cachedMonitorMode = defaultIsMonitorMode;
+    shouldWipeActionHistoryOnTaskStart = defaultShouldWipeActionHistoryOnStart;
 
 
     private state: SidePanelMgrState = SidePanelMgrState.IDLE;
@@ -77,6 +78,14 @@ export class SidePanelManager {
         this.dom = overrideDoc ?? document;
 
         setupMonitorModeCache(this);
+        if (chrome?.storage?.local) {
+            chrome.storage.local.get(["shouldWipeHistoryOnTaskStart"], (items) => {
+                this.validateAndApplySidePanelOptions(true, items.shouldWipeHistoryOnTaskStart);
+            });
+            chrome.storage.local.onChanged.addListener((changes: { [p: string]: chrome.storage.StorageChange }) => {
+                this.validateAndApplySidePanelOptions(false, changes.shouldWipeHistoryOnTaskStart?.newValue);
+            });
+        }
 
         this.establishServiceWorkerConnection().then(() => {
             this.logger.trace('service worker connection started after side panel opened');
@@ -89,6 +98,13 @@ export class SidePanelManager {
                 this.setStatusWithDelayedClear('Persistent errors while trying to establish connection to agent controller; Please close and reopen the side panel to try again');
             });
         });
+    }
+
+    validateAndApplySidePanelOptions = (initOrUpdate: boolean, newShouldWipeHistoryOnTaskStartVal: unknown): void => {
+        const contextStr = initOrUpdate ? "when loading options from storage" : "when processing an update from storage";
+        if (typeof newShouldWipeHistoryOnTaskStartVal === "boolean") {
+            this.shouldWipeActionHistoryOnTaskStart = newShouldWipeHistoryOnTaskStartVal;
+        } else if (typeof newShouldWipeHistoryOnTaskStartVal !== "undefined") {this.logger.error(`invalid shouldWipeHistoryOnTaskStart value ${newShouldWipeHistoryOnTaskStartVal} detected in local storage ${contextStr}, ignoring it`)}
     }
 
     establishServiceWorkerConnection = async (): Promise<void> => {
@@ -159,8 +175,9 @@ export class SidePanelManager {
                     }
                     this.state = SidePanelMgrState.WAIT_FOR_TASK_STARTED;
                     this.logger.trace("sent START_TASK message to service worker port");
-                    //wipe history from previous task
-                    while (this.historyList.firstChild) { this.historyList.removeChild(this.historyList.firstChild);}
+                    if (this.shouldWipeActionHistoryOnTaskStart) {
+                        while (this.historyList.firstChild) { this.historyList.removeChild(this.historyList.firstChild);}
+                    }
                 }
             }
         });
