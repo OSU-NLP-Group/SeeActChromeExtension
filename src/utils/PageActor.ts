@@ -82,10 +82,11 @@ export class PageActor {
             return serializableElementData;
         });
 
-        //todo also retrieve current viewport position and provide that to controller logic in background script
         try {
-            this.portToBackground.postMessage(
-                {type: Page2BackgroundPortMsgType.PAGE_STATE, interactiveElements: elementsInSerializableForm});
+            this.portToBackground.postMessage({
+                type: Page2BackgroundPortMsgType.PAGE_STATE, interactiveElements: elementsInSerializableForm,
+                viewportInfo: this.domWrapper.getViewportInfo()
+            });
         } catch (error: any) {
             if ('message' in error && error.message === expectedMsgForPortDisconnection) {
                 this.logger.info("service worker disconnected from content script while content script was gathering interactive elements (task was probably terminated by user)");
@@ -223,10 +224,10 @@ export class PageActor {
             actionOutcome.success = true;
             const actualVertOffset = postVertScrollPos - priorVertScrollPos;
             actionOutcome.result +=
-                `; scrolled page by ${Math.abs(actualVertOffset)}px ${actualVertOffset < 0 ? "up" : "down"}`;
+                `; scrolled page by ${Math.abs(actualVertOffset).toFixed(1)}px ${actualVertOffset < 0 ? "up" : "down"}`;
         } else {
             this.logger.warn(`scroll action failed to move the viewport's vertical position from ${priorVertScrollPos}px`)
-            actionOutcome.result += `; scroll action failed to move the viewport's vertical position from ${priorVertScrollPos}px`;
+            actionOutcome.result += `; scroll action failed to move the viewport's vertical position from ${priorVertScrollPos.toFixed(1)}px`;
         }
     }
 

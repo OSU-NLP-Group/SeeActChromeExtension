@@ -17,6 +17,8 @@ export type ElementData = {
         bRx: number;
         bRy: number
     },
+    width: number,
+    height: number,
     tagName: string,
     element: HTMLElement
 }
@@ -261,6 +263,8 @@ export class BrowserHelper {
             description: description,
             tagHead: tagHead,
             boundingBox: mainDiagCorners,
+            width: boundingRect.width,
+            height: boundingRect.height,
             tagName: tagName,
             element: element
         };

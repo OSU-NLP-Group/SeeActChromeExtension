@@ -1,4 +1,5 @@
 import {DOMWindow} from "jsdom";
+import {ViewportDetails} from "./misc";
 
 /**
  * @description class with thin wrappers around DOM interaction
@@ -81,7 +82,7 @@ export class DomWrapper {
      * @return the vertical scroll position of the window
      */
     getVertScrollPos = (): number => {
-        return this.window.scrollY;//random note- every browser except safari supports sub-pixel precision for this
+        return this.window.scrollY;//random note - every browser except safari supports sub-pixel precision for this
     }
 
     /**
@@ -95,6 +96,19 @@ export class DomWrapper {
         this.window.scrollBy({left: horizOffset, top: vertOffset, behavior: "smooth"});
     }
 
+    /**
+     * provides information about the viewport and the dimensions of the page that it's showing part of
+     */
+    getViewportInfo = (): ViewportDetails => {
+        return {
+            width: this.window.innerWidth,
+            height: this.window.innerHeight,
+            scrollX: this.window.scrollX,
+            scrollY: this.window.scrollY,
+            pageScrollWidth: this.dom.documentElement.scrollWidth,
+            pageScrollHeight: this.dom.documentElement.scrollHeight
+        }
+    }
 
 
 }

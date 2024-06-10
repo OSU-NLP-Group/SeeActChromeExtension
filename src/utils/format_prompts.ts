@@ -1,5 +1,6 @@
 import {_formatOptions, generateNewQueryPrompt} from "./format_prompt_utils";
-import {Action} from "./misc";
+import {Action, ViewportDetails} from "./misc";
+import {SerializableElementData} from "./BrowserHelper";
 
 
 /**
@@ -33,35 +34,51 @@ export interface LmmPrompts {
  * Note - relative to the original method format_choices() in src/format_prompt.py, the entries in the argument elements
  * have been simplified to just 3 strings because the original method didn't use the 0/3/4-index parts of each
  * 6-part entry in its elements argument
- * @param elements 3 pieces of information for each of the possibly interactable elements
- *                  0th piece is string containing a description of the element,
- *                  1st piece is string containing the element's tag name and potentially its role and/or type attributes
- *                  2nd piece is string containing just the element's tag name
+ * @param elements information about the elements which might be interacted with
  * @param candidateIds the indices of the elements to be included in the formatted list
+ * @param viewportInfo information about the viewport and about the dimensions of the page that it shows part of
  * @return an array of strings, where each string is an abbreviated version of the element's html
  *          (abbreviated start tag, some description, and end tag)
  */
-export const formatChoices = (elements: Array<StrTriple>, candidateIds: Array<number>): Array<string> => {
+export const formatChoices = (elements: Array<SerializableElementData>, candidateIds: Array<number>,
+                              viewportInfo: ViewportDetails): Array<string> => {
     const badCandidateIds = candidateIds.filter((id) => id < 0 || id >= elements.length);
     if (badCandidateIds.length > 0) {
         throw new Error(`out of the candidate id's [${candidateIds}], the id's [${badCandidateIds}] were out of range`);
     }
 
-    //todo idea- get viewport dimensions here; meanwhile, modify formatChoices' elements argument
-    // to include element's centercoords and then here we can normalize that to be fractions of viewport dimensions
-    // Boyu feedback - might be worthwhile
-
-    //todo can we maybe also filter out elements which aren't in viewport? or mark them as not being visible?
-
     return candidateIds.map((id) => {
-        const [description, tagAndRoleType, tagName] = elements[id];
+        const description = elements[id].description;
+        const tagAndRoleType = elements[id].tagHead;
+        const tagName = elements[id].tagName;
+
+        const relElemWidth = 100*elements[id].width / viewportInfo.width;
+        const relElemHeight = 100*elements[id].height / viewportInfo.height;
+        const relElemX = 100*elements[id].centerCoords[0] / viewportInfo.width;
+        const relElemY = 100*elements[id].centerCoords[1] / viewportInfo.height;
+
+        let positionInfo: string;
+        let sizeInfo = "";
+        if (relElemY < 0) {
+            positionInfo = "ABOVE viewport";
+        } else if (relElemY > 100) {
+            positionInfo = "BELOW viewport";
+        } else if (relElemX < 0) {
+            positionInfo = "LEFT of viewport";
+        } else if (relElemX > 100) {
+            positionInfo = "RIGHT of viewport";
+        } else {
+            positionInfo = "Position (relative to viewport): " + relElemX.toFixed(1) + "% from left, " + relElemY.toFixed(1) + "% from top";
+            sizeInfo = `Size (as % of viewport width/height): ${relElemWidth.toFixed(1)}% x ${relElemHeight.toFixed(1)}%; `;
+        }
 
         let possiblyAbbrevDesc = description;
         const descriptionSplit: Array<string> = description.split(/\s+/);
         if ("select" !== tagName && descriptionSplit.length >= 30) {
             possiblyAbbrevDesc = descriptionSplit.slice(0, 29).join(" ") + "...";
         }
-        return `<${tagAndRoleType} id="${id}">${possiblyAbbrevDesc}</${tagName}>`;
+
+        return `${positionInfo}; ${sizeInfo}Element: <${tagAndRoleType} id="${id}">${possiblyAbbrevDesc}</${tagName}>`;
     });
 }
 
@@ -189,13 +206,16 @@ Response component for actions that will not target an element:
  * @param choices describes the elements which might be interacted with; each entry in the top-level list is a length-2
  *                 list, with the first entry being the string version of the choice's index and the second entry
  *                 being an abbreviated version of the element's html
+ * @param viewportInfo information about the viewport and the dimensions of the page that it's showing part of
  * @return four prompts for the language model: 1) a system prompt (used with both of the other prompts);
  *          2) a prompt for the model planning its next step; and
  *          3) a prompt for the model identifying the element to interact with and how to interact with it
  *          4) a prompt for the model to choose an action when there is no specific element to interact with
  */
-export const generatePrompt = (task: string, previousActions: Array<string>, choices: Array<string>): LmmPrompts => {
-    const [sysPrompt, queryPrompt] = generateNewQueryPrompt(onlineSystemPrompt, task, previousActions, onlineQuestionDesc);
+export const generatePrompt = (task: string, previousActions: Array<string>, choices: Array<string>,
+                               viewportInfo: ViewportDetails): LmmPrompts => {
+    const [sysPrompt, queryPrompt] = generateNewQueryPrompt(onlineSystemPrompt, task, previousActions,
+        onlineQuestionDesc, viewportInfo);
     let groundingPrompt: string = onlineReferringPromptDesc + "\n\n";
     if (choices) {
         groundingPrompt += _formatOptions(choices);

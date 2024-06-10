@@ -30,9 +30,9 @@ import {
     Panel2BackgroundPortMsgType,
     renderUnknownValue,
     setupMonitorModeCache,
-    sleep, validateIntegerLimitUpdate
+    sleep, validateIntegerLimitUpdate, ViewportDetails
 } from "./misc";
-import {formatChoices, generatePrompt, LmmPrompts, postProcessActionLlm, StrTriple} from "./format_prompts";
+import {formatChoices, generatePrompt, LmmPrompts, postProcessActionLlm} from "./format_prompts";
 import {getIndexFromOptionName} from "./format_prompt_utils";
 import {ChromeWrapper} from "./ChromeWrapper";
 import JSZip from "jszip";
@@ -414,14 +414,14 @@ export class AgentController {
 
         this.state = AgentControllerState.ACTIVE;
         const interactiveElements = message.interactiveElements as SerializableElementData[];
+        const viewportInfo = message.viewportInfo as ViewportDetails;
+        //todo consider removing the candidateIds complication since BrowserHelper.getInteractiveElements is already
+        // filtering out all of the elements that are not really visible&interactive, and candidateIds adds annoying complexity throughout the planning code in this class
         const candidateIds = interactiveElements.map((element, index) => {
             return (element.centerCoords[0] != 0 && element.centerCoords[1] != 0) ? index : undefined;
         }).filter(Boolean) as number[];//ts somehow too dumb to realize that filter(Boolean) removes undefined elements
 
-        const interactiveChoiceDetails = interactiveElements.map<StrTriple>((element) => {
-            return [element.description, element.tagHead, element.tagName];
-        });
-        const interactiveChoices = formatChoices(interactiveChoiceDetails, candidateIds);
+        const interactiveChoices = formatChoices(interactiveElements, candidateIds, viewportInfo);
 
         //todo? idea for later refinement- store previous round's screenshot, then do stuff with it
         // (e.g. querying ai at least some of the time with both current and prior screenshots)
@@ -458,7 +458,7 @@ export class AgentController {
         while (this.noopCount <= this.maxNoopLimit && this.failureOrNoopStreak <= this.maxFailureOrNoopStreakLimit) {
             this.logger.debug(`noop count: ${this.noopCount}, failure-or-noop streak: ${this.failureOrNoopStreak}; noopLimit: ${this.maxNoopLimit}, failure-or-noop streak limit: ${this.maxFailureOrNoopStreakLimit}`);
             const reactionToLmmOutput = await this.queryLmmAndProcessResponsesForAction(interactiveChoices,
-                screenshotDataUrl, candidateIds, interactiveElements, monitorRejectionInfo);
+                screenshotDataUrl, candidateIds, interactiveElements, monitorRejectionInfo, viewportInfo);
             if (reactionToLmmOutput === LmmOutputReaction.ABORT_TASK) {
                 return;
             } else if (reactionToLmmOutput === LmmOutputReaction.TRY_REPROMPT) {
@@ -567,12 +567,14 @@ export class AgentController {
      * @param candidateIds the indices of the interactive elements that are candidates for the next action
      * @param interactiveElements the full data about the interactive elements on the page
      * @param monitorRejectionContext optional string to include in the query prompt if the previous action was rejected by the monitor
+     * @param viewportInfo information about the viewport and the dimensions of the page that it's showing part of
      * @return indicator of what the main "processPageStateFromActor" function should do next based on the LLM response
      *         (e.g. whether to try reprompting, proceed with the action, or abort the task)
      */
     private queryLmmAndProcessResponsesForAction = async (
         interactiveChoices: string[], screenshotDataUrl: string, candidateIds: number[],
-        interactiveElements: SerializableElementData[], monitorRejectionContext?: string): Promise<LmmOutputReaction> => {
+        interactiveElements: SerializableElementData[], monitorRejectionContext: string | undefined,
+        viewportInfo: ViewportDetails): Promise<LmmOutputReaction> => {
         if (this.portToSidePanel === undefined) {
             this.logger.error("no side panel connection to send query prompt to; abandoning task");
             //terminateTask() will be called by the onDisconnect listener
@@ -581,7 +583,7 @@ export class AgentController {
 
         const prompts: LmmPrompts = generatePrompt(this.taskSpecification,
             this.actionsSoFar.map(entry => `${entry.success ? "SUCCEEDED" : "FAILED"}-${entry.actionDesc}; explanation: ${entry.explanation}`),
-            interactiveChoices);
+            interactiveChoices, viewportInfo);
         if (monitorRejectionContext !== undefined) {
             prompts.queryPrompt += `\n${monitorRejectionContext}`;
         }

@@ -23,6 +23,21 @@ export const validateIntegerLimitUpdate = (newLimitVal: unknown, min: number = 0
 }
 
 
+export interface ViewportDetails {
+    scrollX: number;
+    scrollY: number;
+    width: number;
+    height: number;
+    /**
+     * warning that this is rounded to the nearest integer
+     */
+    pageScrollWidth: number;
+    /**
+     * warning that this is rounded to the nearest integer
+     */
+    pageScrollHeight: number;
+}
+
 /**
  * types of one-off messages that might be sent to the service worker, either from the content script or the popup
  */
