@@ -278,9 +278,13 @@ export class BrowserHelper {
             (element.scrollHeight > element.clientHeight || element.scrollWidth > element.clientWidth);//thanks to https://stackoverflow.com/a/9541579/10808625
         return elementComputedStyle.display === "none" || elementComputedStyle.visibility === "hidden"
             || element.hidden || isElementHiddenForOverflow || elementComputedStyle.opacity === "0"
-            || elementComputedStyle.height === "0px" || elementComputedStyle.width === "0px";
+            || elementComputedStyle.height === "0px" || elementComputedStyle.width === "0px"
+            || elementComputedStyle.height === "1px" || elementComputedStyle.width === "1px";//1x1 px elements are generally a css hack to make an element temporarily ~invisible
         //maybe eventually update this once content-visibility is supported outside chromium (i.e. in firefox/safari)
         // https://developer.mozilla.org/en-US/docs/Web/CSS/content-visibility
+
+        //todo explore adding logic for other tricks mentioned in this article (e.g. 'clip-path')
+        // https://css-tricks.com/comparing-various-ways-to-hide-things-in-css/
     }
 
     /**
@@ -295,8 +299,8 @@ export class BrowserHelper {
                     || element instanceof HTMLOptGroupElement || element instanceof HTMLOptionElement
                     || element instanceof HTMLFieldSetElement)
                 && element.disabled)
+            || ( (element instanceof HTMLTextAreaElement || element instanceof HTMLInputElement) && element.readOnly)
             || element.getAttribute("disabled") != null;
-        //todo ask Boyuan about also checking for readonly attribute if element is input or textarea (or select? or others??)
     }
 
     //is it possible to make this work even when there are shadow dom's?? and iframes?
