@@ -93,6 +93,9 @@ type PredictionRecord = {
     explanation: string
 };
 
+const serviceWorkerKeepaliveAlarmName = "serviceWorkerKeepaliveAlarm";
+
+
 //todo explore whether it might be possible to break this into multiple classes, or at least if there are
 // pure/non-state-affecting helper functions that could be extracted from existing code and then moved to
 // controller_utils file
@@ -340,6 +343,8 @@ export class AgentController {
                 this.logger.error(`error while trying to inform side panel about agent controller's readiness for start of new task; error: ${renderUnknownValue(error)}`);
             }
             this.logger.trace("sent notification to side panel that agent controller is ready");
+            chrome.alarms.create(serviceWorkerKeepaliveAlarmName, {periodInMinutes: 0.5}).catch((error) =>
+                this.logger.error(`error while trying to set up service worker keepalive alarm; error: ${renderUnknownValue(error)}`));
         });
     }
 
@@ -1135,6 +1140,8 @@ export class AgentController {
                 this.logger.error(termReason);
                 this.terminateTask(termReason);
             }
+            chrome.alarms.clear(serviceWorkerKeepaliveAlarmName).catch((error) =>
+                this.logger.warn("error while trying to clear keep-alive alarm; error: ", renderUnknownValue(error)));
         });
     }
 
