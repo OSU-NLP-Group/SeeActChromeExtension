@@ -60,7 +60,7 @@
 </head>
 <body>
 <button id="options">Options</button>
-<button id="export-unaffiliated-logs">Download non-task-specific logs</button>
+<button id="export-unaffiliated-logs" title="the logs exported with this also include some messages from the very beginning or the very end of each task">Download non-task-specific logs</button>
 <br>
 <label id="task-spec-label" for="task-spec" title="the task should be completable when starting from the website which is loaded in the current tab"
 >Agent Task Specification</label>
@@ -81,11 +81,11 @@
 <br>
 <div id="status"></div>
 <br>
-<label for="pending-action">Pending Action</label>
+<label for="pending-action" title="This shows a description of the next action that the model intends to perform but hasn't necessarily done yet">Pending Action</label>
 <br>
 <div id="pending-action"></div>
 <br>
-<div id="monitor-mode-heading">Monitor Mode</div>
+<div id="monitor-mode-heading" title="This section's elements are for manual step-by-step supervision of the agent by a human user, and must be enabled by toggling Monitor Mode in the options menu">Monitor Mode</div>
 <br>
 <div id="monitor-mode-container">
     <label for="monitor-feedback" title="Hint- if you reject the proposed action after doing something to the page, please mention that thing in the feedback">Feedback to Agent</label>

@@ -145,7 +145,6 @@ First, reiterate your next target element, its detailed location, and the corres
 (Multichoice Question)
 Below is a multi-choice question, where the choices are elements in the webpage. All elements are arranged in the order based on their height on the webpage, from top to bottom (and from left to right). This arrangement can be used to locate them. From the screenshot, find out where and what each one is on the webpage, taking into account both their text content and HTML details. Then, determine whether one matches your target element. Please examine the choices one by one. Choose the matching one. If multiple options match your answer, choose the most likely one by re-examining the screenshot, the choices, and your further reasoning.
 If your planning above sets out a multi-step plan for progressing from the current state, you must implement the first step in that plan, not the last`;
-//todo check with Boyuan about whether the above line is worth keeping (is that a common failure? common both for gpt-4o and gpt-4-turbo?)
 
 //todo find some way to include this in the prompt when appropriate (when prev action failed and the explanation string for that failed action included the substring "search bar"?)
 // Note that a search bar might initially show up in html as a button which must be clicked to make the actual search bar available
