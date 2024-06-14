@@ -116,19 +116,15 @@ export class SidePanelManager {
         this.serviceWorkerPort.onDisconnect.addListener(this.handleAgentControllerDisconnect);
     }
 
-    pingServiceWorkerForKeepAlive = async (): Promise<void> => {
-        if (!this.serviceWorkerPort) {
-            this.logger.error('pingServiceWorkerForKeepalive called but serviceWorkerPort is undefined');
-            return;
-        }
+    pingServiceWorkerForKeepAlive = async (swPort: chrome.runtime.Port): Promise<void> => {
         try {
-            this.serviceWorkerPort.postMessage({type: Panel2BackgroundPortMsgType.KEEP_ALIVE});
+            swPort.postMessage({type: Panel2BackgroundPortMsgType.KEEP_ALIVE});
         } catch (error: any) {
-            this.logger.error('error while pinging service worker for keepalive:', renderUnknownValue(error));
+            this.logger.info('chain of keep-alive pings to service worker terminating because of error:', renderUnknownValue(error));
             return;
         }
         const two_thirds_chrome_service_worker_timeout = 20000;
-        setTimeout(this.pingServiceWorkerForKeepAlive, two_thirds_chrome_service_worker_timeout);
+        setTimeout(() => this.pingServiceWorkerForKeepAlive(swPort), two_thirds_chrome_service_worker_timeout);
     }
 
 
@@ -380,10 +376,7 @@ export class SidePanelManager {
         this.serviceWorkerReady = true;
         this.setStatusWithDelayedClear('Agent controller connection ready; you can now start a task, export non-task-specific logs, etc.');
 
-        //todo once logs are getting reliably saved to db by backend (and not discarded when db connection is unavailable)
-        // figure out why, after a while, the backend will start getting 2 or 3 or more of these keepalive pings
-        // in a period of less than a second
-        this.pingServiceWorkerForKeepAlive().catch((error) => {
+        this.pingServiceWorkerForKeepAlive(this.serviceWorkerPort).catch((error) => {
             this.logger.error('error while starting keepalive pings to service worker:', renderUnknownValue(error));
         });
 
