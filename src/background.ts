@@ -5,11 +5,9 @@ import {
     createNamedLogger,
     DB_NAME,
     dbConnHolder,
-    initializeDbConnection,
-    LOGS_OBJECT_STORE,
+    initializeDbConnection, LogMessage,
+    LOGS_OBJECT_STORE, logsNotYetSavedToDb, mislaidLogsQueueMutex, saveLogMsgToDb,
     SCREENSHOTS_OBJECT_STORE,
-    taskIdHolder,
-    taskIdPlaceholderVal
 } from "./utils/shared_logging_setup";
 import {OpenAiEngine} from "./utils/OpenAiEngine";
 import log from "loglevel";
@@ -197,12 +195,7 @@ function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (r
             consoleMethodNm = "debug";
         }
         console[consoleMethodNm](augmentLogMsg(timestamp, loggerName, level, args));
-        if (dbConnHolder.dbConn) {
-            dbConnHolder.dbConn.add(LOGS_OBJECT_STORE, {
-                timestamp: timestamp, loggerName: loggerName, level: level,
-                taskId: taskIdHolder.currTaskId ?? taskIdPlaceholderVal, msg: args.join(" ")
-            }).catch((error) => console.error("error adding log message to indexeddb:", renderUnknownValue(error)));
-        }
+        saveLogMsgToDb(timestamp, loggerName, level, args);
         sendResponse({success: true});
     } else if (request.reqType === PageRequestType.PRESS_ENTER) {
         if (!agentController) {
@@ -329,8 +322,21 @@ chrome.commands.onCommand.addListener(handleKeyCommand);
 chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === serviceWorkerKeepaliveAlarmName) {
         centralLogger.trace("service worker keepalive alarm fired");
-        //todo disable this if I can confirm that just receiving the alarm event with a listener causes service worker
-        // to stop randomly dying
+
+        if (dbConnHolder.dbConn && logsNotYetSavedToDb.length > 0) {
+            mislaidLogsQueueMutex.runExclusive(() => {
+                let shouldAbortCurrLogSavingRun = false;
+                while (logsNotYetSavedToDb.length > 0 && dbConnHolder.dbConn && !shouldAbortCurrLogSavingRun) {
+                    //shift result can't be undefined b/c previous line confirmed array isn't empty
+                    const logMsg = logsNotYetSavedToDb.shift() as LogMessage;
+                    dbConnHolder.dbConn.add(LOGS_OBJECT_STORE, logMsg).catch((error) => {
+                        console.error(`error ${renderUnknownValue(error)} adding log message ${JSON.stringify(logMsg)} to indexeddb:`);
+                        logsNotYetSavedToDb.push(logMsg);
+                        shouldAbortCurrLogSavingRun = true;
+                    });
+                }
+            }).catch((error) => centralLogger.error(`error occurred while trying to deal with mislaid log messages that hadn't been saved to the database yet: ${renderUnknownValue(error)}`));
+        }
     } else {
         centralLogger.error(`unrecognized alarm name: ${alarm.name}`);
     }

@@ -380,6 +380,9 @@ export class SidePanelManager {
         this.serviceWorkerReady = true;
         this.setStatusWithDelayedClear('Agent controller connection ready; you can now start a task, export non-task-specific logs, etc.');
 
+        //todo once logs are getting reliably saved to db by backend (and not discarded when db connection is unavailable)
+        // figure out why, after a while, the backend will start getting 2 or 3 or more of these keepalive pings
+        // in a period of less than a second
         this.pingServiceWorkerForKeepAlive().catch((error) => {
             this.logger.error('error while starting keepalive pings to service worker:', renderUnknownValue(error));
         });
