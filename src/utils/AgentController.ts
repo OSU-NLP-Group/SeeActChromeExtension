@@ -1017,7 +1017,7 @@ export class AgentController {
                 const zip = new JSZip();
                 const logFileContents = await this.retrieveLogsForTaskId(dbConnHolder.dbConn, taskIdPlaceholderVal);
                 if (logFileContents != undefined) {
-                    zip.file("non_task_specific.log", logFileContents);
+                    zip.file(`non_task_specific_${new Date().toISOString()}.log`, logFileContents);
                     this.sendZipToSidePanelForDownload(taskIdPlaceholderVal, zip);
                 } //error message already logged in retrieveLogsForTaskId()
             } else { this.logger.error("no db connection available to export non-task-specific logs"); }
