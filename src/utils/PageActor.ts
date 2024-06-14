@@ -465,11 +465,14 @@ export class PageActor {
 
     waitForPageStable = async (reasonForWait: string): Promise<boolean> => {
         const startOfPostActionStabilityWait = Date.now();
+        const initialWait = 1000;//ms,
         const pollingIncrement = 100;//ms
         const maxPollingTime = 10_000;//ms
-        const numPollingIterations = maxPollingTime / pollingIncrement;
+        const numPollingIterations = (maxPollingTime-initialWait) / pollingIncrement;
+
+        // needed because sometimes weird things happen like unload event not firing for 540+ms after you pressed enter
+        await sleep(initialWait);
         for (let i = 0; i < numPollingIterations; i++) {
-            await sleep(pollingIncrement);
 
             if (this.isPageBeingUnloaded) {
                 this.logger.info(`page is being unloaded; will not try to ${reasonForWait}`);
@@ -480,6 +483,7 @@ export class PageActor {
                 this.logger.debug(`page has been stable for at least ${pollingIncrement}ms; will ${reasonForWait}`);
                 break;
             }
+            await sleep(pollingIncrement);
         }
         this.logger.debug(`waited ${(Date.now() - startOfPostActionStabilityWait)}ms for page to become stable before ${reasonForWait}`);
         return false;

@@ -2,9 +2,15 @@ import {ChromeWrapper} from "./ChromeWrapper";
 import {createNamedLogger} from "./shared_logging_setup";
 import {Logger} from "loglevel";
 import {
-    Background2PanelPortMsgType, buildGenericActionDesc, defaultIsMonitorMode, defaultShouldWipeActionHistoryOnStart,
+    Background2PanelPortMsgType,
+    buildGenericActionDesc,
+    defaultIsMonitorMode,
+    defaultShouldWipeActionHistoryOnStart,
+    expectedMsgForPortDisconnection,
     Panel2BackgroundPortMsgType,
-    panelToControllerPort, renderUnknownValue, setupMonitorModeCache
+    panelToControllerPort,
+    renderUnknownValue,
+    setupMonitorModeCache
 } from "./misc";
 import {Mutex} from "async-mutex";
 import {ActionInfo} from "./AgentController";
@@ -120,11 +126,15 @@ export class SidePanelManager {
         try {
             swPort.postMessage({type: Panel2BackgroundPortMsgType.KEEP_ALIVE});
         } catch (error: any) {
-            this.logger.info('chain of keep-alive pings to service worker terminating because of error:', renderUnknownValue(error));
+            if ('message' in error && error.message === expectedMsgForPortDisconnection) {
+                this.logger.info('chain of keep-alive pings to service worker terminating because service worker disconnected');
+            } else {
+                this.logger.error('chain of keep-alive pings to service worker terminating because of unexpected error:', renderUnknownValue(error));
+            }
             return;
         }
-        const two_thirds_chrome_service_worker_timeout = 20000;
-        setTimeout(() => this.pingServiceWorkerForKeepAlive(swPort), two_thirds_chrome_service_worker_timeout);
+        const nearly_service_worker_timeout = 28000;
+        setTimeout(() => this.pingServiceWorkerForKeepAlive(swPort), nearly_service_worker_timeout);
     }
 
 
@@ -299,6 +309,7 @@ export class SidePanelManager {
             this.state = SidePanelMgrState.WAIT_FOR_PENDING_ACTION_INFO;
             this.pendingActionDiv.textContent = '';
             this.pendingActionDiv.title = '';
+            this.monitorFeedbackField.value = '';
         });
     }
 

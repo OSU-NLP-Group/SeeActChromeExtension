@@ -11,7 +11,12 @@ import {
 } from "./utils/shared_logging_setup";
 import {OpenAiEngine} from "./utils/OpenAiEngine";
 import log from "loglevel";
-import {AgentController, AgentControllerState, serviceWorkerKeepaliveAlarmName} from "./utils/AgentController";
+import {
+    AgentController,
+    AgentControllerState,
+    serviceWorker2ndaryKeepaliveAlarmName,
+    serviceWorkerKeepaliveAlarmName
+} from "./utils/AgentController";
 import {PageRequestType, pageToControllerPort, panelToControllerPort, renderUnknownValue, sleep} from "./utils/misc";
 import {openDB} from "idb";
 import Port = chrome.runtime.Port;
@@ -337,6 +342,8 @@ chrome.alarms.onAlarm.addListener((alarm) => {
                 }
             }).catch((error) => centralLogger.error(`error occurred while trying to deal with mislaid log messages that hadn't been saved to the database yet: ${renderUnknownValue(error)}`));
         }
+    } else if (alarm.name === serviceWorker2ndaryKeepaliveAlarmName) {
+        centralLogger.trace("service worker secondary keepalive alarm fired");
     } else {
         centralLogger.error(`unrecognized alarm name: ${alarm.name}`);
     }

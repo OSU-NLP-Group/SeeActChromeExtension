@@ -141,7 +141,12 @@ export function renderUnknownValue(val: unknown): string {
         return "ACTUAL_js_undefined";
     } else if (typeof val === 'object') {
         if (val instanceof Error) {
-            return `error type: ${val.name}; message: ${val.message}; stack: ${val.stack}`;
+            let stackString = val.stack ? val.stack : "no stack available";
+            const firstNewlineIndex = stackString.indexOf("\n");
+            if (firstNewlineIndex !== -1) {
+                stackString = stackString.substring(firstNewlineIndex);
+            }//get rid of annoying thing where the error message is repeated at the start of the stack trace string
+            return `error type: ${val.name}; message: ${val.message}; stack: ${stackString}`;
         } else {
             return JSON.stringify(val);
         }

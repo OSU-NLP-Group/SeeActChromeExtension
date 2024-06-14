@@ -19,7 +19,8 @@ import {
     Background2PagePortMsgType,
     Background2PanelPortMsgType,
     base64ToByteArray,
-    buildGenericActionDesc, defaultIsMonitorMode,
+    buildGenericActionDesc,
+    defaultIsMonitorMode,
     defaultMaxFailureOrNoopStreak,
     defaultMaxFailures,
     defaultMaxNoops,
@@ -30,7 +31,9 @@ import {
     Panel2BackgroundPortMsgType,
     renderUnknownValue,
     setupMonitorModeCache,
-    sleep, validateIntegerLimitUpdate, ViewportDetails
+    sleep,
+    validateIntegerLimitUpdate,
+    ViewportDetails
 } from "./misc";
 import {formatChoices, generatePrompt, LmmPrompts, postProcessActionLlm} from "./format_prompts";
 import {getIndexFromOptionName} from "./format_prompt_utils";
@@ -94,6 +97,11 @@ type PredictionRecord = {
 };
 
 export const serviceWorkerKeepaliveAlarmName = "serviceWorkerKeepaliveAlarm";
+//with just 1 keepalive alarm, sometimes it would serve its purpose (if Chrome fired that event a fraction of a second early)
+// but it would fail to do its job if there was a 30 second period with no keepalive pings from the side panel (side
+// panel pings to service worker are bafflingly unreliable) and that time the alarm fired even a tiny fraction of a
+// second more than 30 seconds after the previous firing
+export const serviceWorker2ndaryKeepaliveAlarmName = "serviceWorker2ndaryKeepaliveAlarm";
 
 
 //todo explore whether it might be possible to break this into multiple classes, or at least if there are
@@ -344,6 +352,11 @@ export class AgentController {
             this.logger.trace("sent notification to side panel that agent controller is ready");
             chrome.alarms.create(serviceWorkerKeepaliveAlarmName, {periodInMinutes: 0.5}).catch((error) =>
                 this.logger.error(`error while trying to set up service worker keepalive alarm; error: ${renderUnknownValue(error)}`));
+            setTimeout(() => {
+                this.logger.debug("setting up secondary keepalive alarm in service worker");
+                chrome.alarms.create(serviceWorker2ndaryKeepaliveAlarmName, {periodInMinutes: 0.5}).catch((error) =>
+                    this.logger.error(`error while trying to set up secondary service worker keepalive alarm; error: ${renderUnknownValue(error)}`));
+            }, 15_000);
         });
     }
 
@@ -723,6 +736,8 @@ export class AgentController {
             }
             return LmmOutputReaction.TRY_REPROMPT;
         }
+        //todo if it says 'scroll down' when viewport info shows that we're already at the bottom, simply treat that as a no-op and remprompt
+        // same for scroll up when at top
 
         if (chosenCandidateIndex && chosenCandidateIndex >= candidateIds.length && actionNeedsNoElement) {
             chosenCandidateIndex = undefined;
@@ -964,6 +979,10 @@ export class AgentController {
         }
         this.wasPrevActionRejectedByMonitor = true;
         this.monitorFeedback = message.feedback as string;
+        //to?do if monitor mode is used a lot (and the models continue to be dumb enough that you sometimes have to
+        // reject several bad ideas in a row), then it might be useful to accumulate the feedback from each rejection
+        // and include all previously proposed actions and each proposed action's rejection info (potentially including
+        // its rejection feedback) in the next planning prompt to the model
 
         this.state = AgentControllerState.WAITING_FOR_PAGE_STATE
         try {
@@ -1018,7 +1037,7 @@ export class AgentController {
                 const logFileContents = await this.retrieveLogsForTaskId(dbConnHolder.dbConn, taskIdPlaceholderVal);
                 if (logFileContents != undefined) {
                     zip.file(`non_task_specific_${new Date().toISOString()}.log`, logFileContents);
-                    this.sendZipToSidePanelForDownload(taskIdPlaceholderVal, zip);
+                    this.sendZipToSidePanelForDownload(taskIdPlaceholderVal, zip, `misc_logs_${new Date().toISOString()}.zip`);
                 } //error message already logged in retrieveLogsForTaskId()
             } else { this.logger.error("no db connection available to export non-task-specific logs"); }
         } else {
@@ -1143,9 +1162,11 @@ export class AgentController {
                 this.logger.error(termReason);
                 this.terminateTask(termReason);
             }
-            this.logger.debug("clearing keep-alive alarm so that service worker will be shut down");
+            this.logger.debug("clearing keep-alive alarms so that service worker will be shut down");
             chrome.alarms.clear(serviceWorkerKeepaliveAlarmName).catch((error) =>
                 this.logger.warn("error while trying to clear keep-alive alarm; error: ", renderUnknownValue(error)));
+            chrome.alarms.clear(serviceWorker2ndaryKeepaliveAlarmName).catch((error) =>
+                this.logger.warn("error while trying to clear secondary keep-alive alarm; error: ", renderUnknownValue(error)));
         });
     }
 
@@ -1354,7 +1375,7 @@ export class AgentController {
     }
 
 
-    private sendZipToSidePanelForDownload(givenTaskId: string, zip: JSZip) {
+    private sendZipToSidePanelForDownload(givenTaskId: string, zip: JSZip, overrideZipFilename?: string) {
         this.logger.info(`about to compress task info into virtual zip file for task ${givenTaskId}`);
         zip.generateAsync(
             {type: "blob", compression: "DEFLATE", compressionOptions: {level: 5}}).then(async (content) => {
@@ -1371,7 +1392,7 @@ export class AgentController {
             try {
                 this.portToSidePanel.postMessage({
                     type: Background2PanelPortMsgType.HISTORY_EXPORT, data: arrForTraceZip,
-                    fileName: `task-${givenTaskId}-trace.zip`
+                    fileName: overrideZipFilename ?? `task-${givenTaskId}-trace.zip`
                 });
             } catch (error: any) {
                 this.logger.error(`error while trying to send zip file for task ${givenTaskId} to side panel for download; error: ${renderUnknownValue(error)}`);
