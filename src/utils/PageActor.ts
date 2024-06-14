@@ -211,9 +211,7 @@ export class PageActor {
     performScrollAction = async (actionToPerform: Action, actionOutcome: ActionOutcome): Promise<void> => {
         const docElement = this.domWrapper.getDocumentElement();
         const viewportHeight = docElement.clientHeight;
-        //todo make scroll increment fraction configurable in options menu? if so, that config option would
-        // also need to affect the relevant sentence of the system prompt (about magnitude of scrolling actions)
-        const scrollAmount = viewportHeight * 0.75;
+        const scrollAmount = viewportHeight * 0.90;
         const scrollVertOffset = actionToPerform === Action.SCROLL_UP ? -scrollAmount : scrollAmount;
         const priorVertScrollPos = this.domWrapper.getVertScrollPos();
         this.logger.trace(`scrolling page by ${scrollVertOffset}px from starting vertical position ${priorVertScrollPos}px`);
@@ -376,31 +374,8 @@ export class PageActor {
             }
         }
 
-        const startOfPostActionStabilityWait = Date.now();
-        const pollingIncrement = 100;//ms
-        const maxPollingTime = 10_000;//ms
-        const numPollingIterations = maxPollingTime / pollingIncrement;
-        for (let i = 0; i < numPollingIterations; i++) {
-            await sleep(pollingIncrement);
-
-            if (this.isPageBeingUnloaded) {
-                this.logger.info("page is being unloaded; will not try to notify background script of action outcome");
-                return;
-            }
-            const currTime = Date.now();
-            if (currTime - this.lastPageModificationTimestamp > pollingIncrement) {
-                this.logger.debug(`page has been stable for at least ${pollingIncrement}ms; notifying background script of action outcome`);
-                break;
-            }
-            //on the topic of pages potentially having weird js that's forever constantly updating the dom, maybe worth
-            // checking if that can be detected here by seeing if the difference between currTime and this.lastPageModificationTimestamp
-            // is _below_ some threshold like 10ms; if so, log an info message and at minimum do some extra
-            // incrementing of the loop variable (so total waiting is ~3sec), maybe even break out of loop
-
-        }
-        //todo double check whether/how much mutation observers on 'body' and 'head' slow down the page (and whether
-        // it causes any other issues)
-        this.logger.debug(`waited ${(Date.now() - startOfPostActionStabilityWait)}ms after action for page to become stable`);
+        const shouldAbort = await this.waitForPageStable("notify background script of action outcome");
+        if (shouldAbort) {return;}
 
         this.interactiveElements = undefined;
         //this part would only be reached if the action didn't cause page navigation in current tab
@@ -485,6 +460,29 @@ export class PageActor {
         } else {
             this.logger.warn("unknown message from background script: " + JSON.stringify(message));
         }
+    }
+
+
+    waitForPageStable = async (reasonForWait: string): Promise<boolean> => {
+        const startOfPostActionStabilityWait = Date.now();
+        const pollingIncrement = 100;//ms
+        const maxPollingTime = 10_000;//ms
+        const numPollingIterations = maxPollingTime / pollingIncrement;
+        for (let i = 0; i < numPollingIterations; i++) {
+            await sleep(pollingIncrement);
+
+            if (this.isPageBeingUnloaded) {
+                this.logger.info(`page is being unloaded; will not try to ${reasonForWait}`);
+                return true;
+            }
+            const currTime = Date.now();
+            if (currTime - this.lastPageModificationTimestamp > pollingIncrement) {
+                this.logger.debug(`page has been stable for at least ${pollingIncrement}ms; will ${reasonForWait}`);
+                break;
+            }
+        }
+        this.logger.debug(`waited ${(Date.now() - startOfPostActionStabilityWait)}ms for page to become stable before ${reasonForWait}`);
+        return false;
     }
 
 }

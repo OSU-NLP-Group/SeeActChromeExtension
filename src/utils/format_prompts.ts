@@ -68,8 +68,8 @@ export const formatChoices = (elements: Array<SerializableElementData>, candidat
         } else if (relElemX > 100) {
             positionInfo = "RIGHT of viewport";
         } else {
-            positionInfo = "Position (relative to viewport): " + relElemX.toFixed(1) + "% from left, " + relElemY.toFixed(1) + "% from top";
-            sizeInfo = `Size (as % of viewport width/height): ${relElemWidth.toFixed(1)}% x ${relElemHeight.toFixed(1)}%; `;
+            positionInfo = `Position: ${relElemX.toFixed(1)}% from left, ${relElemY.toFixed(1)}% from top`;
+            sizeInfo = `Size: ${relElemWidth.toFixed(1)}% x ${relElemHeight.toFixed(1)}%; `;
         }
 
         let possiblyAbbrevDesc = description;
@@ -163,6 +163,8 @@ First, reiterate your next target element, its detailed location, and the corres
 (Multichoice Question)
 Below is a multi-choice question, where the choices are elements in the webpage. All elements are arranged in the order based on their height on the webpage, from top to bottom (and from left to right). This arrangement can be used to locate them. 
 From the screenshot, find out where and what each one is on the webpage, taking into account both their text content and HTML details. Then, determine whether one matches your target element. The element described in the planning output might be visible in the screenshot and yet not be listed in the grounding prompt because it was disabled.
+Where the list below mentions an element's position, it should be interpreted as the element's position relative to the viewport (and the coordinate values are relative to the viewport's width/height). Likewise, where information about an element's size is provided as "Size: X% x Y%", it should be interpreted as the element's size relative to the viewport's width/height.
+If the element you want to interact with is "BELOW viewport", you should scroll down to it before acting on it. Likewise with "ABOVE viewport" and scrolling up.
 Please examine the choices one by one. Choose the matching one. If multiple options match your answer, choose the most likely one by re-examining the screenshot, the choices, and your further reasoning.
 If your planning above sets out a multi-step plan for progressing from the current state, you must implement the first step in that plan, not the last`;//todo try removing this last reminder after next model update, in case improved base model 'smartness'/long-context-reliability makes it unnecessary
 

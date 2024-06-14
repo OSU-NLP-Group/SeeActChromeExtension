@@ -4,7 +4,7 @@ import {Logger} from "loglevel";
 import {
     Background2PanelPortMsgType, buildGenericActionDesc, defaultIsMonitorMode, defaultShouldWipeActionHistoryOnStart,
     Panel2BackgroundPortMsgType,
-    panelToControllerPort, renderUnknownValue, setupMonitorModeCache, sleep
+    panelToControllerPort, renderUnknownValue, setupMonitorModeCache
 } from "./misc";
 import {Mutex} from "async-mutex";
 import {ActionInfo} from "./AgentController";
@@ -127,8 +127,8 @@ export class SidePanelManager {
             this.logger.error('error while pinging service worker for keepalive:', renderUnknownValue(error));
             return;
         }
-        const five_less_than_chrome_service_worker_timeout = 25000;
-        setTimeout(this.pingServiceWorkerForKeepAlive, five_less_than_chrome_service_worker_timeout);
+        const two_thirds_chrome_service_worker_timeout = 20000;
+        setTimeout(this.pingServiceWorkerForKeepAlive, two_thirds_chrome_service_worker_timeout);
     }
 
 

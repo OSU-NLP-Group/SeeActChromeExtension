@@ -13,7 +13,7 @@ import {
 } from "./utils/shared_logging_setup";
 import {OpenAiEngine} from "./utils/OpenAiEngine";
 import log from "loglevel";
-import {AgentController, AgentControllerState} from "./utils/AgentController";
+import {AgentController, AgentControllerState, serviceWorkerKeepaliveAlarmName} from "./utils/AgentController";
 import {PageRequestType, pageToControllerPort, panelToControllerPort, renderUnknownValue, sleep} from "./utils/misc";
 import {openDB} from "idb";
 import Port = chrome.runtime.Port;
@@ -326,5 +326,13 @@ function handleKeyCommand(command: string, tab: chrome.tabs.Tab): void {
 
 chrome.commands.onCommand.addListener(handleKeyCommand);
 
-
+chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === serviceWorkerKeepaliveAlarmName) {
+        centralLogger.trace("service worker keepalive alarm fired");
+        //todo disable this if I can confirm that just receiving the alarm event with a listener causes service worker
+        // to stop randomly dying
+    } else {
+        centralLogger.error(`unrecognized alarm name: ${alarm.name}`);
+    }
+});
 

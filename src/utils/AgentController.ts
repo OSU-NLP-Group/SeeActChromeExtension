@@ -93,7 +93,7 @@ type PredictionRecord = {
     explanation: string
 };
 
-const serviceWorkerKeepaliveAlarmName = "serviceWorkerKeepaliveAlarm";
+export const serviceWorkerKeepaliveAlarmName = "serviceWorkerKeepaliveAlarm";
 
 
 //todo explore whether it might be possible to break this into multiple classes, or at least if there are
@@ -321,7 +321,6 @@ export class AgentController {
             port.onMessage.addListener(this.handlePageMsgToAgentController);
             port.onDisconnect.addListener(this.handlePageDisconnectFromAgentController);
             this.portToContentScript = port;
-            //todo set up repeating chrome.alarm to keep this alive while it's connected to side panel
         });
     }
 
@@ -355,7 +354,7 @@ export class AgentController {
      */
     processPageActorInitialized = (port: Port): void => {
         if (this.state !== AgentControllerState.WAITING_FOR_CONTENT_SCRIPT_INIT) {
-            const termReason = "received 'content script initialized and ready' message from content script while not waiting for content script initialization, but rather in state " + AgentControllerState[this.state];
+            const termReason = "received 'content script initialized and ready' message from new content script while not waiting for content script initialization, but rather in state " + AgentControllerState[this.state];
             this.logger.error(termReason);
             this.terminateTask(termReason);
             return;
@@ -653,6 +652,9 @@ export class AgentController {
             this.terminateTask("Task completed: " + explanation);
             return LmmOutputReaction.ABORT_TASK;
         } else if (action === Action.NONE) {
+            //after next major model release, if this comes up, then maybe, if the agent repeatedly says that the page
+            // hasn't fully loaded, we should consider the possibility that the "wait until page fully loaded" logic in
+            // content script didn't work properly and we should fetch fresh elements
             this.logger.warn("ai selected NONE action, counting as noop action and reprompting");
             this.noopCount++;
             this.failureOrNoopStreak++;
@@ -1101,7 +1103,6 @@ export class AgentController {
                 const termReason = "content script disconnected while no side panel connection was open";
                 this.logger.error(termReason + "; terminating task");
                 this.terminateTask(termReason);
-                //todo clear the alarm that had been set up to keep the service worker alive
                 return;
             }
 
@@ -1121,6 +1122,8 @@ export class AgentController {
                     return;
                 }
                 await this.injectPageActorScript(false);
+            } else if (this.state === AgentControllerState.IDLE) {
+                this.logger.debug("service worker's connection to content script was lost while in idle state; ignoring");
             } else {
                 const termReason = `service worker's connection to content script was lost while not waiting for action, but rather in state ${AgentControllerState[this.state]}`;
                 this.logger.error(`${termReason}; terminating task`);
@@ -1140,6 +1143,7 @@ export class AgentController {
                 this.logger.error(termReason);
                 this.terminateTask(termReason);
             }
+            this.logger.debug("clearing keep-alive alarm so that service worker will be shut down");
             chrome.alarms.clear(serviceWorkerKeepaliveAlarmName).catch((error) =>
                 this.logger.warn("error while trying to clear keep-alive alarm; error: ", renderUnknownValue(error)));
         });
@@ -1152,6 +1156,15 @@ export class AgentController {
      */
     killPageConnection = (pageConn: Port): void => {
         try {
+            //per chrome docs, this shouldn't be necessary (calling disconnect on one side of a port shouldn't trigger
+            // that side's onDisconnect listener), but in practice it seems to be necessary
+            pageConn.onDisconnect.removeListener(this.handlePageDisconnectFromAgentController);
+            this.logger.trace(`removed onDisconnect listener from content script connection ${pageConn.name}`)
+            if (pageConn.onDisconnect.hasListeners()) {
+                this.logger.error("something went wrong when removing the onDisconnect listener for the port "
+                    + pageConn.name + "between service worker and content script. the onDisconnect event of that port " +
+                    "still has one or more listeners");
+            }
             pageConn.disconnect();
             this.logger.info(`successfully cleaned up content script connection ${pageConn.name}`);
         } catch (error: any) {
