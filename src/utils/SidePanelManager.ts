@@ -497,12 +497,10 @@ export class SidePanelManager {
 
 
     private setStatusWithDelayedClear(status: string, delay: number = 10, hovertext: string = "") {
-        this.statusDiv.style.display = 'block';
         this.statusDiv.textContent = status;
         this.statusDiv.title = hovertext;
         setTimeout(() => {
-            this.statusDiv.style.display = 'none';
-            this.statusDiv.textContent = '';
+            this.statusDiv.textContent = 'No status update available at the moment.';
             this.statusDiv.title = '';
         }, delay * 1000)
     }
