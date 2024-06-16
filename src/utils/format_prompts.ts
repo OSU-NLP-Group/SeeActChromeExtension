@@ -165,12 +165,14 @@ Below is a multi-choice question, where the choices are elements in the webpage.
 From the screenshot, find out where and what each one is on the webpage, taking into account both their text content and HTML details. Then, determine whether one matches your target element. The element described in the planning output might be visible in the screenshot and yet not be listed in the grounding prompt because it was disabled.
 Where the list below mentions an element's position, it should be interpreted as the element's position relative to the viewport (and the coordinate values are relative to the viewport's width/height). Likewise, where information about an element's size is provided as "Size: X% x Y%", it should be interpreted as the element's size relative to the viewport's width/height.
 If the element you want to interact with is "BELOW viewport", you should scroll down to it before acting on it. Likewise with "ABOVE viewport" and scrolling up.
-Please examine the choices one by one. Choose the matching one. If multiple options match your answer, choose the most likely one by re-examining the screenshot, the choices, and your further reasoning.
-If your planning above sets out a multi-step plan for progressing from the current state, you must implement the first step in that plan, not the last`;//todo try removing this last reminder after next model update, in case improved base model 'smartness'/long-context-reliability makes it unnecessary
+Please examine the choices one by one. Choose the matching one. If multiple options match your answer, choose the most likely one by re-examining the screenshot, the choices, and your further reasoning.`;
+
+//if another case relevant to the following advice comes up in testing, send logs to Boyuan and possibly reintroduce this to grounding prompt
+// If your planning above sets out a multi-step plan for progressing from the current state, you must implement the first step in that plan, not the last
 
 //todo above prompt might include a recommendation to assemble a list of most plausible candidates and then reason about which is best; perhaps this could lead to more consistent and/or higher-quality reasoning about grounding?
 
-//todo find some way to include this in the prompt when appropriate (when prev action failed and the explanation string for that failed action included the substring "search bar"?)
+//todo find some way to include the following in the prompt when appropriate (when prev action failed and the explanation string for that failed action included the substring "search bar"?)
 // Note that a search bar might initially show up in html as a button which must be clicked to make the actual search bar available
 
 export const groundingOutputPromptIntro = `(Response Format)

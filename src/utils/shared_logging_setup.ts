@@ -34,6 +34,11 @@ export const DB_NAME = "Browser_LMM_Agent";
 export const LOGS_OBJECT_STORE = "logs";
 export const SCREENSHOTS_OBJECT_STORE = "screenshots";
 
+// timestamps in this db are _implicitly_ (no time zone indicator at the end) in UTC+0 time zone;
+// They follow ISO-8601 format _except_ for the missing final Z and except that sometimes it'll have microseconds
+// (6 digits after decimal point) instead of milliseconds (3 digits after decimal point)
+// The omission of the Z allows sorting in the by-ts indexes to work properly when some timestamps have milliseconds
+// and some have microseconds
 export interface AgentDb extends DBSchema {
     logs: {
         key: number;
@@ -107,16 +112,20 @@ export function saveLogMsgToDb(timestampStr: string, actualLoggerName: string, m
                                msgArgs: unknown[]) {
     const taskIdForMsg = taskIdHolder.currTaskId ?? taskIdPlaceholderVal;
     const renderedMsg = msgArgs.join(" ");
+    //remove the trailing 'Z' from the timestamp string to make it work as a key in a browser db index (because
+    // otherwise comparisons-between/ordering-of ts values in the index would be thrown off by some ending with
+    // milliseconds and a Z while others ended with microseconds and a Z)
+    const dbSafeTsStr = timestampStr.slice(0,-1);
     if (dbConnHolder.dbConn) {
         dbConnHolder.dbConn.add(LOGS_OBJECT_STORE, {
-            timestamp: timestampStr, loggerName: actualLoggerName, level: methodName,
+            timestamp: dbSafeTsStr, loggerName: actualLoggerName, level: methodName,
             taskId: taskIdForMsg, msg: renderedMsg
         }).catch((error) =>
             console.error("error adding log message to indexeddb:", renderUnknownValue(error)));
     } else {
         mislaidLogsQueueMutex.runExclusive(() => {
             logsNotYetSavedToDb.push({
-                timestamp: timestampStr, loggerName: actualLoggerName, level: methodName,
+                timestamp: dbSafeTsStr, loggerName: actualLoggerName, level: methodName,
                 taskId: taskIdForMsg, msg: renderedMsg
             })
         }).catch((error) =>

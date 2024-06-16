@@ -324,6 +324,9 @@ function handleKeyCommand(command: string, tab: chrome.tabs.Tab): void {
 
 chrome.commands.onCommand.addListener(handleKeyCommand);
 
+const recordsClearingAlarmName = "records_clearing_alarm";//logs and screenshots
+const numDaysToKeepRecords = 14;//maybe make this user-configurable if requested
+
 chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === serviceWorkerKeepaliveAlarmName) {
         centralLogger.trace("service worker keepalive alarm fired");
@@ -340,12 +343,81 @@ chrome.alarms.onAlarm.addListener((alarm) => {
                         shouldAbortCurrLogSavingRun = true;
                     });
                 }
-            }).catch((error) => centralLogger.error(`error occurred while trying to deal with mislaid log messages that hadn't been saved to the database yet: ${renderUnknownValue(error)}`));
+            }).catch((error) =>
+                centralLogger.error(`error occurred while trying to deal with mislaid log messages that hadn't been saved to the database yet: ${renderUnknownValue(error)}`));
         }
     } else if (alarm.name === serviceWorker2ndaryKeepaliveAlarmName) {
         centralLogger.trace("service worker secondary keepalive alarm fired");
+    } else if (alarm.name === recordsClearingAlarmName) {
+        //todo test this functionality by temporarily setting numDaysToKeepRecords to 0.5
+        const newestRecordTsToDelete = new Date(Date.now() - 1000 * 60 * 60 * 24 * numDaysToKeepRecords)
+            .toISOString().slice(0, -1);//remove Z because it throws off string-based ordering
+
+        if (!dbConnHolder.dbConn) {
+            centralLogger.warn(`cannot delete old logs/screenshots from indexeddb because db connection is not initialized`);
+            return;
+            //if it's a problem that this leads to occasionally skipping one log clearing (and so max log storage usage
+            // being double the normal peak), then we can add something here to make the alarm fire again in 5 minutes
+            // instead of 14 days
+        }
+
+        //if a third store is added, the below should be refactored to use a helper method
+
+        dbConnHolder.dbConn.transaction(LOGS_OBJECT_STORE, "readwrite").objectStore(LOGS_OBJECT_STORE).index("by-ts")
+            .openCursor(IDBKeyRange.upperBound(newestRecordTsToDelete)).then(
+            async (cursor) => {
+                if (cursor) {
+                    while (cursor) {
+                        cursor.delete().catch((error) => {
+                            centralLogger.error(`error deleting an old log from indexeddb: ${renderUnknownValue(error)}`);
+                        });
+                        cursor = await cursor.continue();
+                    }
+                    centralLogger.info("finished deleting old logs from indexeddb");
+                } else {
+                    centralLogger.info(`detected no logs older than ${numDaysToKeepRecords} days in indexeddb, so no logs were deleted`);
+                }
+            }, (error) => {
+                centralLogger.error(`error deleting old logs from indexeddb: ${renderUnknownValue(error)}`);
+            }
+        );
+
+        dbConnHolder.dbConn.transaction(SCREENSHOTS_OBJECT_STORE, "readwrite").objectStore(SCREENSHOTS_OBJECT_STORE)
+            .index("by-ts").openCursor(IDBKeyRange.upperBound(newestRecordTsToDelete)).then(
+            async (cursor) => {
+                if (cursor) {
+                    while (cursor) {
+                        cursor.delete().catch((error) => {
+                            centralLogger.error(`error deleting an old screenshot from indexeddb: ${renderUnknownValue(error)}`);
+                        });
+                        cursor = await cursor.continue();
+                    }
+                    centralLogger.info("finished deleting old screenshots from indexeddb");
+                } else {
+                    centralLogger.info(`detected no screenshots older than ${numDaysToKeepRecords} days in indexeddb, so no screenshots were deleted`);
+                }
+            }, (error) => {
+                centralLogger.error(`error deleting old screenshots from indexeddb: ${renderUnknownValue(error)}`);
+            }
+        );
+
     } else {
         centralLogger.error(`unrecognized alarm name: ${alarm.name}`);
     }
 });
+
+
+(async () => {
+    const logClearAlarm = await chrome.alarms.get(recordsClearingAlarmName);
+    if (!logClearAlarm) {
+        try {
+            await chrome.alarms.create(recordsClearingAlarmName, {
+                periodInMinutes: 60 * 24 * numDaysToKeepRecords
+            });
+            centralLogger.info(`started up a recurring alarm for clearing logs/screenshots outside a rolling window of ${numDaysToKeepRecords} days`);
+        } catch (error: any) {
+            centralLogger.error(`error creating alarm for clearing old logs/screenshots: ${renderUnknownValue(error)}`);
+        }
+    }
+})()
 

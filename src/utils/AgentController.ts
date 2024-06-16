@@ -766,7 +766,14 @@ export class AgentController {
             return;
         }
 
-        const screenshotTs = new Date().toISOString();
+        //removing Z because it could throw off string-based ordering in browser db index if some entries timestamps
+        // were millisecond precision and others were microsecond precision.
+        // Realistically, this is probably not a possible problem for screenshot object store (since all entries in
+        // that store are created by the service worker), but it is a necessary measure for the logs store (since some
+        // entries in that store are created by things that can use performance.now() (i.e. side panel) while others
+        // are created by things that can't (i.e. the service worker and content script));
+        // It's better for all timestamps in the indexeddb to follow the same convention
+        const screenshotTs = new Date().toISOString().slice(0, -1);
         try {
             screenshotDataUrl = await this.chromeWrapper.fetchVisibleTabScreenshot();
         } catch (error: any) {
@@ -1359,11 +1366,10 @@ export class AgentController {
             return undefined;
         }
         logsForTask.sort((msg1, msg2) => {
-            //trimming Z timezone indicator to avoid throwing off comparison, since all timestamps are in UTC+0 and end with 'Z'
-            const msg1TzAgnosticTs = msg1.timestamp.slice(0, -1);
-            const msg2TzAgnosticTs = msg2.timestamp.slice(0, -1);
-            if (msg1TzAgnosticTs < msg2TzAgnosticTs) return -1;
-            if (msg1TzAgnosticTs > msg2TzAgnosticTs) return 1;
+            //Z timezone indicator was already trimmed off during storage in db to avoid screwing up ordering of
+            // by-ts index; this was safe because all timestamps are in UTC+0
+            if (msg1.timestamp < msg2.timestamp) return -1;
+            if (msg1.timestamp > msg2.timestamp) return 1;
             return 0;
         });
 
