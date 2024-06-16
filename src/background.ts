@@ -352,6 +352,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
         //todo test this functionality by temporarily setting numDaysToKeepRecords to 0.5
         const newestRecordTsToDelete = new Date(Date.now() - 1000 * 60 * 60 * 24 * numDaysToKeepRecords)
             .toISOString().slice(0, -1);//remove Z because it throws off string-based ordering
+        centralLogger.info(`deleting logs/screenshots from before ${newestRecordTsToDelete} from indexeddb because they are older than ${numDaysToKeepRecords} days`);
 
         if (!dbConnHolder.dbConn) {
             centralLogger.warn(`cannot delete old logs/screenshots from indexeddb because db connection is not initialized`);
@@ -367,13 +368,15 @@ chrome.alarms.onAlarm.addListener((alarm) => {
             .openCursor(IDBKeyRange.upperBound(newestRecordTsToDelete)).then(
             async (cursor) => {
                 if (cursor) {
+                    let numLogsDeleted = 0;
                     while (cursor) {
                         cursor.delete().catch((error) => {
                             centralLogger.error(`error deleting an old log from indexeddb: ${renderUnknownValue(error)}`);
                         });
+                        numLogsDeleted++;
                         cursor = await cursor.continue();
                     }
-                    centralLogger.info("finished deleting old logs from indexeddb");
+                    centralLogger.info(`finished deleting old logs from indexeddb (total deleted: ${numLogsDeleted})`);
                 } else {
                     centralLogger.info(`detected no logs older than ${numDaysToKeepRecords} days in indexeddb, so no logs were deleted`);
                 }
@@ -386,13 +389,15 @@ chrome.alarms.onAlarm.addListener((alarm) => {
             .index("by-ts").openCursor(IDBKeyRange.upperBound(newestRecordTsToDelete)).then(
             async (cursor) => {
                 if (cursor) {
+                    let numScreenshotsDeleted = 0;
                     while (cursor) {
                         cursor.delete().catch((error) => {
                             centralLogger.error(`error deleting an old screenshot from indexeddb: ${renderUnknownValue(error)}`);
                         });
+                        numScreenshotsDeleted++;
                         cursor = await cursor.continue();
                     }
-                    centralLogger.info("finished deleting old screenshots from indexeddb");
+                    centralLogger.info(`finished deleting old screenshots from indexeddb (total deleted: ${numScreenshotsDeleted})`);
                 } else {
                     centralLogger.info(`detected no screenshots older than ${numDaysToKeepRecords} days in indexeddb, so no screenshots were deleted`);
                 }
@@ -400,6 +405,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
                 centralLogger.error(`error deleting old screenshots from indexeddb: ${renderUnknownValue(error)}`);
             }
         );
+        centralLogger.info("finished launching jobs/transactions for clearing out old logs/screenshots from indexeddb");
 
     } else {
         centralLogger.error(`unrecognized alarm name: ${alarm.name}`);

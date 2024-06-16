@@ -1043,8 +1043,9 @@ export class AgentController {
                 const zip = new JSZip();
                 const logFileContents = await this.retrieveLogsForTaskId(dbConnHolder.dbConn, taskIdPlaceholderVal);
                 if (logFileContents != undefined) {
-                    zip.file(`non_task_specific_${new Date().toISOString()}.log`, logFileContents);
-                    this.sendZipToSidePanelForDownload(taskIdPlaceholderVal, zip, `misc_logs_${new Date().toISOString()}.zip`);
+                    const fileSafeTimestampStr = new Date().toISOString().split(":").join("-").split(".").join("_");
+                    zip.file(`non_task_specific_${fileSafeTimestampStr}.log`, logFileContents);
+                    this.sendZipToSidePanelForDownload(taskIdPlaceholderVal, zip, `misc_logs_${fileSafeTimestampStr}.zip`);
                 } //error message already logged in retrieveLogsForTaskId()
             } else { this.logger.error("no db connection available to export non-task-specific logs"); }
         } else {
@@ -1345,6 +1346,9 @@ export class AgentController {
             const screenshotBytes = base64ToByteArray(screenshotRecord.screenshot64);
             this.logger.debug(`after conversion from base64 to binary, screenshot bytes length: ${screenshotBytes.length}`);
             const fileSafeTimestampStr = screenshotRecord.timestamp.split(":").join("-").split(".").join("_");
+            //note - if prof or users request, can add the Z's back in when exporting from db to screenshot downloads,
+            // to make clear to consumers of those downloads that the timestamps in their file names are in UTC+0
+
             const screenshotFileName = `action-${screenshotRecord.numPriorActions}_promptingIndexForAction-${screenshotRecord.numPriorScreenshotsForPrompts}_type-${screenshotRecord.screenshotType}_ts-${fileSafeTimestampStr}.png`;
             screenshotsFolder.file(screenshotFileName, screenshotBytes);
         }
@@ -1373,6 +1377,8 @@ export class AgentController {
             return 0;
         });
 
+        //note - if prof or users request, can add the Z's back in when exporting from db to log file, to make clear
+        // that they're in UTC+0
         const logFileContents = logsForTask.map(log =>
             `${log.timestamp} ${log.loggerName} ${log.level.toUpperCase()}: ${log.msg}`)
             .join("\n");

@@ -6,7 +6,6 @@ import {
     buildGenericActionDesc,
     defaultIsMonitorMode,
     defaultShouldWipeActionHistoryOnStart,
-    expectedMsgForPortDisconnection,
     Panel2BackgroundPortMsgType,
     panelToControllerPort,
     renderUnknownValue,
@@ -121,22 +120,6 @@ export class SidePanelManager {
         this.serviceWorkerPort.onMessage.addListener(this.handleAgentControllerMsg);
         this.serviceWorkerPort.onDisconnect.addListener(this.handleAgentControllerDisconnect);
     }
-
-    pingServiceWorkerForKeepAlive = async (swPort: chrome.runtime.Port): Promise<void> => {
-        try {
-            swPort.postMessage({type: Panel2BackgroundPortMsgType.KEEP_ALIVE});
-        } catch (error: any) {
-            if ('message' in error && error.message === expectedMsgForPortDisconnection) {
-                this.logger.info('chain of keep-alive pings to service worker terminating because service worker disconnected');
-            } else {
-                this.logger.error('chain of keep-alive pings to service worker terminating because of unexpected error:', renderUnknownValue(error));
-            }
-            return;
-        }
-        const nearly_service_worker_timeout = 28000;
-        setTimeout(() => this.pingServiceWorkerForKeepAlive(swPort), nearly_service_worker_timeout);
-    }
-
 
     startTaskClickHandler = async (): Promise<void> => {
         this.logger.trace('startAgent button clicked');
@@ -386,10 +369,6 @@ export class SidePanelManager {
         this.logger.trace("agent controller notified side panel of its readiness");
         this.serviceWorkerReady = true;
         this.setStatusWithDelayedClear('Agent controller connection ready; you can now start a task, export non-task-specific logs, etc.');
-
-        this.pingServiceWorkerForKeepAlive(this.serviceWorkerPort).catch((error) => {
-            this.logger.error('error while starting keepalive pings to service worker:', renderUnknownValue(error));
-        });
 
         this.state = SidePanelMgrState.IDLE;
     }
