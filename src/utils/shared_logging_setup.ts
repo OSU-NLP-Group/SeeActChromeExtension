@@ -1,6 +1,7 @@
-import log, {LogLevelNames, LogLevel} from "loglevel";
+import log, {LogLevel, LogLevelNames} from "loglevel";
 import {PageRequestType, renderUnknownValue} from "./misc";
-import {openDB, DBSchema, IDBPDatabase} from 'idb';
+import {DBSchema, IDBPDatabase, openDB} from 'idb';
+import {Mutex} from "async-mutex";
 
 
 // Create an object that maps the names of the log levels to their numeric values
@@ -85,6 +86,10 @@ export interface ScreenshotRecord {
 
 export const dbConnHolder: { dbConn: IDBPDatabase<AgentDb> | null } = {dbConn: null};
 
+export const logsNotYetSavedToDb: LogMessage[] = [];
+export const mislaidLogsQueueMutex = new Mutex();
+
+
 export const initializeDbConnection = async () => {
     try {
         dbConnHolder.dbConn = await openDB<AgentDb>(DB_NAME, 1);
@@ -95,6 +100,27 @@ export const initializeDbConnection = async () => {
         dbConnHolder.dbConn.onerror = (event) => {
             console.error("error occurred on db connection", event);
         }
+    }
+}
+
+export function saveLogMsgToDb(timestampStr: string, actualLoggerName: string, methodName: log.LogLevelNames,
+                               msgArgs: unknown[]) {
+    const taskIdForMsg = taskIdHolder.currTaskId ?? taskIdPlaceholderVal;
+    const renderedMsg = msgArgs.join(" ");
+    if (dbConnHolder.dbConn) {
+        dbConnHolder.dbConn.add(LOGS_OBJECT_STORE, {
+            timestamp: timestampStr, loggerName: actualLoggerName, level: methodName,
+            taskId: taskIdForMsg, msg: renderedMsg
+        }).catch((error) =>
+            console.error("error adding log message to indexeddb:", renderUnknownValue(error)));
+    } else {
+        mislaidLogsQueueMutex.runExclusive(() => {
+            logsNotYetSavedToDb.push({
+                timestamp: timestampStr, loggerName: actualLoggerName, level: methodName,
+                taskId: taskIdForMsg, msg: renderedMsg
+            })
+        }).catch((error) =>
+            console.error("error when trying to add log message to buffer (because db connection temporarily unavailable:", renderUnknownValue(error)));
     }
 }
 
@@ -114,16 +140,10 @@ export const createNamedLogger = (loggerName: string, inServiceWorker: boolean):
             const actualLoggerName: string = typeof loggerName === "string" ? loggerName :
                 (Symbol.keyFor(loggerName) ?? loggerName.toString());
             return function (...args: unknown[]) {
-                const timestampStr = new Date().toISOString();
                 //if chrome ever supports cross-origin isolation in service workers, this can use performance precise timestamps too
-                rawMethod(augmentLogMsg(timestampStr, loggerName, methodName, args));
-                if (dbConnHolder.dbConn) {
-                    dbConnHolder.dbConn.add(LOGS_OBJECT_STORE, {
-                        timestamp: timestampStr, loggerName: actualLoggerName, level: methodName,
-                        taskId: taskIdHolder.currTaskId ?? taskIdPlaceholderVal, msg: args.join(" ")
-                    }).catch((error) =>
-                        console.error("error adding log message to indexeddb:", renderUnknownValue(error)));
-                }
+                const timestampStr = new Date().toISOString();
+                rawMethod(augmentLogMsg(timestampStr, actualLoggerName, methodName, args));
+                saveLogMsgToDb(timestampStr, actualLoggerName, methodName, args);
             };
         };
     } else {
@@ -138,7 +158,7 @@ export const createNamedLogger = (loggerName: string, inServiceWorker: boolean):
                     timestampStr = timestampStr.slice(0, timestampStr.length - 1)
                         + fractionOfMs.toFixed(3).slice(2) + "Z";
                 }
-                const msg = augmentLogMsg(timestampStr, loggerName, methodName, undefined, args);
+                const msg = augmentLogMsg(timestampStr, loggerName, methodName, args);
                 rawMethod(msg);
 
                 chrome.runtime.sendMessage({

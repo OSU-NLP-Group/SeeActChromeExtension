@@ -2,9 +2,15 @@ import {ChromeWrapper} from "./ChromeWrapper";
 import {createNamedLogger} from "./shared_logging_setup";
 import {Logger} from "loglevel";
 import {
-    Background2PanelPortMsgType, buildGenericActionDesc, defaultIsMonitorMode, defaultShouldWipeActionHistoryOnStart,
+    Background2PanelPortMsgType,
+    buildGenericActionDesc,
+    defaultIsMonitorMode,
+    defaultShouldWipeActionHistoryOnStart,
+    expectedMsgForPortDisconnection,
     Panel2BackgroundPortMsgType,
-    panelToControllerPort, renderUnknownValue, setupMonitorModeCache, sleep
+    panelToControllerPort,
+    renderUnknownValue,
+    setupMonitorModeCache
 } from "./misc";
 import {Mutex} from "async-mutex";
 import {ActionInfo} from "./AgentController";
@@ -116,19 +122,19 @@ export class SidePanelManager {
         this.serviceWorkerPort.onDisconnect.addListener(this.handleAgentControllerDisconnect);
     }
 
-    pingServiceWorkerForKeepAlive = async (): Promise<void> => {
-        if (!this.serviceWorkerPort) {
-            this.logger.error('pingServiceWorkerForKeepalive called but serviceWorkerPort is undefined');
-            return;
-        }
+    pingServiceWorkerForKeepAlive = async (swPort: chrome.runtime.Port): Promise<void> => {
         try {
-            this.serviceWorkerPort.postMessage({type: Panel2BackgroundPortMsgType.KEEP_ALIVE});
+            swPort.postMessage({type: Panel2BackgroundPortMsgType.KEEP_ALIVE});
         } catch (error: any) {
-            this.logger.error('error while pinging service worker for keepalive:', renderUnknownValue(error));
+            if ('message' in error && error.message === expectedMsgForPortDisconnection) {
+                this.logger.info('chain of keep-alive pings to service worker terminating because service worker disconnected');
+            } else {
+                this.logger.error('chain of keep-alive pings to service worker terminating because of unexpected error:', renderUnknownValue(error));
+            }
             return;
         }
-        const five_less_than_chrome_service_worker_timeout = 25000;
-        setTimeout(this.pingServiceWorkerForKeepAlive, five_less_than_chrome_service_worker_timeout);
+        const nearly_service_worker_timeout = 28000;
+        setTimeout(() => this.pingServiceWorkerForKeepAlive(swPort), nearly_service_worker_timeout);
     }
 
 
@@ -303,6 +309,7 @@ export class SidePanelManager {
             this.state = SidePanelMgrState.WAIT_FOR_PENDING_ACTION_INFO;
             this.pendingActionDiv.textContent = '';
             this.pendingActionDiv.title = '';
+            this.monitorFeedbackField.value = '';
         });
     }
 
@@ -380,7 +387,7 @@ export class SidePanelManager {
         this.serviceWorkerReady = true;
         this.setStatusWithDelayedClear('Agent controller connection ready; you can now start a task, export non-task-specific logs, etc.');
 
-        this.pingServiceWorkerForKeepAlive().catch((error) => {
+        this.pingServiceWorkerForKeepAlive(this.serviceWorkerPort).catch((error) => {
             this.logger.error('error while starting keepalive pings to service worker:', renderUnknownValue(error));
         });
 
@@ -494,12 +501,10 @@ export class SidePanelManager {
 
 
     private setStatusWithDelayedClear(status: string, delay: number = 10, hovertext: string = "") {
-        this.statusDiv.style.display = 'block';
         this.statusDiv.textContent = status;
         this.statusDiv.title = hovertext;
         setTimeout(() => {
-            this.statusDiv.style.display = 'none';
-            this.statusDiv.textContent = '';
+            this.statusDiv.textContent = 'No status update available at the moment.';
             this.statusDiv.title = '';
         }, delay * 1000)
     }

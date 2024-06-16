@@ -3,13 +3,113 @@
 <head>
     <meta charset="UTF-8">
     <title>SeeAct Agent Options</title>
+    <!--    todo! figure out how to configure webpack so that I can put each html file's css in a separate file!-->
+    <style>
+        label {
+            font-weight: bold;
+        }
+
+        #status-container {
+            display: flex;
+            flex-direction: row;
+        }
+
+        #status-display {
+            margin-left: 3px;
+        }
+
+        .option_container {
+            display: flex;
+            margin-bottom: 10px;
+        }
+
+        .option_container label {
+            flex: 0 0 auto; /*disable growth/shrinking for things in a flex container*/
+            margin-right: 10px;
+            text-align: right;
+        }
+
+        .option_container.side_panel_group label {
+            width: 150px;
+        }
+
+        .option_container.cost_ctrl_group label {
+            width: 175px;
+        }
+
+        .option_container input {
+            flex: 0 0 auto; /*disable growth/shrinking for things in a flex container*/
+        }
+
+    </style>
 </head>
 <body>
 
-
-<label for="open-ai-api-key" title="The agent will crash if it is not given the ability to query an AI model">OpenAI API Key (REQUIRED)</label>
+<h1 title="the agent will not be able to run unless these settings are configured">Required Settings</h1>
+<label for="open-ai-api-key" title="The agent will crash if it is not given the ability to query an AI model">OpenAI API
+    Key</label>
 <input type="text" id="open-ai-api-key" placeholder="Enter OpenAI API key here">
 <br>
+
+<h1>Side Panel Behavior</h1>
+<div class="option_container side_panel_group">
+    <label for="monitor-mode" title="Turning this on will force the web agent to confirm with you before each action">Monitor
+        Mode</label>
+    <input type="checkbox" id="monitor-mode">
+</div>
+<div class="option_container side_panel_group">
+    <label for="wipe-prior-history-on-task-start"
+           title="Turning this on will cause the side panel to wipe the display of prior tasks' actions when starting a new task">Wipe
+        History Display on Task Start</label>
+    <input type="checkbox" id="wipe-prior-history-on-task-start">
+</div>
+<h1 title="How patient/trusting you want to be with the web agent when it takes a long time or makes a lot of mistakes">
+    Cost Controls</h1>
+<div class="option_container cost_ctrl_group">
+    <label for="max-operations" title="The maximum number of operations that the agent will perform before stopping">
+        Max Operations</label>
+    <input type="number" id="max-operations" min="1" value="100" step="1">
+</div>
+<div class="option_container cost_ctrl_group">
+    <label for="max-noops"
+           title="The maximum number of times that the agent can fail to produce a valid action without being immediately terminated">
+        Max No-Ops</label>
+    <input type="number" id="max-noops" min="0" value="20" step="1">
+</div>
+<div class="option_container cost_ctrl_group">
+    <label for="max-failures"
+           title="The maximum number of times that the agent can choose an action whose execution fails without being immediately terminated">
+        Max Failed Actions</label>
+    <input type="number" id="max-failures" min="0" value="20" step="1">
+</div>
+<div class="option_container cost_ctrl_group">
+    <label for="max-failure-or-noop-streak"
+           title="The maximum number of times in a row that the agent can produce an invalid action or choose an action whose execution fails without being immediately terminated">
+        Max Length of Failure-or-No-Op Streak</label>
+    <input type="number" id="max-failure-or-noop-streak" min="0" value="10" step="1">
+</div>
+
+<h1>Technical/Troubleshooting Options</h1>
+<label for="log-level" title="the minimum level of logs which will be saved (SILENT means no logs will be saved)">Log
+    Level</label>
+<select id="log-level">
+    <option value="SILENT">SILENT</option>
+    <option value="ERROR">ERROR</option>
+    <option value="WARN">WARN</option><!--todo make this the default selected option before official release-->
+    <option value="INFO">INFO</option>
+    <option value="DEBUG">DEBUG</option>
+    <option value="TRACE" selected>TRACE</option>
+</select>
+<br>
+
+<!--todo add options for the following:
+        maybe some configurability around how the target-element highlighting works in monitor mode (e.g. outline color, thickness, highlighting-timeout, etc.)
+        maybe configure compression level for saving history at end of task?
+        maybe a flag to disable the exporting of history at end of each task?
+            Adding this would require also introducing ui somewhere to enter a task id and get the history for that task
+            Since user probably wouldn't store task id's, it might really only be nice from user perspective if there
+             was a dropdown with timestamps and task specifications instead of a text field to enter the task id
+-->
 <!--
 <label for="fixed-choice-batch-size">Fixed-Choice Batch Size (how many elements to show to agent at a time when it's deciding what to interact with next)</label>
 <input type="number" id="fixed-choice-batch-size" min="0" value="17", step="1">
@@ -22,48 +122,11 @@
     If this is -1, the Fixed-Choice Batch Size will be used instead.</span>
 -->
 
-<label for="log-level" title="the minimum level of logs which will be saved (SILENT means no logs will be saved)">Log Level</label>
-<select id="log-level">
-    <option value="SILENT">SILENT</option>
-    <option value="ERROR">ERROR</option>
-    <option value="WARN">WARN</option><!--todo make this the default selected option before official release-->
-    <option value="INFO">INFO</option>
-    <option value="DEBUG">DEBUG</option>
-    <option value="TRACE" selected>TRACE</option>
-</select>
-<br>
-<label for="monitor-mode" title="Turning this on will force the web agent to confirm with you before each action">Monitor Mode</label>
-<input type="checkbox" id="monitor-mode">
-<label for="wipe-prior-history-on-task-start" title="Turning this on will cause the side panel to wipe the display of prior tasks' actions when starting a new task">Wipe History Display on Task Start</label>
-<input type="checkbox" id="wipe-prior-history-on-task-start">
-<br>
-<br>
-<br>
-<label for="max-operations" title="The maximum number of operations that the agent will perform before stopping">Max Operations</label>
-<input type="number" id="max-operations" min="1" value="100" step="1">
-<label for="max-noops" title="The maximum number of times that the agent can fail to produce a valid action without being immediately terminated">Max No-Ops</label>
-<input type="number" id="max-noops" min="0" value="20" step="1">
-<br>
-<br>
-<label for="max-failures" title="The maximum number of times that the agent can choose an action whose execution fails without being immediately terminated">Max Failed Actions</label>
-<input type="number" id="max-failures" min="0" value="20" step="1">
-<label for="max-failure-or-noop-streak" title="The maximum number of times in a row that the agent can produce an invalid action or choose an action whose execution fails without being immediately terminated">Max Length of Failure-or-No-Op Streak</label>
-<input type="number" id="max-failure-or-noop-streak" min="0" value="10" step="1">
-<br>
-
-
-<!--todo add options for the following:
-        maybe the fraction of viewport-height that is used when doing a vertical scroll action?
-        maybe some configurability around how the target-element highlighting works in monitor mode (e.g. outline color, thickness, highlighting-timeout, etc.)
-        maybe configure compression level for saving history at end of task?
-        maybe a flag to disable the exporting of history at end of each task?
-            Adding this would require also introducing ui somewhere to enter a task id and get the history for that task
-            Since user probably wouldn't store task id's, it might really only be nice from user perspective if there
-             was a dropdown with timestamps and task specifications instead of a text field to enter the task id
-
--->
-<br>
-<div id="status-display">Initializing</div>
+<hr>
+<div id="status-container">
+    <label for="status-display">Status: </label>
+    <div id="status-display">Initializing</div>
+</div>
 <br>
 <button id="save">Save</button>
 </body>

@@ -13,15 +13,30 @@ export const elementHighlightRenderDelay = 5;
 export const defaultIsMonitorMode = false;
 export const defaultShouldWipeActionHistoryOnStart = true;
 
-export const defaultMaxOps = 20;
-export const defaultMaxNoops = 3;
-export const defaultMaxFailures = 4;
-export const defaultMaxFailureOrNoopStreak = 2;
+export const defaultMaxOps = 50;
+export const defaultMaxNoops = 7;
+export const defaultMaxFailures = 10;
+export const defaultMaxFailureOrNoopStreak = 4;
 
 export const validateIntegerLimitUpdate = (newLimitVal: unknown, min: number = 0): newLimitVal is number => {
     return typeof newLimitVal === "number" && Number.isInteger(newLimitVal) && newLimitVal >= min;
 }
 
+
+export interface ViewportDetails {
+    scrollX: number;
+    scrollY: number;
+    width: number;
+    height: number;
+    /**
+     * warning that this is rounded to the nearest integer
+     */
+    pageScrollWidth: number;
+    /**
+     * warning that this is rounded to the nearest integer
+     */
+    pageScrollHeight: number;
+}
 
 /**
  * types of one-off messages that might be sent to the service worker, either from the content script or the popup
@@ -126,7 +141,12 @@ export function renderUnknownValue(val: unknown): string {
         return "ACTUAL_js_undefined";
     } else if (typeof val === 'object') {
         if (val instanceof Error) {
-            return `error type: ${val.name}; message: ${val.message}; stack: ${val.stack}`;
+            let stackString = val.stack ? val.stack : "no stack available";
+            const firstNewlineIndex = stackString.indexOf("\n");
+            if (firstNewlineIndex !== -1) {
+                stackString = stackString.substring(firstNewlineIndex);
+            }//get rid of annoying thing where the error message is repeated at the start of the stack trace string
+            return `error type: ${val.name}; message: ${val.message}; stack: ${stackString}`;
         } else {
             return JSON.stringify(val);
         }

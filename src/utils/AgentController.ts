@@ -19,7 +19,8 @@ import {
     Background2PagePortMsgType,
     Background2PanelPortMsgType,
     base64ToByteArray,
-    buildGenericActionDesc, defaultIsMonitorMode,
+    buildGenericActionDesc,
+    defaultIsMonitorMode,
     defaultMaxFailureOrNoopStreak,
     defaultMaxFailures,
     defaultMaxNoops,
@@ -30,9 +31,11 @@ import {
     Panel2BackgroundPortMsgType,
     renderUnknownValue,
     setupMonitorModeCache,
-    sleep, validateIntegerLimitUpdate
+    sleep,
+    validateIntegerLimitUpdate,
+    ViewportDetails
 } from "./misc";
-import {formatChoices, generatePrompt, LmmPrompts, postProcessActionLlm, StrTriple} from "./format_prompts";
+import {formatChoices, generatePrompt, LmmPrompts, postProcessActionLlm} from "./format_prompts";
 import {getIndexFromOptionName} from "./format_prompt_utils";
 import {ChromeWrapper} from "./ChromeWrapper";
 import JSZip from "jszip";
@@ -92,6 +95,14 @@ type PredictionRecord = {
     value?: string
     explanation: string
 };
+
+export const serviceWorkerKeepaliveAlarmName = "serviceWorkerKeepaliveAlarm";
+//with just 1 keepalive alarm, sometimes it would serve its purpose (if Chrome fired that event a fraction of a second early)
+// but it would fail to do its job if there was a 30 second period with no keepalive pings from the side panel (side
+// panel pings to service worker are bafflingly unreliable) and that time the alarm fired even a tiny fraction of a
+// second more than 30 seconds after the previous firing
+export const serviceWorker2ndaryKeepaliveAlarmName = "serviceWorker2ndaryKeepaliveAlarm";
+
 
 //todo explore whether it might be possible to break this into multiple classes, or at least if there are
 // pure/non-state-affecting helper functions that could be extracted from existing code and then moved to
@@ -318,7 +329,6 @@ export class AgentController {
             port.onMessage.addListener(this.handlePageMsgToAgentController);
             port.onDisconnect.addListener(this.handlePageDisconnectFromAgentController);
             this.portToContentScript = port;
-            //todo set up repeating chrome.alarm to keep this alive while it's connected to side panel
         });
     }
 
@@ -340,6 +350,13 @@ export class AgentController {
                 this.logger.error(`error while trying to inform side panel about agent controller's readiness for start of new task; error: ${renderUnknownValue(error)}`);
             }
             this.logger.trace("sent notification to side panel that agent controller is ready");
+            chrome.alarms.create(serviceWorkerKeepaliveAlarmName, {periodInMinutes: 0.5}).catch((error) =>
+                this.logger.error(`error while trying to set up service worker keepalive alarm; error: ${renderUnknownValue(error)}`));
+            setTimeout(() => {
+                this.logger.debug("setting up secondary keepalive alarm in service worker");
+                chrome.alarms.create(serviceWorker2ndaryKeepaliveAlarmName, {periodInMinutes: 0.5}).catch((error) =>
+                    this.logger.error(`error while trying to set up secondary service worker keepalive alarm; error: ${renderUnknownValue(error)}`));
+            }, 15_000);
         });
     }
 
@@ -350,7 +367,7 @@ export class AgentController {
      */
     processPageActorInitialized = (port: Port): void => {
         if (this.state !== AgentControllerState.WAITING_FOR_CONTENT_SCRIPT_INIT) {
-            const termReason = "received 'content script initialized and ready' message from content script while not waiting for content script initialization, but rather in state " + AgentControllerState[this.state];
+            const termReason = "received 'content script initialized and ready' message from new content script while not waiting for content script initialization, but rather in state " + AgentControllerState[this.state];
             this.logger.error(termReason);
             this.terminateTask(termReason);
             return;
@@ -414,14 +431,14 @@ export class AgentController {
 
         this.state = AgentControllerState.ACTIVE;
         const interactiveElements = message.interactiveElements as SerializableElementData[];
+        const viewportInfo = message.viewportInfo as ViewportDetails;
+        //todo consider removing the candidateIds complication since BrowserHelper.getInteractiveElements is already
+        // filtering out all of the elements that are not really visible&interactive, and candidateIds adds annoying complexity throughout the planning code in this class
         const candidateIds = interactiveElements.map((element, index) => {
             return (element.centerCoords[0] != 0 && element.centerCoords[1] != 0) ? index : undefined;
         }).filter(Boolean) as number[];//ts somehow too dumb to realize that filter(Boolean) removes undefined elements
 
-        const interactiveChoiceDetails = interactiveElements.map<StrTriple>((element) => {
-            return [element.description, element.tagHead, element.tagName];
-        });
-        const interactiveChoices = formatChoices(interactiveChoiceDetails, candidateIds);
+        const interactiveChoices = formatChoices(interactiveElements, candidateIds, viewportInfo);
 
         //todo? idea for later refinement- store previous round's screenshot, then do stuff with it
         // (e.g. querying ai at least some of the time with both current and prior screenshots)
@@ -458,7 +475,7 @@ export class AgentController {
         while (this.noopCount <= this.maxNoopLimit && this.failureOrNoopStreak <= this.maxFailureOrNoopStreakLimit) {
             this.logger.debug(`noop count: ${this.noopCount}, failure-or-noop streak: ${this.failureOrNoopStreak}; noopLimit: ${this.maxNoopLimit}, failure-or-noop streak limit: ${this.maxFailureOrNoopStreakLimit}`);
             const reactionToLmmOutput = await this.queryLmmAndProcessResponsesForAction(interactiveChoices,
-                screenshotDataUrl, candidateIds, interactiveElements, monitorRejectionInfo);
+                screenshotDataUrl, candidateIds, interactiveElements, monitorRejectionInfo, viewportInfo);
             if (reactionToLmmOutput === LmmOutputReaction.ABORT_TASK) {
                 return;
             } else if (reactionToLmmOutput === LmmOutputReaction.TRY_REPROMPT) {
@@ -567,12 +584,14 @@ export class AgentController {
      * @param candidateIds the indices of the interactive elements that are candidates for the next action
      * @param interactiveElements the full data about the interactive elements on the page
      * @param monitorRejectionContext optional string to include in the query prompt if the previous action was rejected by the monitor
+     * @param viewportInfo information about the viewport and the dimensions of the page that it's showing part of
      * @return indicator of what the main "processPageStateFromActor" function should do next based on the LLM response
      *         (e.g. whether to try reprompting, proceed with the action, or abort the task)
      */
     private queryLmmAndProcessResponsesForAction = async (
         interactiveChoices: string[], screenshotDataUrl: string, candidateIds: number[],
-        interactiveElements: SerializableElementData[], monitorRejectionContext?: string): Promise<LmmOutputReaction> => {
+        interactiveElements: SerializableElementData[], monitorRejectionContext: string | undefined,
+        viewportInfo: ViewportDetails): Promise<LmmOutputReaction> => {
         if (this.portToSidePanel === undefined) {
             this.logger.error("no side panel connection to send query prompt to; abandoning task");
             //terminateTask() will be called by the onDisconnect listener
@@ -581,7 +600,7 @@ export class AgentController {
 
         const prompts: LmmPrompts = generatePrompt(this.taskSpecification,
             this.actionsSoFar.map(entry => `${entry.success ? "SUCCEEDED" : "FAILED"}-${entry.actionDesc}; explanation: ${entry.explanation}`),
-            interactiveChoices);
+            interactiveChoices, viewportInfo);
         if (monitorRejectionContext !== undefined) {
             prompts.queryPrompt += `\n${monitorRejectionContext}`;
         }
@@ -646,6 +665,9 @@ export class AgentController {
             this.terminateTask("Task completed: " + explanation);
             return LmmOutputReaction.ABORT_TASK;
         } else if (action === Action.NONE) {
+            //after next major model release, if this comes up, then maybe, if the agent repeatedly says that the page
+            // hasn't fully loaded, we should consider the possibility that the "wait until page fully loaded" logic in
+            // content script didn't work properly and we should fetch fresh elements
             this.logger.warn("ai selected NONE action, counting as noop action and reprompting");
             this.noopCount++;
             this.failureOrNoopStreak++;
@@ -714,6 +736,8 @@ export class AgentController {
             }
             return LmmOutputReaction.TRY_REPROMPT;
         }
+        //todo if it says 'scroll down' when viewport info shows that we're already at the bottom, simply treat that as a no-op and remprompt
+        // same for scroll up when at top
 
         if (chosenCandidateIndex && chosenCandidateIndex >= candidateIds.length && actionNeedsNoElement) {
             chosenCandidateIndex = undefined;
@@ -955,6 +979,10 @@ export class AgentController {
         }
         this.wasPrevActionRejectedByMonitor = true;
         this.monitorFeedback = message.feedback as string;
+        //to?do if monitor mode is used a lot (and the models continue to be dumb enough that you sometimes have to
+        // reject several bad ideas in a row), then it might be useful to accumulate the feedback from each rejection
+        // and include all previously proposed actions and each proposed action's rejection info (potentially including
+        // its rejection feedback) in the next planning prompt to the model
 
         this.state = AgentControllerState.WAITING_FOR_PAGE_STATE
         try {
@@ -1008,8 +1036,8 @@ export class AgentController {
                 const zip = new JSZip();
                 const logFileContents = await this.retrieveLogsForTaskId(dbConnHolder.dbConn, taskIdPlaceholderVal);
                 if (logFileContents != undefined) {
-                    zip.file("non_task_specific.log", logFileContents);
-                    this.sendZipToSidePanelForDownload(taskIdPlaceholderVal, zip);
+                    zip.file(`non_task_specific_${new Date().toISOString()}.log`, logFileContents);
+                    this.sendZipToSidePanelForDownload(taskIdPlaceholderVal, zip, `misc_logs_${new Date().toISOString()}.zip`);
                 } //error message already logged in retrieveLogsForTaskId()
             } else { this.logger.error("no db connection available to export non-task-specific logs"); }
         } else {
@@ -1094,7 +1122,6 @@ export class AgentController {
                 const termReason = "content script disconnected while no side panel connection was open";
                 this.logger.error(termReason + "; terminating task");
                 this.terminateTask(termReason);
-                //todo clear the alarm that had been set up to keep the service worker alive
                 return;
             }
 
@@ -1114,6 +1141,8 @@ export class AgentController {
                     return;
                 }
                 await this.injectPageActorScript(false);
+            } else if (this.state === AgentControllerState.IDLE) {
+                this.logger.debug("service worker's connection to content script was lost while in idle state; ignoring");
             } else {
                 const termReason = `service worker's connection to content script was lost while not waiting for action, but rather in state ${AgentControllerState[this.state]}`;
                 this.logger.error(`${termReason}; terminating task`);
@@ -1133,6 +1162,11 @@ export class AgentController {
                 this.logger.error(termReason);
                 this.terminateTask(termReason);
             }
+            this.logger.debug("clearing keep-alive alarms so that service worker will be shut down");
+            chrome.alarms.clear(serviceWorkerKeepaliveAlarmName).catch((error) =>
+                this.logger.warn("error while trying to clear keep-alive alarm; error: ", renderUnknownValue(error)));
+            chrome.alarms.clear(serviceWorker2ndaryKeepaliveAlarmName).catch((error) =>
+                this.logger.warn("error while trying to clear secondary keep-alive alarm; error: ", renderUnknownValue(error)));
         });
     }
 
@@ -1143,6 +1177,15 @@ export class AgentController {
      */
     killPageConnection = (pageConn: Port): void => {
         try {
+            //per chrome docs, this shouldn't be necessary (calling disconnect on one side of a port shouldn't trigger
+            // that side's onDisconnect listener), but in practice it seems to be necessary
+            pageConn.onDisconnect.removeListener(this.handlePageDisconnectFromAgentController);
+            this.logger.trace(`removed onDisconnect listener from content script connection ${pageConn.name}`)
+            if (pageConn.onDisconnect.hasListeners()) {
+                this.logger.error("something went wrong when removing the onDisconnect listener for the port "
+                    + pageConn.name + "between service worker and content script. the onDisconnect event of that port " +
+                    "still has one or more listeners");
+            }
             pageConn.disconnect();
             this.logger.info(`successfully cleaned up content script connection ${pageConn.name}`);
         } catch (error: any) {
@@ -1332,7 +1375,7 @@ export class AgentController {
     }
 
 
-    private sendZipToSidePanelForDownload(givenTaskId: string, zip: JSZip) {
+    private sendZipToSidePanelForDownload(givenTaskId: string, zip: JSZip, overrideZipFilename?: string) {
         this.logger.info(`about to compress task info into virtual zip file for task ${givenTaskId}`);
         zip.generateAsync(
             {type: "blob", compression: "DEFLATE", compressionOptions: {level: 5}}).then(async (content) => {
@@ -1349,7 +1392,7 @@ export class AgentController {
             try {
                 this.portToSidePanel.postMessage({
                     type: Background2PanelPortMsgType.HISTORY_EXPORT, data: arrForTraceZip,
-                    fileName: `task-${givenTaskId}-trace.zip`
+                    fileName: overrideZipFilename ?? `task-${givenTaskId}-trace.zip`
                 });
             } catch (error: any) {
                 this.logger.error(`error while trying to send zip file for task ${givenTaskId} to side panel for download; error: ${renderUnknownValue(error)}`);

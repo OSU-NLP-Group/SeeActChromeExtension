@@ -1,5 +1,6 @@
 import {_formatOptions, generateNewQueryPrompt} from "./format_prompt_utils";
-import {Action} from "./misc";
+import {Action, ViewportDetails} from "./misc";
+import {SerializableElementData} from "./BrowserHelper";
 
 
 /**
@@ -33,35 +34,51 @@ export interface LmmPrompts {
  * Note - relative to the original method format_choices() in src/format_prompt.py, the entries in the argument elements
  * have been simplified to just 3 strings because the original method didn't use the 0/3/4-index parts of each
  * 6-part entry in its elements argument
- * @param elements 3 pieces of information for each of the possibly interactable elements
- *                  0th piece is string containing a description of the element,
- *                  1st piece is string containing the element's tag name and potentially its role and/or type attributes
- *                  2nd piece is string containing just the element's tag name
+ * @param elements information about the elements which might be interacted with
  * @param candidateIds the indices of the elements to be included in the formatted list
+ * @param viewportInfo information about the viewport and about the dimensions of the page that it shows part of
  * @return an array of strings, where each string is an abbreviated version of the element's html
  *          (abbreviated start tag, some description, and end tag)
  */
-export const formatChoices = (elements: Array<StrTriple>, candidateIds: Array<number>): Array<string> => {
+export const formatChoices = (elements: Array<SerializableElementData>, candidateIds: Array<number>,
+                              viewportInfo: ViewportDetails): Array<string> => {
     const badCandidateIds = candidateIds.filter((id) => id < 0 || id >= elements.length);
     if (badCandidateIds.length > 0) {
         throw new Error(`out of the candidate id's [${candidateIds}], the id's [${badCandidateIds}] were out of range`);
     }
 
-    //todo idea- get viewport dimensions here; meanwhile, modify formatChoices' elements argument
-    // to include element's centercoords and then here we can normalize that to be fractions of viewport dimensions
-    // Boyu feedback - might be worthwhile
-
-    //todo can we maybe also filter out elements which aren't in viewport? or mark them as not being visible?
-
     return candidateIds.map((id) => {
-        const [description, tagAndRoleType, tagName] = elements[id];
+        const description = elements[id].description;
+        const tagAndRoleType = elements[id].tagHead;
+        const tagName = elements[id].tagName;
+
+        const relElemWidth = 100*elements[id].width / viewportInfo.width;
+        const relElemHeight = 100*elements[id].height / viewportInfo.height;
+        const relElemX = 100*elements[id].centerCoords[0] / viewportInfo.width;
+        const relElemY = 100*elements[id].centerCoords[1] / viewportInfo.height;
+
+        let positionInfo: string;
+        let sizeInfo = "";
+        if (relElemY < 0) {
+            positionInfo = "ABOVE viewport";
+        } else if (relElemY > 100) {
+            positionInfo = "BELOW viewport";
+        } else if (relElemX < 0) {
+            positionInfo = "LEFT of viewport";
+        } else if (relElemX > 100) {
+            positionInfo = "RIGHT of viewport";
+        } else {
+            positionInfo = `Position: ${relElemX.toFixed(1)}% from left, ${relElemY.toFixed(1)}% from top`;
+            sizeInfo = `Size: ${relElemWidth.toFixed(1)}% x ${relElemHeight.toFixed(1)}%; `;
+        }
 
         let possiblyAbbrevDesc = description;
         const descriptionSplit: Array<string> = description.split(/\s+/);
         if ("select" !== tagName && descriptionSplit.length >= 30) {
             possiblyAbbrevDesc = descriptionSplit.slice(0, 29).join(" ") + "...";
         }
-        return `<${tagAndRoleType} id="${id}">${possiblyAbbrevDesc}</${tagName}>`;
+
+        return `${positionInfo}; ${sizeInfo}Element: <${tagAndRoleType} id="${id}">${possiblyAbbrevDesc}</${tagName}>`;
     });
 }
 
@@ -139,13 +156,19 @@ In such a case, it is important that you include the exact string SKIP_ELEMENT_S
 // sequence "TYPE on one step then PRESS ENTER on next step"; why don't we just make 2 actions TYPE and TYPE_THEN_ENTER?
 // and get rid of the PRESS_ENTER stand-alone action unless/until it becomes clear that it's needed?
 
+//todo update below prompt once formatted choices have been enriched with info about relative coordinates of elements within vs above/below the viewport
 export const onlineReferringPromptDesc = `(Reiteration)
 First, reiterate your next target element, its detailed location, and the corresponding operation.
 
 (Multichoice Question)
-Below is a multi-choice question, where the choices are elements in the webpage. All elements are arranged in the order based on their height on the webpage, from top to bottom (and from left to right). This arrangement can be used to locate them. From the screenshot, find out where and what each one is on the webpage, taking into account both their text content and HTML details. Then, determine whether one matches your target element. Please examine the choices one by one. Choose the matching one. If multiple options match your answer, choose the most likely one by re-examining the screenshot, the choices, and your further reasoning.
-If your planning above sets out a multi-step plan for progressing from the current state, you must implement the first step in that plan, not the last`;
-//todo check with Boyuan about whether the above line is worth keeping (is that a common failure? common both for gpt-4o and gpt-4-turbo?)
+Below is a multi-choice question, where the choices are elements in the webpage. All elements are arranged in the order based on their height on the webpage, from top to bottom (and from left to right). This arrangement can be used to locate them. 
+From the screenshot, find out where and what each one is on the webpage, taking into account both their text content and HTML details. Then, determine whether one matches your target element. The element described in the planning output might be visible in the screenshot and yet not be listed in the grounding prompt because it was disabled.
+Where the list below mentions an element's position, it should be interpreted as the element's position relative to the viewport (and the coordinate values are relative to the viewport's width/height). Likewise, where information about an element's size is provided as "Size: X% x Y%", it should be interpreted as the element's size relative to the viewport's width/height.
+If the element you want to interact with is "BELOW viewport", you should scroll down to it before acting on it. Likewise with "ABOVE viewport" and scrolling up.
+Please examine the choices one by one. Choose the matching one. If multiple options match your answer, choose the most likely one by re-examining the screenshot, the choices, and your further reasoning.
+If your planning above sets out a multi-step plan for progressing from the current state, you must implement the first step in that plan, not the last`;//todo try removing this last reminder after next model update, in case improved base model 'smartness'/long-context-reliability makes it unnecessary
+
+//todo above prompt might include a recommendation to assemble a list of most plausible candidates and then reason about which is best; perhaps this could lead to more consistent and/or higher-quality reasoning about grounding?
 
 //todo find some way to include this in the prompt when appropriate (when prev action failed and the explanation string for that failed action included the substring "search bar"?)
 // Note that a search bar might initially show up in html as a button which must be clicked to make the actual search bar available
@@ -185,13 +208,16 @@ Response component for actions that will not target an element:
  * @param choices describes the elements which might be interacted with; each entry in the top-level list is a length-2
  *                 list, with the first entry being the string version of the choice's index and the second entry
  *                 being an abbreviated version of the element's html
+ * @param viewportInfo information about the viewport and the dimensions of the page that it's showing part of
  * @return four prompts for the language model: 1) a system prompt (used with both of the other prompts);
  *          2) a prompt for the model planning its next step; and
  *          3) a prompt for the model identifying the element to interact with and how to interact with it
  *          4) a prompt for the model to choose an action when there is no specific element to interact with
  */
-export const generatePrompt = (task: string, previousActions: Array<string>, choices: Array<string>): LmmPrompts => {
-    const [sysPrompt, queryPrompt] = generateNewQueryPrompt(onlineSystemPrompt, task, previousActions, onlineQuestionDesc);
+export const generatePrompt = (task: string, previousActions: Array<string>, choices: Array<string>,
+                               viewportInfo: ViewportDetails): LmmPrompts => {
+    const [sysPrompt, queryPrompt] = generateNewQueryPrompt(onlineSystemPrompt, task, previousActions,
+        onlineQuestionDesc, viewportInfo);
     let groundingPrompt: string = onlineReferringPromptDesc + "\n\n";
     if (choices) {
         groundingPrompt += _formatOptions(choices);
