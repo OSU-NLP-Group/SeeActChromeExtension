@@ -12,8 +12,18 @@
             border-color: #5dff55;
         }
 
+        #start-task-icon {
+            width: 33px;
+            height: 31px;
+        }
+
         #start-agent {
             background-color: #5dff55;
+        }
+
+        #terminate-task-icon {
+            width: 31px;
+            height: 31px;
         }
 
         #end-task {
@@ -41,6 +51,7 @@
         }
 
         #history-label {
+            color: saddlebrown;
             text-align: center;
             display: block;
         }
@@ -70,11 +81,18 @@
 
         #status-icon {
             margin-right: 4px;
+            width: 30px;
+            height: 33px;
         }
 
         #pending-action-heading_container {
             display: flex;
             align-items: center;
+        }
+
+        #pending-action-heading_container img {
+            width: 53px;
+            height: 40px;
         }
 
         #pending-action-heading {
@@ -99,6 +117,16 @@
             text-align: center;
         }
 
+        #monitor-approve-icon {
+            width: 24px;
+            height: 30px;
+        }
+
+        #monitor-reject-icon {
+            width: 24px;
+            height: 30px;
+        }
+
         #monitor-feedback {
             width: 100%;
             height: 25%;
@@ -120,6 +148,16 @@
         .icon_button_container img {
             margin-right: 3px;
         }
+
+        #open-options-icon {
+            width: 29px;
+            height: 29px;
+        }
+
+        #export-unaffiliated-logs-icon {
+            width: 24px;
+            height: 30px;
+        }
     </style>
 </head>
 <body>
@@ -131,11 +169,11 @@
 
 <div class="buttons_row_container">
     <div class="icon_button_container">
-        <img src="../images/start_task_icon.webp" alt="start task button's icon" id="start-task-icon">
+        <img src="../images/task_start_icon.webp" alt="start task button's icon" id="start-task-icon">
         <button id="start-agent">Start Agent</button>
     </div>
     <div class="icon_button_container">
-        <img src="../images/terminate_task_icon.webp" alt="terminate task button's icon" id="terminate-task-icon">
+        <img src="../images/task_kill_icon.webp" alt="terminate task button's icon" id="terminate-task-icon">
         <button disabled id="end-task">Terminate Task</button>
     </div>
 </div>
@@ -147,12 +185,12 @@
 </div>
 <!--todo add better hovertext impl for status (e.g. to show really long planning output) with separate element rather than manipulating title attribute-->
 <div id="status-update-container">
-    <img src="../images/shrunk_status_update_icon.webp" alt="status icon" id="status-icon">
+    <img src="../images/status_update_icon.webp" alt="status icon" id="status-icon">
     <div id="status">No status update available at the moment.</div>
 </div>
 <br>
 <div id="pending-action-heading_container">
-<img src="../images/shrunk_pending_action_icon.webp" alt="hopeful robot face with lightbulb to signify idea">
+<img src="../images/proposed_action_icon.webp" alt="hopeful robot face with lightbulb to signify idea">
 <label for="pending-action" id="pending-action-heading">Pending Action</label>
 </div>
 <div id="pending-action"></div>
@@ -172,11 +210,11 @@
 
     <div class="buttons_row_container">
         <div class="icon_button_container">
-            <img src="../images/robot_thumbs_up.webp" alt="monitor approve button's icon" id="monitor-approve-icon">
+            <img src="../images/monitor_approve_thumbs_up_icon.webp" alt="monitor approve button's icon" id="monitor-approve-icon">
             <button id="approve" disabled>Approve</button>
         </div>
         <div class="icon_button_container">
-            <img src="../images/robot_thumbs_down.webp" alt="monitor reject button's icon" id="monitor-reject-icon">
+            <img src="../images/monitor_reject_thumbs_down_icon.webp" alt="monitor reject button's icon" id="monitor-reject-icon">
             <button id="reject" disabled>Reject</button>
         </div>
     </div>
@@ -185,11 +223,11 @@
 <hr>
 <div class="buttons_row_container">
     <div class="icon_button_container">
-        <img src="../images/options_button_gear_icon.webp" alt="options button's icon" id="open-options-icon">
+        <img src="../images/settings_gear_icon.webp" alt="options button's icon" id="open-options-icon">
         <button id="options">Options</button>
     </div>
     <div class="icon_button_container">
-        <img src="../images/logs_export_icon.webp" alt="logs export button's icon" id="export-unaffiliated-logs-icon">
+        <img src="../images/misc_logs_export_icon.webp" alt="logs export button's icon" id="export-unaffiliated-logs-icon">
         <button id="export-unaffiliated-logs"
                 title="Most logs from this are the ones not affiliated with any task; however, some of the logs exported with this are some messages from the very beginning or the very end of each task">
             Download misc logs
