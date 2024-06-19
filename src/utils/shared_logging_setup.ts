@@ -115,7 +115,7 @@ export function saveLogMsgToDb(timestampStr: string, actualLoggerName: string, m
     //remove the trailing 'Z' from the timestamp string to make it work as a key in a browser db index (because
     // otherwise comparisons-between/ordering-of ts values in the index would be thrown off by some ending with
     // milliseconds and a Z while others ended with microseconds and a Z)
-    const dbSafeTsStr = timestampStr.slice(0,-1);
+    const dbSafeTsStr = timestampStr.slice(0, -1);
     if (dbConnHolder.dbConn) {
         dbConnHolder.dbConn.add(LOGS_OBJECT_STORE, {
             timestamp: dbSafeTsStr, loggerName: actualLoggerName, level: methodName,
@@ -170,13 +170,16 @@ export const createNamedLogger = (loggerName: string, inServiceWorker: boolean):
                 const msg = augmentLogMsg(timestampStr, loggerName, methodName, args);
                 rawMethod(msg);
 
-                chrome.runtime.sendMessage({
-                    reqType: PageRequestType.LOG, timestamp: timestampStr, loggerName: loggerName, level: methodName,
-                    args: args
-                }).catch((err) => {
-                    console.error("error [<", err, ">] while sending log message [<", msg,
-                        ">] to background script for persistence");
-                });
+                try {
+                    chrome.runtime.sendMessage({
+                        reqType: PageRequestType.LOG, timestamp: timestampStr, loggerName: loggerName,
+                        level: methodName, args: args
+                    }).catch((err) =>
+                        console.error(`error [<${err}>] while sending log message [<${msg}>] to background script for persistence`));
+                } catch (error) {
+                    console.error(`error encountered while trying to send log message to background script for persistence;\n log message: ${msg};\nerror: ${renderUnknownValue(error)}`);
+                    throw error;
+                }
             };
         };
     }
