@@ -155,22 +155,22 @@ export function renderUnknownValue(val: unknown): string {
     }
 }
 
-function processUpdateToMonitorModeCache(storedMonitorMode: unknown, objWithMonitorMode: { cachedMonitorMode: boolean; logger: Logger}) {
+function processUpdateToMonitorModeCache(storedMonitorMode: unknown, cacheUpdater: (newVal: boolean) => void, logger: Logger) {
     if (typeof storedMonitorMode === "boolean") {
-        objWithMonitorMode.cachedMonitorMode = storedMonitorMode;
+        cacheUpdater(storedMonitorMode);
     } else if (typeof storedMonitorMode !== "undefined") {
-        objWithMonitorMode.logger.error(`invalid monitor mode value was inserted into local storage: ${storedMonitorMode}, ignoring it`)
+        logger.error(`invalid monitor mode value was inserted into local storage: ${storedMonitorMode}, ignoring it`);
     }
 }
 
-export function setupMonitorModeCache(objWithMonitorMode: {cachedMonitorMode: boolean, logger: Logger}) {
+export function setupMonitorModeCache(cacheUpdater: (newVal: boolean) => void, logger: Logger) {
     if (chrome?.storage?.local) {
         chrome.storage.local.get("isMonitorMode", (items) => {
-            processUpdateToMonitorModeCache(items.isMonitorMode, objWithMonitorMode);
+            processUpdateToMonitorModeCache(items.isMonitorMode, cacheUpdater, logger);
         });
         chrome.storage.local.onChanged.addListener((changes: {[p: string]: chrome.storage.StorageChange}) => {
             if (changes.isMonitorMode !== undefined) {
-                processUpdateToMonitorModeCache(changes.isMonitorMode.newValue, objWithMonitorMode);
+                processUpdateToMonitorModeCache(changes.isMonitorMode.newValue, cacheUpdater, logger);
             }
         });
     }

@@ -190,7 +190,7 @@ export class AgentController {
         this.logger = createNamedLogger('agent-controller', true);
         this.logger.debug(`max ops limit: ${this.maxOpsLimit}, max noop limit: ${this.maxNoopLimit}, max failure limit: ${this.maxFailureLimit}, max failure-or-noop streak limit: ${this.maxFailureOrNoopStreakLimit}`);
 
-        setupMonitorModeCache(this);
+        setupMonitorModeCache((newMonitorModeVal: boolean) => this.cachedMonitorMode=newMonitorModeVal, this.logger);
         if (chrome?.storage?.local) {
             chrome.storage.local.get(["maxOps", "maxNoops", "maxFailures", "maxFailureOrNoopStreak"], (items) => {
                 this.validateAndApplyAgentOptions(true, items.maxOps, items.maxNoops, items.maxFailures, items.maxFailureOrNoopStreak);

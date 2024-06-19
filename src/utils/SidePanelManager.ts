@@ -26,6 +26,7 @@ export interface SidePanelElements {
     killButton: HTMLButtonElement;
     historyList: HTMLOListElement;
     pendingActionDiv: HTMLDivElement;
+    monitorModeContainer: HTMLDivElement;
     monitorFeedbackField: HTMLTextAreaElement;
     monitorApproveButton: HTMLButtonElement;
     monitorRejectButton: HTMLButtonElement;
@@ -52,6 +53,7 @@ export class SidePanelManager {
     private readonly killButton: HTMLButtonElement;
     private readonly historyList: HTMLOListElement;
     private readonly pendingActionDiv: HTMLDivElement;
+    private readonly monitorModeContainer: HTMLDivElement;
     private readonly monitorFeedbackField: HTMLTextAreaElement;
     private readonly monitorApproveButton: HTMLButtonElement;
     private readonly monitorRejectButton: HTMLButtonElement;
@@ -62,8 +64,10 @@ export class SidePanelManager {
 
     readonly mutex = new Mutex();
 
-    //allow read access to this without mutex because none of this class's code should _ever_ mutate it (only updated by storage change listener that was set up in constructor)
-    cachedMonitorMode = defaultIsMonitorMode;
+    //allow read access to this without mutex; only written to by the handleMonitorModeCacheUpdate method
+    //has to initially be true (even if the default is actually false) so that handleMonitorModeCacheUpdate() call
+    // in constructor will minimize the monitor mode UI
+    cachedMonitorMode = true;
     shouldWipeActionHistoryOnTaskStart = defaultShouldWipeActionHistoryOnStart;
 
 
@@ -82,6 +86,7 @@ export class SidePanelManager {
         this.killButton = elements.killButton;
         this.historyList = elements.historyList;
         this.pendingActionDiv = elements.pendingActionDiv;
+        this.monitorModeContainer = elements.monitorModeContainer;
         this.monitorFeedbackField = elements.monitorFeedbackField;
         this.monitorApproveButton = elements.monitorApproveButton;
         this.monitorRejectButton = elements.monitorRejectButton;
@@ -90,8 +95,10 @@ export class SidePanelManager {
         this.logger = logger ?? createNamedLogger('side-panel-mgr', false);
         this.dom = overrideDoc ?? document;
 
+        //have to initialize to default value this way to ensure that the monitor mode container is hidden if the default is false
+        this.handleMonitorModeCacheUpdate(defaultIsMonitorMode);
 
-        setupMonitorModeCache(this);
+        setupMonitorModeCache(this.handleMonitorModeCacheUpdate, this.logger);
         if (chrome?.storage?.local) {
             chrome.storage.local.get(["shouldWipeHistoryOnTaskStart"], (items) => {
                 this.validateAndApplySidePanelOptions(true, items.shouldWipeHistoryOnTaskStart);
@@ -560,5 +567,26 @@ export class SidePanelManager {
             || this.mouseClientY < otherStatusElemRect.top || this.mouseClientY > otherStatusElemRect.bottom) {
             this.statusPopup.style.display = 'none';
         }
+    }
+
+    handleMonitorModeCacheUpdate = (newMonitorModeVal: boolean) => {
+        this.mutex.runExclusive(() => {
+            const priorCachedMonitorModeVal = this.cachedMonitorMode;
+            this.cachedMonitorMode = newMonitorModeVal;
+            if (priorCachedMonitorModeVal === newMonitorModeVal) {
+                this.logger.trace(`side panel cache of monitor mode received an update which agreed with the existing cached value ${this.cachedMonitorMode}`)
+                return;
+            }
+            this.monitorModeContainer.style.display = newMonitorModeVal ? "block" : "none";
+            const monitorModeUiContainerHeight = 18;//unit of vh; must agree with similar value in side_panel's css
+            const priorHistoryHeightStr = this.historyList.style.height;
+            if (!priorHistoryHeightStr.match("^\\d+vh$")) {
+                this.logger.error(`unexpected history list height value ${priorHistoryHeightStr}, abandoning attempt to update history list height to accommodate monitor mode ui visibility change`);
+                return;
+            }
+            const priorHistoryHeight = parseInt(priorHistoryHeightStr.slice(0, priorHistoryHeightStr.length - 2));//units of vh
+            const newHistoryHeight = priorHistoryHeight + (newMonitorModeVal ? -1 : 1) * monitorModeUiContainerHeight;//units of vh
+            this.historyList.style.height = `${newHistoryHeight}vh`;
+        }).catch((error) => this.logger.error(`error while updating monitor mode cache: ${renderUnknownValue(error)}`));
     }
 }
