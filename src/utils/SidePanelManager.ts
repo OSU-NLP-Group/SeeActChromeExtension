@@ -74,9 +74,10 @@ export class SidePanelManager {
     private state: SidePanelMgrState = SidePanelMgrState.IDLE;
     public serviceWorkerPort?: chrome.runtime.Port;
     public serviceWorkerReady = false;
+    lastHeightOfMonitorModeContainer = 0;//px
 
-    mouseClientX = -1;
-    mouseClientY = -1;
+    public mouseClientX = -1;
+    public mouseClientY = -1;
 
     constructor(elements: SidePanelElements, chromeWrapper?: ChromeWrapper, logger?: Logger, overrideDoc?: Document) {
         this.startButton = elements.startButton;
@@ -577,16 +578,19 @@ export class SidePanelManager {
                 this.logger.trace(`side panel cache of monitor mode received an update which agreed with the existing cached value ${this.cachedMonitorMode}`)
                 return;
             }
-            this.monitorModeContainer.style.display = newMonitorModeVal ? "block" : "none";
-            const monitorModeUiContainerHeight = 18;//unit of vh; must agree with similar value in side_panel's css
-            const priorHistoryHeightStr = this.historyList.style.height;
-            if (!priorHistoryHeightStr.match("^\\d+vh$")) {
-                this.logger.error(`unexpected history list height value ${priorHistoryHeightStr}, abandoning attempt to update history list height to accommodate monitor mode ui visibility change`);
-                return;
+            const pxPerVh = window.innerHeight / 100;
+            const priorHistoryHeight = this.historyList.getBoundingClientRect().height;//px
+
+            if (newMonitorModeVal) {//re-displaying monitor mode UI
+                const newHistoryHeight = priorHistoryHeight-this.lastHeightOfMonitorModeContainer;//px
+                this.historyList.style.height = `${(newHistoryHeight / pxPerVh)}vh`;
+                this.monitorModeContainer.style.display = "block";
+            } else {//collapsing monitor mode UI
+                this.lastHeightOfMonitorModeContainer = this.monitorModeContainer.getBoundingClientRect().height;
+                const newHistoryHeight = priorHistoryHeight+this.lastHeightOfMonitorModeContainer;//px
+                this.historyList.style.height = `${(newHistoryHeight / pxPerVh)}vh`;
+                this.monitorModeContainer.style.display = "none";
             }
-            const priorHistoryHeight = parseInt(priorHistoryHeightStr.slice(0, priorHistoryHeightStr.length - 2));//units of vh
-            const newHistoryHeight = priorHistoryHeight + (newMonitorModeVal ? -1 : 1) * monitorModeUiContainerHeight;//units of vh
-            this.historyList.style.height = `${newHistoryHeight}vh`;
         }).catch((error) => this.logger.error(`error while updating monitor mode cache: ${renderUnknownValue(error)}`));
     }
 }
