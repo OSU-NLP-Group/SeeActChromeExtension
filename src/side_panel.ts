@@ -1,7 +1,7 @@
 // import {createNamedLogger} from "./utils/shared_logging_setup";
 import {SidePanelManager} from "./utils/SidePanelManager";
 
-//const logger = createNamedLogger('side-panel', false);
+// const logger = createNamedLogger('side-panel', false);
 
 const startButton = document.getElementById('start-agent');
 if (!startButton) throw new Error('startAgent button not found');
@@ -14,6 +14,9 @@ if (!taskSpecField) throw new Error('task-spec field not found');
 
 const statusDiv = document.getElementById('status');
 if (!statusDiv) throw new Error('status div not found');
+
+const statusPopup = document.getElementById('status-details-tooltip');
+if (!statusPopup) throw new Error('status-details-tooltip not found');
 
 const killButton = document.getElementById('end-task');
 if (!killButton) throw new Error('endTask button not found');
@@ -58,12 +61,18 @@ const manager = new SidePanelManager({
     startButton: startButton as HTMLButtonElement,
     taskSpecField: taskSpecField as HTMLTextAreaElement,
     statusDiv: statusDiv as HTMLDivElement,
+    statusPopup: statusPopup as HTMLDivElement,
     killButton: killButton as HTMLButtonElement,
     historyList: historyList as HTMLOListElement,
     pendingActionDiv: pendingActionDiv as HTMLDivElement,
     monitorFeedbackField: monitorFeedbackField as HTMLTextAreaElement,
     monitorApproveButton: monitorApproveButton as HTMLButtonElement,
     monitorRejectButton: monitorRejectButton as HTMLButtonElement
+});
+
+document.addEventListener('mousemove', (e) => {
+    manager.mouseClientX = e.clientX;
+    manager.mouseClientY = e.clientY;
 });
 
 //redirecting click on icon to click on button so that disabling the button effectively disables its icon as well
@@ -84,3 +93,8 @@ monitorApproveIcon.addEventListener('click', () => monitorApproveButton.click())
 
 monitorRejectButton.addEventListener('click', manager.monitorRejectButtonClickHandler);
 monitorRejectIcon.addEventListener('click', () => monitorRejectButton.click());
+
+
+statusDiv.addEventListener('mouseenter', manager.displayStatusPopup);
+statusDiv.addEventListener('mouseleave', () => manager.handleMouseLeaveStatus(statusDiv));
+statusPopup.addEventListener('mouseleave', () => manager.handleMouseLeaveStatus(statusPopup));

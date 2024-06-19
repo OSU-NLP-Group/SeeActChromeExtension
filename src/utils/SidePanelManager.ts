@@ -6,6 +6,7 @@ import {
     buildGenericActionDesc,
     defaultIsMonitorMode,
     defaultShouldWipeActionHistoryOnStart,
+    expectedMsgForPortDisconnection,
     Panel2BackgroundPortMsgType,
     panelToControllerPort,
     renderUnknownValue,
@@ -14,12 +15,14 @@ import {
 import {Mutex} from "async-mutex";
 import {ActionInfo} from "./AgentController";
 import saveAs from "file-saver";
+import {marked} from "marked";
 
 
 export interface SidePanelElements {
     startButton: HTMLButtonElement;
     taskSpecField: HTMLTextAreaElement;
     statusDiv: HTMLDivElement;
+    statusPopup: HTMLSpanElement;
     killButton: HTMLButtonElement;
     historyList: HTMLOListElement;
     pendingActionDiv: HTMLDivElement;
@@ -45,6 +48,7 @@ export class SidePanelManager {
     private readonly startButton: HTMLButtonElement;
     private readonly taskSpecField: HTMLTextAreaElement;
     private readonly statusDiv: HTMLDivElement;
+    private readonly statusPopup: HTMLSpanElement;
     private readonly killButton: HTMLButtonElement;
     private readonly historyList: HTMLOListElement;
     private readonly pendingActionDiv: HTMLDivElement;
@@ -67,10 +71,14 @@ export class SidePanelManager {
     public serviceWorkerPort?: chrome.runtime.Port;
     public serviceWorkerReady = false;
 
+    mouseClientX = -1;
+    mouseClientY = -1;
+
     constructor(elements: SidePanelElements, chromeWrapper?: ChromeWrapper, logger?: Logger, overrideDoc?: Document) {
         this.startButton = elements.startButton;
         this.taskSpecField = elements.taskSpecField;
         this.statusDiv = elements.statusDiv;
+        this.statusPopup = elements.statusPopup;
         this.killButton = elements.killButton;
         this.historyList = elements.historyList;
         this.pendingActionDiv = elements.pendingActionDiv;
@@ -81,6 +89,7 @@ export class SidePanelManager {
         this.chromeWrapper = chromeWrapper ?? new ChromeWrapper();
         this.logger = logger ?? createNamedLogger('side-panel-mgr', false);
         this.dom = overrideDoc ?? document;
+
 
         setupMonitorModeCache(this);
         if (chrome?.storage?.local) {
@@ -120,6 +129,22 @@ export class SidePanelManager {
         this.serviceWorkerPort.onMessage.addListener(this.handleAgentControllerMsg);
         this.serviceWorkerPort.onDisconnect.addListener(this.handleAgentControllerDisconnect);
     }
+
+    pingServiceWorkerForKeepAlive = async (swPort: chrome.runtime.Port): Promise<void> => {
+        try {
+            swPort.postMessage({type: Panel2BackgroundPortMsgType.KEEP_ALIVE});
+        } catch (error: any) {
+            if ('message' in error && error.message === expectedMsgForPortDisconnection) {
+                this.logger.info('chain of keep-alive pings to service worker terminating because service worker disconnected');
+            } else {
+                this.logger.error('chain of keep-alive pings to service worker terminating because of unexpected error:', renderUnknownValue(error));
+            }
+            return;
+        }
+        const nearly_service_worker_timeout = 28000;
+        setTimeout(() => this.pingServiceWorkerForKeepAlive(swPort), nearly_service_worker_timeout);
+    }
+
 
     startTaskClickHandler = async (): Promise<void> => {
         this.logger.trace('startAgent button clicked');
@@ -370,6 +395,10 @@ export class SidePanelManager {
         this.serviceWorkerReady = true;
         this.setStatusWithDelayedClear('Agent controller connection ready; you can now start a task, export non-task-specific logs, etc.');
 
+        this.pingServiceWorkerForKeepAlive(this.serviceWorkerPort).catch((error) => {
+            this.logger.error('error while starting keepalive pings to service worker:', renderUnknownValue(error));
+        });
+
         this.state = SidePanelMgrState.IDLE;
     }
 
@@ -472,19 +501,22 @@ export class SidePanelManager {
                 && this.state !== SidePanelMgrState.WAIT_FOR_TASK_ENDED) {
                 this.logger.error(`received TASK_ENDED message from service worker port unexpectedly (while in state ${SidePanelMgrState[this.state]})`);
             }
-            this.setStatusWithDelayedClear(`Task ${message.taskId} ended`, 20, message.details);
+            this.setStatusWithDelayedClear(`Task ${message.taskId} ended`, 30, message.details);
             this.addHistoryEntry(`Task ended`, `Ended task id: ${message.taskId} for reason ${message.details}`, "task_end");
         }
         this.reset();
     }
 
 
-    private setStatusWithDelayedClear(status: string, delay: number = 10, hovertext: string = "") {
+    private setStatusWithDelayedClear(status: string, delay: number = 10, hovertext?: string) {
         this.statusDiv.textContent = status;
-        this.statusDiv.title = hovertext;
+        if (hovertext) {
+            this.statusPopup.innerHTML = marked.setOptions({async: false}).parse(hovertext) as string;
+        }
         setTimeout(() => {
             this.statusDiv.textContent = 'No status update available at the moment.';
-            this.statusDiv.title = '';
+            this.statusPopup.innerHTML = '';
+            this.statusPopup.style.display = "none";
         }, delay * 1000)
     }
 
@@ -509,4 +541,24 @@ export class SidePanelManager {
         this.historyList.appendChild(newEntry);
     }
 
+    displayStatusPopup = (): void => {
+        if (this.statusPopup.style.display !== "block" && this.statusPopup.innerHTML !== "") {
+            this.statusPopup.style.display = "block";
+            const statusRect = this.statusDiv.getBoundingClientRect();
+            this.statusPopup.style.maxHeight = `${statusRect.top}px`;
+            this.statusPopup.style.left = `0px`;
+            //the addition of 5 is so the details popup overlaps a little with the status div and so you can move
+            // the mouse from the div to the popup without the popup sometimes disappearing
+            this.statusPopup.style.top = `${statusRect.y + 4 - this.statusPopup.offsetHeight + window.scrollY}px`;
+        }
+    }
+
+    handleMouseLeaveStatus = (elementThatWasLeft: HTMLElement): void => {
+        //using referential equality intentionally here
+        const otherStatusElemRect = (elementThatWasLeft == this.statusDiv ? this.statusPopup : this.statusDiv).getBoundingClientRect();
+        if (this.mouseClientX < otherStatusElemRect.left || this.mouseClientX > otherStatusElemRect.right
+            || this.mouseClientY < otherStatusElemRect.top || this.mouseClientY > otherStatusElemRect.bottom) {
+            this.statusPopup.style.display = 'none';
+        }
+    }
 }

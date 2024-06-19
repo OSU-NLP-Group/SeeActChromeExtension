@@ -1035,9 +1035,10 @@ export class AgentController {
         } else if (message.type === Panel2BackgroundPortMsgType.MONITOR_REJECTED) {
             await this.mutex.runExclusive(() => this.processMonitorRejection(message));
         } else if (message.type === Panel2BackgroundPortMsgType.KEEP_ALIVE) {
-            this.logger.trace("received keep-alive message from side panel");//todo remove this after figuring out why keep-alive sometimes fails every 2 minutes or so
+            this.logger.trace("received keep-alive message from side panel");
             //ignore this message; just receiving it serves the purpose of keeping Chrome from killing the service
-            // worker for another 30sec
+            // worker for another 30sec; as an added layer of redundancy on top of the keep-alive alarms
+            // Just the alarms on their own still lead to service worker disconnects every few hours
         } else if (message.type === Panel2BackgroundPortMsgType.EXPORT_UNAFFILIATED_LOGS) {
             if (dbConnHolder.dbConn) {
                 const zip = new JSZip();

@@ -85,6 +85,26 @@
             height: 33px;
         }
 
+        #status-details-tooltip {
+            display: none;
+            position: absolute;
+            background-color: #f9f9f9;
+            color: black;
+            border-radius: 6px;
+            padding: 5px;
+            width: 100%;
+            box-sizing: border-box;
+            overflow-y: auto;
+        }
+
+        /*otherwise the planning output in the details popup has way too many blank lines/vertical whitespace*/
+        #status-details-tooltip {
+            & p, & li, & ul, & ol, & h1, & h2, & h3, & h4, & h5 {
+                margin-top: 0;
+                margin-bottom: 0;
+            }
+        }
+
         #pending-action-heading_container {
             display: flex;
             align-items: center;
@@ -234,5 +254,6 @@
         </button>
     </div>
 </div>
+<span id="status-details-tooltip"></span>
 </body>
 </html>

@@ -45,6 +45,7 @@
         "idb": "^8.0.0",
         "jszip": "^3.10.1",
         "loglevel": "^1.9.1",
+        "marked": "^13.0.0",
         "openai": "^4.29.2",
         "ts-retry": "^4.2.5",
         "typescript-string-operations": "^1.5.1",
