@@ -1,0 +1,35 @@
+label {
+    font-weight: bold;
+}
+
+#status-container {
+    display: flex;
+    flex-direction: row;
+}
+
+#status-display {
+    margin-left: 3px;
+}
+
+.option_container {
+    display: flex;
+    margin-bottom: 10px;
+}
+
+.option_container label {
+    flex: 0 0 auto; /*disable growth/shrinking for things in a flex container*/
+    margin-right: 10px;
+    text-align: right;
+}
+
+.option_container.side_panel_group label {
+    width: 150px;
+}
+
+.option_container.cost_ctrl_group label {
+    width: 175px;
+}
+
+.option_container input {
+    flex: 0 0 auto; /*disable growth/shrinking for things in a flex container*/
+}

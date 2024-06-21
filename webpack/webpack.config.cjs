@@ -34,9 +34,14 @@ module.exports = {
         rules: [
             {
                 test: /\.ts$/,
-                loader: "ts-loader",
+                use: "ts-loader",
                 exclude: [path.resolve(root, 'node_modules'), path.resolve(root, 'tests')]
             },
+            {
+                test: /\.css$/i,
+                use: ['style-loader', 'css-loader'],
+                exclude: [path.resolve(root, 'node_modules'), path.resolve(root, 'tests')]
+            }
         ],
     }
     ,
@@ -69,5 +74,5 @@ module.exports = {
             showErrors: true,
             inject: "body"
         })
-    ],
+    ]
 };

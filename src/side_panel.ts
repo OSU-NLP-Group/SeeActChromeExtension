@@ -1,6 +1,8 @@
 // import {createNamedLogger} from "./utils/shared_logging_setup";
 import {SidePanelManager} from "./utils/SidePanelManager";
 
+import "./side_panel.css";
+
 // const logger = createNamedLogger('side-panel', false);
 
 const startButton = document.getElementById('start-agent');

@@ -1,0 +1,176 @@
+#task-spec {
+    width: 100%;
+    height: 7vh;
+    font-size: 12px;
+    border-color: rgba(93, 255, 85, 0.5);
+    resize: vertical;
+}
+
+#start-task-icon {
+    width: 22px;
+    height: 21px;
+}
+
+#start-agent {
+    background-color: rgba(93, 255, 85, 0.5);
+}
+
+#terminate-task-icon {
+    width: 21px;
+    height: 21px;
+}
+
+#end-task {
+    background-color: rgba(167, 39, 255, 0.5);
+    color: black;
+}
+
+label {
+    font-size: 20px;
+}
+
+hr {
+    border: none;
+    border-top: 1px solid #333; /* Set the top border to be a solid line */
+    color: #333; /* Set the color of the line */
+    background-color: #333; /* Set the background color of the line */
+    height: 1px; /* Set the height of the line */
+    width: 100%; /* Set the width of the line */
+}
+
+#history {
+    height: 45vh; /*history view should take up a plurality of the side panel's space*/
+    border: 2px saddlebrown solid;
+    overflow-y: auto;
+    padding-left: 15px;
+    resize: vertical;
+}
+
+#history-label {
+    color: saddlebrown;
+    text-align: center;
+    display: block;
+}
+
+#history li {
+    border: 1px saddlebrown dotted;
+    margin: 5px;
+    padding: 5px;
+    font-size: 14px;
+}
+
+#history li.task_start {
+    background-color: rgba(93, 255, 85, 0.5);
+    color: black;
+}
+
+#history li.task_end {
+    background-color: rgba(167, 39, 255, 0.5);
+    color: black;
+}
+
+#status-update-container {
+    display: flex;
+    align-items: center;
+    justify-items: left;
+    height: 50px;
+    overflow-y: auto;
+}
+
+#status-icon {
+    margin-right: 4px;
+    width: 30px;
+    height: 33px;
+}
+
+#status-details-tooltip {
+    display: none;
+    position: absolute;
+    background-color: #f9f9f9;
+    color: black;
+    border-radius: 6px;
+    padding: 5px;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow-y: auto;
+}
+
+/*otherwise the planning output in the details popup has way too many blank lines/vertical whitespace*/
+#status-details-tooltip {
+    & p, & li, & ul, & ol, & h1, & h2, & h3, & h4, & h5 {
+        margin-top: 0;
+        margin-bottom: 0;
+    }
+}
+
+#pending-action-heading_container {
+    display: flex;
+    align-items: center;
+}
+
+#pending-action-heading_container img {
+    width: 26px;
+    height: 20px;
+}
+
+#pending-action-heading {
+    color: black;
+    background-color: rgba(255, 239, 5, 0.5);
+}
+
+#pending-action {
+    margin-top: 2px;
+    border: 2px rgba(255, 239, 5, 0.5) solid;
+    width: 100%;
+    height: 10vh;
+    font-size: 16px;
+    overflow-y: auto;
+}
+
+#monitor-mode-heading {
+    font-size: 25px;
+    text-align: center;
+}
+
+#monitor-approve-icon {
+    width: 20px;
+    height: 25px;
+}
+
+#monitor-reject-icon {
+    width: 20px;
+    height: 25px;
+}
+
+#monitor-feedback {
+    width: 100%;
+    height: 7vh;
+    font-size: 12px;
+    margin-bottom: 2px;
+    resize: vertical;
+}
+
+.buttons_row_container {
+    display: flex;
+    justify-content: space-evenly;
+}
+
+.icon_button_container {
+    display: flex;
+    flex-direction: row;
+    align-items: center; /*to vertically align the icon and button nicely alongside each other*/
+}
+
+.icon_button_container img {
+    margin-right: 3px;
+}
+
+#open-options-icon {
+    width: 29px;
+    height: 29px;
+}
+
+#export-unaffiliated-logs-icon {
+    width: 24px;
+    height: 30px;
+}

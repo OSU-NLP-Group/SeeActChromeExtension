@@ -349,7 +349,6 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     } else if (alarm.name === serviceWorker2ndaryKeepaliveAlarmName) {
         centralLogger.trace("service worker secondary keepalive alarm fired");
     } else if (alarm.name === recordsClearingAlarmName) {
-        //todo test this functionality by temporarily setting numDaysToKeepRecords to 0.5
         const newestRecordTsToDelete = new Date(Date.now() - 1000 * 60 * 60 * 24 * numDaysToKeepRecords)
             .toISOString().slice(0, -1);//remove Z because it throws off string-based ordering
         centralLogger.info(`deleting logs/screenshots from before ${newestRecordTsToDelete} from indexeddb because they are older than ${numDaysToKeepRecords} days`);
