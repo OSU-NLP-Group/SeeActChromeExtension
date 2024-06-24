@@ -14,7 +14,7 @@
        title="the task should be completable when starting from the website which is loaded in the current tab">
     Agent Task Specification</label>
 <br>
-<textarea id="task-spec">Enter a task specification for the SeeAct agent</textarea>
+<textarea id="task-spec" class="mx-px">Enter a task specification for the SeeAct agent</textarea>
 
 <div class="buttons_row_container">
     <div class="icon_button_container">
@@ -30,10 +30,9 @@
 <div id="history-container">
 <!--    todo background color for whole history section- different shade of brown or tan?-->
     <label id="history-label" for="history">Actions History</label>
-    <ol id="history">
+    <ol id="history" class="mx-px list-outside list-decimal">
     </ol>
 </div>
-<!--todo add better hovertext impl for status (e.g. to show really long planning output) with separate element rather than manipulating title attribute-->
 <div id="status-update-container">
 <!--    todo background color choice for status update section-->
     <img src="../images/status_update_icon.webp" alt="status icon" id="status-icon">
@@ -45,14 +44,14 @@
 <img src="../images/proposed_action_icon.webp" alt="hopeful robot face with lightbulb to signify idea">
 <label for="pending-action" id="pending-action-heading">Pending Action</label>
 </div>
-<div id="pending-action"></div>
+<div id="pending-action" class="mx-px"></div>
 <div id="monitor-mode-container">
 <!--    todo consider different background color for whole monitor mode container- pink? bright red seems too harsh to look at-->
     <div id="monitor-mode-heading">Monitor Mode</div>
     <label for="monitor-feedback"
            title="Hint- if you reject the proposed action after doing something to the page, please mention that thing in the feedback">Feedback
         to Agent</label>
-    <textarea id="monitor-feedback" disabled>
+    <textarea id="monitor-feedback" disabled class="mx-px">
     </textarea>
 
     <div class="buttons_row_container">
