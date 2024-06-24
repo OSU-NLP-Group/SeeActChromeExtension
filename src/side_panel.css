@@ -1,3 +1,6 @@
+/*todo use light touch css to ensure the focused element is clearly distinguishable from the rest
+   https://developer.chrome.com/docs/extensions/how-to/ui/a11y#navigation*/
+
 #task-spec {
     width: 100%;
     height: 7vh;
@@ -20,6 +23,7 @@
     height: 21px;
 }
 
+/*todo why doesn't this button, when disabled, look as much greyer than normal as start task button does when disabled?*/
 #end-task {
     background-color: rgba(167, 39, 255, 0.5);
     color: black;

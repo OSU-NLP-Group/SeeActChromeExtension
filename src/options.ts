@@ -7,6 +7,7 @@ import {
     defaultMaxOps, defaultShouldWipeActionHistoryOnStart, validateIntegerLimitUpdate
 } from "./utils/misc";
 
+import "./styles/global_styles.css";
 import "./options.css";
 
 const logger = createNamedLogger('options-menu', false);
