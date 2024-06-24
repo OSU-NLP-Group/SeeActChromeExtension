@@ -1,6 +1,6 @@
 import {createNamedLogger} from "./utils/shared_logging_setup";
 
-import "./styles/global_styles.css";
+import "./global_styles.css";
 
 const logger = createNamedLogger("installation-greeting", false);
 

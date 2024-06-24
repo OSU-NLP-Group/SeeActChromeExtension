@@ -1,7 +1,7 @@
 // import {createNamedLogger} from "./utils/shared_logging_setup";
 import {SidePanelManager} from "./utils/SidePanelManager";
 
-import "./styles/global_styles.css";
+import "./global_styles.css";
 import "./side_panel.css";
 
 // const logger = createNamedLogger('side-panel', false);
