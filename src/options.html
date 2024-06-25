@@ -1,69 +1,69 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="h-full">
 <head>
     <meta charset="UTF-8">
     <title>SeeAct Agent Options</title>
-    <!--    todo! figure out how to configure webpack so that I can put each html file's css in a separate file!-->
-    <link rel="stylesheet" href="options.css">
 </head>
-<body>
+<!--todo border around each section and _slightly_ different background color for each section-->
+<body class="h-full bg-gray-100 p-4 space-y-6">
+<section class="space-y-4">
+    <h1 class="text-2xl font-bold" title="the agent will not be able to run unless these settings are configured">Required Settings</h1>
+    <div class="space-y-2">
+        <label for="open-ai-api-key" class="block font-semibold" title="The agent will crash if it is not given the ability to query an AI model">OpenAI API Key</label>
+        <input type="text" id="open-ai-api-key" placeholder="Enter OpenAI API key here" class="w-1/3 p-2 border rounded">
+    </div>
+</section>
 
-<h1 title="the agent will not be able to run unless these settings are configured">Required Settings</h1>
-<label for="open-ai-api-key" title="The agent will crash if it is not given the ability to query an AI model">OpenAI API
-    Key</label>
-<input type="text" id="open-ai-api-key" placeholder="Enter OpenAI API key here">
-<br>
+<section class="space-y-4">
+    <h1 class="text-2xl font-bold">Side Panel Behavior</h1>
+    <div class="space-y-2">
+        <div class="flex items-center">
+            <input type="checkbox" id="monitor-mode" class="mr-2">
+            <label for="monitor-mode" class="font-semibold" title="Turning this on will force the web agent to confirm with you before each action">Monitor Mode</label>
+        </div>
+        <div class="flex items-center">
+            <input type="checkbox" id="wipe-prior-history-on-task-start" class="mr-2">
+            <label for="wipe-prior-history-on-task-start" class="font-semibold" title="Turning this on will cause the side panel to wipe the display of prior tasks' actions when starting a new task">Wipe History Display on Task Start</label>
+        </div>
+    </div>
+</section>
 
-<h1>Side Panel Behavior</h1>
-<div class="option_container side_panel_group">
-    <label for="monitor-mode" title="Turning this on will force the web agent to confirm with you before each action">Monitor
-        Mode</label>
-    <input type="checkbox" id="monitor-mode">
-</div>
-<div class="option_container side_panel_group">
-    <label for="wipe-prior-history-on-task-start"
-           title="Turning this on will cause the side panel to wipe the display of prior tasks' actions when starting a new task">Wipe
-        History Display on Task Start</label>
-    <input type="checkbox" id="wipe-prior-history-on-task-start">
-</div>
-<h1 title="How patient/trusting you want to be with the web agent when it takes a long time or makes a lot of mistakes">
-    Cost Controls</h1>
-<div class="option_container cost_ctrl_group">
-    <label for="max-operations" title="The maximum number of operations that the agent will perform before stopping">
-        Max Operations</label>
-    <input type="number" id="max-operations" min="1" value="100" step="1">
-</div>
-<div class="option_container cost_ctrl_group">
-    <label for="max-noops"
-           title="The maximum number of times that the agent can fail to produce a valid action without being immediately terminated">
-        Max No-Ops</label>
-    <input type="number" id="max-noops" min="0" value="20" step="1">
-</div>
-<div class="option_container cost_ctrl_group">
-    <label for="max-failures"
-           title="The maximum number of times that the agent can choose an action whose execution fails without being immediately terminated">
-        Max Failed Actions</label>
-    <input type="number" id="max-failures" min="0" value="20" step="1">
-</div>
-<div class="option_container cost_ctrl_group">
-    <label for="max-failure-or-noop-streak"
-           title="The maximum number of times in a row that the agent can produce an invalid action or choose an action whose execution fails without being immediately terminated">
-        Max Length of Failure-or-No-Op Streak</label>
-    <input type="number" id="max-failure-or-noop-streak" min="0" value="10" step="1">
-</div>
+<section class="space-y-4">
+    <h1 class="text-2xl font-bold" title="How patient/trusting you want to be with the web agent when it takes a long time or makes a lot of mistakes">Cost Controls</h1>
+    <div class="space-y-2">
+        <div class="flex items-center">
+            <label for="max-operations" class="w-64 font-semibold" title="The maximum number of operations that the agent will perform before stopping">Max Operations</label>
+            <input type="number" id="max-operations" min="1" value="100" step="1" class="p-1 border rounded">
+        </div>
+        <div class="flex items-center">
+            <label for="max-noops" class="w-64 font-semibold" title="The maximum number of times that the agent can fail to produce a valid action without being immediately terminated">Max No-Ops</label>
+            <input type="number" id="max-noops" min="0" value="20" step="1" class="p-1 border rounded">
+        </div>
+        <div class="flex items-center">
+            <label for="max-failures" class="w-64 font-semibold" title="The maximum number of times that the agent can choose an action whose execution fails without being immediately terminated">Max Failed Actions</label>
+            <input type="number" id="max-failures" min="0" value="20" step="1" class="p-1 border rounded">
+        </div>
+        <div class="flex items-center">
+            <label for="max-failure-or-noop-streak" class="w-64 font-semibold" title="The maximum number of times in a row that the agent can produce an invalid action or choose an action whose execution fails without being immediately terminated">Max Length of Failure-or-No-Op Streak</label>
+            <input type="number" id="max-failure-or-noop-streak" min="0" value="10" step="1" class="p-1 border rounded">
+        </div>
+    </div>
+</section>
 
-<h1>Technical/Troubleshooting Options</h1>
-<label for="log-level" title="the minimum level of logs which will be saved (SILENT means no logs will be saved)">Log
-    Level</label>
-<select id="log-level">
-    <option value="SILENT">SILENT</option>
-    <option value="ERROR">ERROR</option>
-    <option value="WARN">WARN</option><!--todo make this the default selected option before official release-->
-    <option value="INFO">INFO</option>
-    <option value="DEBUG">DEBUG</option>
-    <option value="TRACE" selected>TRACE</option>
-</select>
-<br>
+<section class="space-y-4">
+    <h1 class="text-2xl font-bold">Technical/Troubleshooting Options</h1>
+    <div class="space-y-2">
+        <label for="log-level" class="block font-semibold" title="the minimum level of logs which will be saved (SILENT means no logs will be saved)">Log Level</label>
+        <select id="log-level" class="w-fit p-2 border rounded">
+            <option value="SILENT">SILENT</option>
+            <option value="ERROR">ERROR</option>
+            <option value="WARN">WARN</option>
+            <option value="INFO">INFO</option>
+            <option value="DEBUG">DEBUG</option>
+            <option value="TRACE" selected>TRACE</option>
+        </select>
+    </div>
+</section>
 
 <!--todo add options for the following:
         maybe some configurability around how the target-element highlighting works in monitor mode (e.g. outline color, thickness, highlighting-timeout, etc.)
@@ -73,24 +73,15 @@
             Since user probably wouldn't store task id's, it might really only be nice from user perspective if there
              was a dropdown with timestamps and task specifications instead of a text field to enter the task id
 -->
-<!--
-<label for="fixed-choice-batch-size">Fixed-Choice Batch Size (how many elements to show to agent at a time when it's deciding what to interact with next)</label>
-<input type="number" id="fixed-choice-batch-size" min="0" value="17", step="1">
 
-<label for="dynamic-choice-batch-size">Dynamic factor for batch size of choices; Explanation below</label>
-<input type="number" id="dynamic-choice-batch-size" min="-1" value="-1", step="1">
-<span id="dynamic-choice-batch-size-explanation">If this is greater than 0, the batch size of choices will be determined
-    by dividing the scrolling-height of the page by this number and using the quotient as the number of batches
-    (i.e. splitting the set of interactable elements into that many batches).
-    If this is -1, the Fixed-Choice Batch Size will be used instead.</span>
--->
 
-<hr>
-<div id="status-container">
-    <label for="status-display">Status: </label>
+<hr class="my-6 border-gray-300">
+
+<div id="status-container" class="flex items-center">
+    <label for="status-display" class="font-semibold mr-2">Status:</label>
     <div id="status-display">Initializing</div>
 </div>
-<br>
-<button id="save">Save</button>
+
+<button id="save" class="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">Save</button>
 </body>
 </html>

@@ -1,85 +1,89 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="h-full">
 <head>
     <meta charset="UTF-8">
     <title>SeeAct Chrome Agent</title>
-<!--    todo explore how this styling looks on different screen resolutions than my laptop's-->
-    <link rel="stylesheet" href="side_panel.css">
 </head>
-<body>
-<!--todo consult with Boyuan about tradeoffs between making things more visually distinct/clear vs having a less jarring
-        and more cohesive color scheme (most online examples seemed to have mostly cohesive color schemes)-->
-<!--todo maybe shared background color for task-spec/start-task/kill-task section-->
-<label id="task-spec-label" for="task-spec"
-       title="the task should be completable when starting from the website which is loaded in the current tab">
-    Agent Task Specification</label>
-<br>
-<textarea id="task-spec" class="mx-px">Enter a task specification for the SeeAct agent</textarea>
-
-<div class="buttons_row_container">
-    <div class="icon_button_container">
-        <img src="../images/task_start_icon.webp" alt="start task button's icon" id="start-task-icon">
-        <button id="start-agent">Start Agent</button>
-    </div>
-    <div class="icon_button_container">
-        <img src="../images/task_kill_icon.webp" alt="terminate task button's icon" id="terminate-task-icon">
-        <button disabled id="end-task">Terminate Task</button>
-    </div>
+<!--todo borders around different sections, and background color for each section-->
+<!--todo get everything on the same color palette!-->
+<body class="h-full bg-gray-100 p-4 space-y-4">
+<div class="space-y-1">
+    <label for="task-spec" class="block text-lg font-semibold" title="the task should be completable when starting from the website which is loaded in the current tab">
+        Agent Task Specification
+    </label>
+    <textarea id="task-spec" class="w-full h-24 p-2 border border-green-300 rounded resize-y" placeholder="Enter a task specification for the SeeAct agent"></textarea>
 </div>
-<hr>
-<div id="history-container">
-<!--    todo background color for whole history section- different shade of brown or tan?-->
-    <label id="history-label" for="history">Actions History</label>
-    <ol id="history" class="mx-px list-outside list-decimal">
+
+<div class="flex justify-evenly">
+    <button id="start-agent" class="flex items-center px-2 py-1 bg-green-200 hover:bg-green-300 rounded">
+        <img src="../images/task_start_icon.webp" alt="start task" class="w-auto h-5 mr-2">
+        Start Agent
+    </button>
+    <button id="end-task" class="flex items-center px-2 py-1 bg-purple-200 hover:bg-purple-300 rounded" disabled>
+        <img src="../images/task_kill_icon.webp" alt="terminate task" class="w-auto h-5 mr-2">
+        Terminate Task
+    </button>
+    <!--    todo why doesn't this button, when disabled, look as much greyer than normal as start task button does when disabled?-->
+
+</div>
+
+<hr class="border-gray-300">
+
+<div id="history-container" class="space-y-2">
+    <label id="history-label" for="history" class="block text-lg font-semibold text-center text-brown-600">Actions History</label>
+    <ol id="history" class="h-72 border-2 border-brown-600 overflow-y-auto p-4 space-y-1 resize-y">
+        <!-- History items will be added here dynamically -->
     </ol>
 </div>
-<div id="status-update-container">
-<!--    todo background color choice for status update section-->
-    <img src="../images/status_update_icon.webp" alt="status icon" id="status-icon">
-    <div id="status">No status update available at the moment.</div>
-</div>
-<br>
-<!--todo background color for pending action- ??-->
-<div id="pending-action-heading_container">
-<img src="../images/proposed_action_icon.webp" alt="hopeful robot face with lightbulb to signify idea">
-<label for="pending-action" id="pending-action-heading">Pending Action</label>
-</div>
-<div id="pending-action" class="mx-px"></div>
-<div id="monitor-mode-container">
-<!--    todo consider different background color for whole monitor mode container- pink? bright red seems too harsh to look at-->
-    <div id="monitor-mode-heading">Monitor Mode</div>
-    <label for="monitor-feedback"
-           title="Hint- if you reject the proposed action after doing something to the page, please mention that thing in the feedback">Feedback
-        to Agent</label>
-    <textarea id="monitor-feedback" disabled class="mx-px">
-    </textarea>
 
-    <div class="buttons_row_container">
-        <div class="icon_button_container">
-            <img src="../images/monitor_approve_thumbs_up_icon.webp" alt="monitor approve button's icon" id="monitor-approve-icon">
-            <button id="approve" disabled>Approve</button>
-        </div>
-        <div class="icon_button_container">
-            <img src="../images/monitor_reject_thumbs_down_icon.webp" alt="monitor reject button's icon" id="monitor-reject-icon">
-            <button id="reject" disabled>Reject</button>
-        </div>
-    </div>
+<div id="status-update-container" class="flex items-center h-12 overflow-y-auto">
+    <img src="../images/status_update_icon.webp" alt="status icon" class="w-auto h-8 mr-2">
+    <div id="status" class="text-sm">No status update available at the moment.</div>
 </div>
-<hr>
-<!--todo consider different background color for this part of the ui - grey?-->
-<div class="buttons_row_container">
-    <div class="icon_button_container">
-        <img src="../images/settings_gear_icon.webp" alt="options button's icon" id="open-options-icon">
-        <button id="options">Options</button>
+
+<div class="space-y-2">
+    <div class="flex items-center">
+        <img src="../images/proposed_action_icon.webp" alt="hopeful robot face with lightbulb" class="w-auto h-6 mr-2">
+        <label for="pending-action" class="text-lg font-semibold bg-yellow-200 px-2 py-1 rounded">Pending Action</label>
     </div>
-    <div class="icon_button_container">
-        <img src="../images/misc_logs_export_icon.webp" alt="logs export button's icon" id="export-unaffiliated-logs-icon">
-        <button id="export-unaffiliated-logs"
-                title="Most logs from this are the ones not affiliated with any task; however, some of the logs exported with this are some messages from the very beginning or the very end of each task">
-            Download misc logs
+    <div id="pending-action" class="h-32 mt-0.5 border-2 border-yellow-300 p-2 overflow-y-auto text-sm"></div>
+</div>
+
+<div id="monitor-mode-container" class="space-y-2 bg-pink-100 p-4 rounded">
+    <h2 class="text-xl font-bold text-center">Monitor Mode</h2>
+    <div class="space-y-2">
+        <label for="monitor-feedback" class="block text-sm font-medium" title="Hint- if you reject the proposed action after doing something to the page, please mention that thing in the feedback">
+            Feedback to Agent
+        </label>
+        <textarea id="monitor-feedback" class="w-full h-24 text-sm p-2 border rounded resize-y" disabled></textarea>
+    </div>
+    <div class="flex justify-evenly">
+        <button id="approve" class="flex items-center px-2 py-1 bg-green-200 hover:bg-green-300 rounded" disabled>
+            <img src="../images/monitor_approve_thumbs_up_icon.webp" alt="approve" class="w-auto h-5 mr-2">
+            Approve
+        </button>
+        <button id="reject" class="flex items-center px-2 py-1 bg-red-200 hover:bg-red-300 rounded" disabled>
+            <img src="../images/monitor_reject_thumbs_down_icon.webp" alt="reject" class="w-auto h-5 mr-2">
+            Reject
         </button>
     </div>
 </div>
-<span id="status-details-tooltip"></span>
+
+<hr class="border-gray-300">
+
+<div class="flex justify-evenly">
+    <button id="options" class="flex items-center px-2 py-1 bg-gray-200 hover:bg-gray-300 rounded">
+        <img src="../images/settings_gear_icon.webp" alt="options" class="w-auto h-7 mr-2">
+        Options
+    </button>
+    <button id="export-unaffiliated-logs" class="flex items-center px-2 py-1 bg-gray-200 hover:bg-gray-300 rounded" title="Most logs from this are the ones not affiliated with any task; however, some of the logs exported with this are some messages from the very beginning or the very end of each task">
+        <img src="../images/misc_logs_export_icon.webp" alt="export logs" class="w-auto h-7 mr-2">
+        Download misc logs
+    </button>
+</div>
+
+<span id="status-details-tooltip" class="hidden absolute bg-white border border-gray-300 p-2 rounded shadow-lg max-w-full overflow-y-auto">
+    <!-- Status details will be added here dynamically -->
+</span>
 </body>
 </html>

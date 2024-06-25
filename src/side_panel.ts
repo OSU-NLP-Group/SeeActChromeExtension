@@ -9,9 +9,6 @@ import "./side_panel.css";
 const startButton = document.getElementById('start-agent');
 if (!startButton || !(startButton instanceof HTMLButtonElement)) throw new Error('valid startAgent button not found');
 
-const startIcon = document.getElementById('start-task-icon');
-if (!startIcon) throw new Error('start-task-icon not found');
-
 const taskSpecField = document.getElementById('task-spec');
 if (!taskSpecField || !(taskSpecField instanceof HTMLTextAreaElement)) throw new Error('valid task-spec field not found');
 
@@ -24,20 +21,11 @@ if (!statusPopup  || !(statusPopup instanceof HTMLSpanElement)) throw new Error(
 const killButton = document.getElementById('end-task');
 if (!killButton  || !(killButton instanceof HTMLButtonElement)) throw new Error('valid endTask button not found');
 
-const killIcon = document.getElementById('terminate-task-icon');
-if (!killIcon) throw new Error('terminate-task-icon not found');
-
 const optionsButton = document.getElementById('options');
 if (!optionsButton || !(optionsButton instanceof HTMLButtonElement)) throw new Error('valid options button not found');
 
-const optionsIcon = document.getElementById('open-options-icon');
-if (!optionsIcon) throw new Error('open-options-icon not found');
-
 const unaffiliatedLogsExportButton = document.getElementById('export-unaffiliated-logs');
 if (!unaffiliatedLogsExportButton || !(unaffiliatedLogsExportButton instanceof HTMLButtonElement)) throw new Error('valid export-unaffiliated-logs button not found');
-
-const unaffiliatedLogsExportIcon = document.getElementById('export-unaffiliated-logs-icon');
-if (!unaffiliatedLogsExportIcon) throw new Error('export-unaffiliated-logs icon not found');
 
 const historyList = document.getElementById('history');
 if (!historyList || !(historyList instanceof HTMLOListElement)) throw new Error('valid history list not found');
@@ -54,14 +42,8 @@ if (!monitorFeedbackField || !(monitorFeedbackField instanceof HTMLTextAreaEleme
 const monitorApproveButton = document.getElementById('approve');
 if (!monitorApproveButton || !(monitorApproveButton instanceof HTMLButtonElement)) throw new Error('valid approve button not found');
 
-const monitorApproveIcon = document.getElementById('monitor-approve-icon');
-if (!monitorApproveIcon) throw new Error('monitor-approve-icon not found');
-
 const monitorRejectButton = document.getElementById('reject');
 if (!monitorRejectButton || !(monitorRejectButton instanceof HTMLButtonElement)) throw new Error('valid reject button not found');
-
-const monitorRejectIcon = document.getElementById('monitor-reject-icon');
-if (!monitorRejectIcon) throw new Error('monitor-reject-icon not found');
 
 const manager = new SidePanelManager({
     startButton: startButton as HTMLButtonElement,
@@ -84,22 +66,16 @@ document.addEventListener('mousemove', (e) => {
 
 //redirecting click on icon to click on button so that disabling the button effectively disables its icon as well
 startButton.addEventListener('click', manager.startTaskClickHandler);
-startIcon.addEventListener('click', () => startButton.click());
 
 killButton.addEventListener('click', manager.killTaskClickHandler);
-killIcon.addEventListener('click', () => killButton.click());
 
 optionsButton.addEventListener('click', manager.optionsButtonClickHandler);
-optionsIcon.addEventListener('click', () => optionsButton.click());
 
 unaffiliatedLogsExportButton.addEventListener('click', manager.unaffiliatedLogsExportButtonClickHandler);
-unaffiliatedLogsExportIcon.addEventListener('click', () => unaffiliatedLogsExportButton.click());
 
 monitorApproveButton.addEventListener('click', manager.monitorApproveButtonClickHandler);
-monitorApproveIcon.addEventListener('click', () => monitorApproveButton.click());
 
 monitorRejectButton.addEventListener('click', manager.monitorRejectButtonClickHandler);
-monitorRejectIcon.addEventListener('click', () => monitorRejectButton.click());
 
 
 statusDiv.addEventListener('mouseenter', manager.displayStatusPopup);

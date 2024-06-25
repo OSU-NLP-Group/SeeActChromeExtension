@@ -1,23 +1,12 @@
 /*todo use light touch css to ensure the focused element is clearly distinguishable from the rest
    https://developer.chrome.com/docs/extensions/how-to/ui/a11y#navigation*/
 
-label {
-    font-weight: bold;
-}
 
 #status-container {
     display: flex;
     flex-direction: row;
 }
 
-#status-display {
-    margin-left: 3px;
-}
-
-.option_container {
-    display: flex;
-    margin-bottom: 10px;
-}
 
 .option_container label {
     flex: 0 0 auto; /*disable growth/shrinking for things in a flex container*/
