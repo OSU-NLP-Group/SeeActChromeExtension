@@ -578,17 +578,16 @@ export class SidePanelManager {
                 this.logger.trace(`side panel cache of monitor mode received an update which agreed with the existing cached value ${this.cachedMonitorMode}`)
                 return;
             }
-            const pxPerVh = window.innerHeight / 100;
             const priorHistoryHeight = this.historyList.getBoundingClientRect().height;//px
 
             if (newMonitorModeVal) {//re-displaying monitor mode UI
                 const newHistoryHeight = priorHistoryHeight-this.lastHeightOfMonitorModeContainer;//px
-                this.historyList.style.height = `${(newHistoryHeight / pxPerVh)}vh`;
+                this.historyList.style.height = `${(newHistoryHeight)}px`;
                 this.monitorModeContainer.style.display = "block";
             } else {//collapsing monitor mode UI
                 this.lastHeightOfMonitorModeContainer = this.monitorModeContainer.getBoundingClientRect().height;
                 const newHistoryHeight = priorHistoryHeight+this.lastHeightOfMonitorModeContainer;//px
-                this.historyList.style.height = `${(newHistoryHeight / pxPerVh)}vh`;
+                this.historyList.style.height = `${(newHistoryHeight)}px`;
                 this.monitorModeContainer.style.display = "none";
             }
         }).catch((error) => this.logger.error(`error while updating monitor mode cache: ${renderUnknownValue(error)}`));

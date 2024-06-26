@@ -92,6 +92,9 @@ chrome.runtime.onInstalled.addListener(async function (details) {
     } else if (details.reason === "update") {
         centralLogger.info(`chrome.runtime.onInstalled listener fired for "update" reason`);
         //todo what would be needed here?
+    } else if (details.reason === "chrome_update") {
+        centralLogger.info(`chrome.runtime.onInstalled listener fired for "chrome_update" reason`);
+        //todo what would be needed here?
     } else {
         centralLogger.error("chrome.runtime.onInstalled listener fired with unexpected reason ", details.reason);
     }

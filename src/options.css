@@ -1,6 +1,16 @@
 /*todo use light touch css to ensure the focused element is clearly distinguishable from the rest
    https://developer.chrome.com/docs/extensions/how-to/ui/a11y#navigation*/
 
+/*remove top margin for inputs and selects (which seems to be imposed by browser unless I use this !important
+   hack, since just putting the mt-0 or even -mt-0.5 class on the elements doesn't help) b/c it throws off
+   vertical alignment of an input or select with the label on its left*/
+input {
+    margin-top: 0 !important;
+}
+
+select {
+    margin-top: 0 !important;
+}
 
 #status-container {
     display: flex;
