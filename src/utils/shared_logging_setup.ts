@@ -1,5 +1,9 @@
 import log, {LogLevel, LogLevelNames} from "loglevel";
-import {PageRequestType, renderUnknownValue} from "./misc";
+import {
+    expectedMsgForSendingRuntimeRequestFromDisconnectedContentScript,
+    PageRequestType,
+    renderUnknownValue
+} from "./misc";
 import {DBSchema, IDBPDatabase, openDB} from 'idb';
 import {Mutex} from "async-mutex";
 
@@ -176,8 +180,12 @@ export const createNamedLogger = (loggerName: string, inServiceWorker: boolean):
                         level: methodName, args: args
                     }).catch((err) =>
                         console.error(`error [<${err}>] while sending log message [<${msg}>] to background script for persistence`));
-                } catch (error) {
-                    console.error(`error encountered while trying to send log message to background script for persistence;\n log message: ${msg};\nerror: ${renderUnknownValue(error)}`);
+                } catch (error: any) {
+                    if ('message' in error && error.message === expectedMsgForSendingRuntimeRequestFromDisconnectedContentScript) {
+                        console.warn(`lost ability to send messages/requests to service-worker/agent-controller (probably page is being unloaded) while trying to send log message to background script for persistence;\n log message: ${msg};\nerror: ${renderUnknownValue(error)}`);
+                    } else {
+                        console.error(`error encountered while trying to send log message to background script for persistence;\n log message: ${msg};\nerror: ${renderUnknownValue(error)}`);
+                    }
                     throw error;
                 }
             };

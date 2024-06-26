@@ -653,7 +653,7 @@ export class AgentController {
 
         this.predictionsInTask.push({
             modelPlanningOutput: planningOutput, modelGroundingOutput: groundingOutput,
-            targetElementData: chosenCandidateIndex && chosenCandidateIndex < candidateIds.length
+            targetElementData: chosenCandidateIndex !== undefined && chosenCandidateIndex < candidateIds.length
                 ? interactiveElements[candidateIds[chosenCandidateIndex]] : undefined,
             actionName: action, value: value, explanation: explanation
         });
@@ -692,8 +692,8 @@ export class AgentController {
             || action === Action.PRESS_ENTER;
 
 
-        if ((!chosenCandidateIndex || chosenCandidateIndex > candidateIds.length) && !actionNeedsNoElement) {
-            this.logger.warn(`ai selected invalid option ${element} ` + (chosenCandidateIndex
+        if ((chosenCandidateIndex == undefined || chosenCandidateIndex > candidateIds.length) && !actionNeedsNoElement) {
+            this.logger.warn(`ai selected invalid option ${element} ` + (chosenCandidateIndex !== undefined
                 ? `(was parsed as candidate index ${chosenCandidateIndex}, but the candidates list only had ${candidateIds.length} entries)`
                 : `(cannot be parsed into an index)`) + ", counting as noop action and reprompting");
             this.noopCount++;
@@ -739,11 +739,11 @@ export class AgentController {
         //todo if it says 'scroll down' when viewport info shows that we're already at the bottom, simply treat that as a no-op and remprompt
         // same for scroll up when at top
 
-        if (chosenCandidateIndex && chosenCandidateIndex >= candidateIds.length && actionNeedsNoElement) {
+        if (chosenCandidateIndex !== undefined && chosenCandidateIndex >= candidateIds.length && actionNeedsNoElement) {
             chosenCandidateIndex = undefined;
         }
 
-        const chosenElementIndex: number | undefined = chosenCandidateIndex ? candidateIds[chosenCandidateIndex] : undefined;
+        const chosenElementIndex: number | undefined = chosenCandidateIndex != undefined ? candidateIds[chosenCandidateIndex] : undefined;
         this.logger.debug(`acting on the ${chosenCandidateIndex} entry from the candidates list; which is the ${chosenElementIndex} element of the original interactiveElements list`);
 
         this.pendingActionInfo = {

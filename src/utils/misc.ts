@@ -5,6 +5,7 @@ import {SerializableElementData} from "./BrowserHelper";
 export const expectedMsgForPortDisconnection = "Attempting to use a disconnected port object";
 export const pageToControllerPort = `page-actor-2-agent-controller`;
 export const panelToControllerPort = "side-panel-2-agent-controller";
+export const expectedMsgForSendingRuntimeRequestFromDisconnectedContentScript = "Extension context invalidated.";
 
 //ms, how long to sleep (after editing an element for highlighting) before telling the service worker to take a
 // screenshot; i.e. longest realistic amount of time the browser might take to re-render the modified element
