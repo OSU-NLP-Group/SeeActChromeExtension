@@ -550,7 +550,7 @@ export class SidePanelManager {
     }
 
     displayStatusPopup = (): void => {
-        if (this.statusPopup.style.display !== "block" && this.statusPopup.innerHTML !== "") {
+        if (this.statusPopup.style.display !== "block" && this.statusPopup.innerHTML.trim() !== "") {
             this.statusPopup.style.display = "block";
             const statusRect = this.statusDiv.getBoundingClientRect();
             this.statusPopup.style.maxHeight = `${statusRect.top}px`;

@@ -1150,6 +1150,9 @@ export class AgentController {
                     return;
                 }
                 await this.injectPageActorScript(false);
+            } else if (this.state === AgentControllerState.WAITING_FOR_CONTENT_SCRIPT_INIT) {
+                this.logger.info("service worker's connection to content script was lost while waiting for the new page to finish loading, probably means another navigation happened automatically. trying to inject the content script into the new page");
+                await this.injectPageActorScript(false);
             } else if (this.state === AgentControllerState.IDLE) {
                 this.logger.debug("service worker's connection to content script was lost while in idle state; ignoring");
             } else {
