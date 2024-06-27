@@ -87,6 +87,9 @@ export type ActionInfo = {
  */
 type ActionRecord = { actionDesc: string, success: boolean, noopType?: NoopType, explanation: string };
 
+/**
+ * stores all relevant info about a round of LMM output for later export at end of task
+ */
 type PredictionRecord = {
     modelPlanningOutput: string,
     modelGroundingOutput: string,
@@ -96,11 +99,16 @@ type PredictionRecord = {
     explanation: string
 };
 
+/**
+ * these alarms are turned on when the side panel makes contact with the service worker and turned off when that
+ * connection is lost. They serve to keep the service worker responsive to user input in the side panel
+ *
+ * with just 1 keepalive alarm, sometimes it would serve its purpose (if Chrome fired that event a fraction of a second early)
+ *  but it would fail to do its job if there was a 30 second period with no keepalive pings from the side panel (side
+ *  panel pings to service worker are bafflingly unreliable) and that time the alarm fired even a tiny fraction of a
+ * second more than 30 seconds after the previous firing
+ */
 export const serviceWorkerKeepaliveAlarmName = "serviceWorkerKeepaliveAlarm";
-//with just 1 keepalive alarm, sometimes it would serve its purpose (if Chrome fired that event a fraction of a second early)
-// but it would fail to do its job if there was a 30 second period with no keepalive pings from the side panel (side
-// panel pings to service worker are bafflingly unreliable) and that time the alarm fired even a tiny fraction of a
-// second more than 30 seconds after the previous firing
 export const serviceWorker2ndaryKeepaliveAlarmName = "serviceWorker2ndaryKeepaliveAlarm";
 
 
@@ -111,7 +119,7 @@ export const serviceWorker2ndaryKeepaliveAlarmName = "serviceWorker2ndaryKeepali
  * @description Controller for the agent that completes tasks for the user in their browser
  */
 export class AgentController {
-    terminationSignal: boolean = false;//this is the only piece of state that should be accessed without the mutex
+    terminationSignal: boolean = false;//this is the ~only piece of state that should be accessed without the mutex
 
     readonly mutex = new Mutex();
 
@@ -190,7 +198,7 @@ export class AgentController {
         this.logger = createNamedLogger('agent-controller', true);
         this.logger.debug(`max ops limit: ${this.maxOpsLimit}, max noop limit: ${this.maxNoopLimit}, max failure limit: ${this.maxFailureLimit}, max failure-or-noop streak limit: ${this.maxFailureOrNoopStreakLimit}`);
 
-        setupMonitorModeCache((newMonitorModeVal: boolean) => this.cachedMonitorMode=newMonitorModeVal, this.logger);
+        setupMonitorModeCache((newMonitorModeVal: boolean) => this.cachedMonitorMode = newMonitorModeVal, this.logger);
         if (chrome?.storage?.local) {
             chrome.storage.local.get(["maxOps", "maxNoops", "maxFailures", "maxFailureOrNoopStreak"], (items) => {
                 this.validateAndApplyAgentOptions(true, items.maxOps, items.maxNoops, items.maxFailures, items.maxFailureOrNoopStreak);
@@ -202,6 +210,16 @@ export class AgentController {
         }
     }
 
+    /**
+     * validates information from local storage about agent-controller-specific options and applies any valid updates
+     * to the controller's instance variables
+     * @param initOrUpdate whether this is being called for the lazy initialization of the controller's options on
+     *                      start-up (true) or for an update of those options based on a change in local storage (false)
+     * @param newMaxOps possible new value for this.maxOpsLimit
+     * @param newMaxNoops possible new value for this.maxNoopLimit
+     * @param newMaxFailures possible new value for this.maxFailureLimit
+     * @param newMaxFailureOrNoopStreak possible new value for this.maxFailureOrNoopStreakLimit
+     */
     validateAndApplyAgentOptions = (
         initOrUpdate: boolean, newMaxOps: unknown, newMaxNoops: unknown, newMaxFailures: unknown,
         newMaxFailureOrNoopStreak: unknown): void => {
@@ -317,6 +335,10 @@ export class AgentController {
         }
     }
 
+    /**
+     * processes new connection from a content script
+     * @param port the persistent communication connection with that content script
+     */
     addPageConnection = async (port: Port): Promise<void> => {
         await this.mutex.runExclusive(() => {
             if (this.state !== AgentControllerState.WAITING_FOR_CONTENT_SCRIPT_INIT) {
@@ -332,6 +354,10 @@ export class AgentController {
         });
     }
 
+    /**
+     * handles the creation of a new connection from the side panel
+     * @param port the persistent communication connection with the side panel
+     */
     addSidePanelConnection = async (port: Port): Promise<void> => {
         await this.mutex.runExclusive(() => {
             if (this.state !== AgentControllerState.IDLE) {
@@ -757,6 +783,16 @@ export class AgentController {
         return LmmOutputReaction.PROCEED_WITH_ACTION;
     }
 
+    /**
+     * takes screenshot of current tab, tries to save it to database (asynchronously), and returns that screenshot
+     * as a data url
+     * @param screenshotType what the purpose of the screenshot is (e.g. initial for prompting the model to pick a
+     *          next action, 'targeted' to visually capture which element the model chose to target, etc.)
+     * @param promptingIndexForAction how many prompting screenshots had been taken before this one for the current
+     *          action (i.e. without an action being decided-on/performed between those prior prompting screenshots and
+     *          this screenshot)
+     * @return a data url of the screenshot (i.e. base64-encoded string for the png file's bytes)
+     */
     captureAndStoreScreenshot = async (screenshotType: string, promptingIndexForAction: number): Promise<string | undefined> => {
         let screenshotDataUrl: string | undefined;
         if (this.taskId === undefined) {
