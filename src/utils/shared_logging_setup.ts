@@ -1,5 +1,9 @@
 import log, {LogLevel, LogLevelNames} from "loglevel";
-import {PageRequestType, renderUnknownValue} from "./misc";
+import {
+    expectedMsgForSendingRuntimeRequestFromDisconnectedContentScript,
+    PageRequestType,
+    renderUnknownValue
+} from "./misc";
 import {DBSchema, IDBPDatabase, openDB} from 'idb';
 import {Mutex} from "async-mutex";
 
@@ -34,6 +38,11 @@ export const DB_NAME = "Browser_LMM_Agent";
 export const LOGS_OBJECT_STORE = "logs";
 export const SCREENSHOTS_OBJECT_STORE = "screenshots";
 
+// timestamps in this db are _implicitly_ (no time zone indicator at the end) in UTC+0 time zone;
+// They follow ISO-8601 format _except_ for the missing final Z and except that sometimes it'll have microseconds
+// (6 digits after decimal point) instead of milliseconds (3 digits after decimal point)
+// The omission of the Z allows sorting in the by-ts indexes to work properly when some timestamps have milliseconds
+// and some have microseconds
 export interface AgentDb extends DBSchema {
     logs: {
         key: number;
@@ -107,16 +116,20 @@ export function saveLogMsgToDb(timestampStr: string, actualLoggerName: string, m
                                msgArgs: unknown[]) {
     const taskIdForMsg = taskIdHolder.currTaskId ?? taskIdPlaceholderVal;
     const renderedMsg = msgArgs.join(" ");
+    //remove the trailing 'Z' from the timestamp string to make it work as a key in a browser db index (because
+    // otherwise comparisons-between/ordering-of ts values in the index would be thrown off by some ending with
+    // milliseconds and a Z while others ended with microseconds and a Z)
+    const dbSafeTsStr = timestampStr.slice(0, -1);
     if (dbConnHolder.dbConn) {
         dbConnHolder.dbConn.add(LOGS_OBJECT_STORE, {
-            timestamp: timestampStr, loggerName: actualLoggerName, level: methodName,
+            timestamp: dbSafeTsStr, loggerName: actualLoggerName, level: methodName,
             taskId: taskIdForMsg, msg: renderedMsg
         }).catch((error) =>
             console.error("error adding log message to indexeddb:", renderUnknownValue(error)));
     } else {
         mislaidLogsQueueMutex.runExclusive(() => {
             logsNotYetSavedToDb.push({
-                timestamp: timestampStr, loggerName: actualLoggerName, level: methodName,
+                timestamp: dbSafeTsStr, loggerName: actualLoggerName, level: methodName,
                 taskId: taskIdForMsg, msg: renderedMsg
             })
         }).catch((error) =>
@@ -161,13 +174,20 @@ export const createNamedLogger = (loggerName: string, inServiceWorker: boolean):
                 const msg = augmentLogMsg(timestampStr, loggerName, methodName, args);
                 rawMethod(msg);
 
-                chrome.runtime.sendMessage({
-                    reqType: PageRequestType.LOG, timestamp: timestampStr, loggerName: loggerName, level: methodName,
-                    args: args
-                }).catch((err) => {
-                    console.error("error [<", err, ">] while sending log message [<", msg,
-                        ">] to background script for persistence");
-                });
+                try {
+                    chrome.runtime.sendMessage({
+                        reqType: PageRequestType.LOG, timestamp: timestampStr, loggerName: loggerName,
+                        level: methodName, args: args
+                    }).catch((err) =>
+                        console.error(`error [<${err}>] while sending log message [<${msg}>] to background script for persistence`));
+                } catch (error: any) {
+                    if ('message' in error && error.message === expectedMsgForSendingRuntimeRequestFromDisconnectedContentScript) {
+                        console.warn(`lost ability to send messages/requests to service-worker/agent-controller (probably page is being unloaded) while trying to send log message to background script for persistence;\n log message: ${msg};\nerror: ${renderUnknownValue(error)}`);
+                    } else {
+                        console.error(`error encountered while trying to send log message to background script for persistence;\n log message: ${msg};\nerror: ${renderUnknownValue(error)}`);
+                    }
+                    throw error;
+                }
             };
         };
     }

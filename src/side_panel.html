@@ -1,200 +1,93 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="h-full">
 <head>
     <meta charset="UTF-8">
     <title>SeeAct Chrome Agent</title>
-<!--    todo explore how this styling looks on different screen resolutions than my laptop's-->
-    <style>
-        #task-spec {
-            width: 100%;
-            height: 7vh;
-            font-size: 12px;
-            border-color: #5dff55;
-        }
-
-        #start-agent {
-            background-color: #5dff55;
-        }
-
-        #end-task {
-            background-color: #a727ff;
-            color: lightblue;
-        }
-
-        label {
-            font-size: 20px;
-        }
-
-        hr {
-            border: none;
-            border-top: 1px solid #333; /* Set the top border to be a solid line */
-            color: #333; /* Set the color of the line */
-            background-color: #333; /* Set the background color of the line */
-            height: 1px; /* Set the height of the line */
-            width: 100%; /* Set the width of the line */
-        }
-
-        #history {
-            height: 45vh; /*history view should take up a plurality of the side panel's space*/
-            border: 2px saddlebrown solid;
-            overflow-y: auto;
-        }
-
-        #history-label {
-            text-align: center;
-            display: block;
-        }
-
-        #history li {
-            border: 1px saddlebrown dotted;
-            margin: 5px;
-            padding: 5px;
-            font-size: 14px;
-        }
-
-        #history li.task_start {
-            background-color: #5dff55;
-        }
-
-        #history li.task_end {
-            background-color: #a727ff;
-        }
-
-        #status-update-container {
-            display: flex;
-            align-items: center;
-            justify-items: left;
-            height: 50px;
-            overflow-y: auto;
-        }
-
-        #status-icon {
-            margin-right: 4px;
-        }
-
-        #pending-action-heading_container {
-            display: flex;
-            align-items: center;
-        }
-
-        #pending-action-heading {
-            color: #ffef05;
-            background-color: blue;
-        }
-
-        #pending-action {
-            border: 1px #ffef05 solid;
-            width: 100%;
-            height: 6vh;
-            font-size: 16px;
-            overflow-y: auto;
-        }
-
-        #monitor-mode-container {
-            height: 18vh;
-        }
-
-        #monitor-mode-heading {
-            font-size: 25px;
-            text-align: center;
-        }
-
-        #monitor-feedback {
-            width: 100%;
-            height: 25%;
-            font-size: 12px;
-            margin-bottom: 2px;
-        }
-
-        .buttons_row_container {
-            display: flex;
-            justify-content: space-evenly;
-        }
-
-        .icon_button_container {
-            display: flex;
-            flex-direction: row;
-            align-items: center; /*to vertically align the icon and button nicely alongside each other*/
-        }
-
-        .icon_button_container img {
-            margin-right: 3px;
-        }
-    </style>
 </head>
-<body>
-<label id="task-spec-label" for="task-spec"
-       title="the task should be completable when starting from the website which is loaded in the current tab">
-    Agent Task Specification</label>
-<br>
-<textarea id="task-spec">Enter a task specification for the SeeAct agent</textarea>
+<body class="h-full bg-gray-100 p-2 space-y-1">
+<div class="border bg-emerald-100/50 rounded-lg p-1">
+    <label for="task-spec" class="block text-lg font-semibold"
+           title="the task should be completable when starting from the website which is loaded in the current tab">
+        Agent Task Specification
+    </label>
+    <textarea id="task-spec" class="w-full h-24 p-2 mb-1 border bg-emerald-100/50 rounded resize-y"
+              placeholder="Enter a task specification for the SeeAct agent"></textarea>
 
-<div class="buttons_row_container">
-    <div class="icon_button_container">
-        <img src="../images/start_task_icon.webp" alt="start task button's icon" id="start-task-icon">
-        <button id="start-agent">Start Agent</button>
-    </div>
-    <div class="icon_button_container">
-        <img src="../images/terminate_task_icon.webp" alt="terminate task button's icon" id="terminate-task-icon">
-        <button disabled id="end-task">Terminate Task</button>
+    <div class="flex justify-evenly">
+        <button id="start-agent" class="flex items-center px-2 py-1 bg-green-200 hover:bg-green-300 rounded">
+            <img src="../images/task_start_icon.webp" alt="start task" class="w-auto h-5 mr-2">
+            Start Agent
+        </button>
+        <button id="end-task" class="flex items-center px-2 py-1 bg-purple-200 hover:bg-purple-300 rounded" disabled>
+            <img src="../images/task_kill_icon.webp" alt="terminate task" class="w-auto h-5 mr-2">
+            Terminate Task
+        </button>
+        <!--    todo why doesn't this button, when disabled, look as much greyer than normal as start task button does when disabled?-->
+
     </div>
 </div>
-<hr>
-<div id="history-container">
-    <label id="history-label" for="history">Actions History</label>
-    <ol id="history">
+
+<hr class="border-gray-300">
+
+<div id="history-container" class="space-y-1 border bg-indigo-100/50 rounded-lg p-1">
+    <label id="history-label" for="history" class="block text-lg font-semibold text-center">Actions
+        History</label>
+    <ol id="history" class="h-36 overflow-y-auto p-4 space-y-1 resize-y list-decimal rounded list-outside">
+        <!-- History items will be added here dynamically -->
     </ol>
 </div>
-<!--todo add better hovertext impl for status (e.g. to show really long planning output) with separate element rather than manipulating title attribute-->
-<div id="status-update-container">
-    <img src="../images/shrunk_status_update_icon.webp" alt="status icon" id="status-icon">
-    <div id="status">No status update available at the moment.</div>
-</div>
-<br>
-<div id="pending-action-heading_container">
-<img src="../images/shrunk_pending_action_icon.webp" alt="hopeful robot face with lightbulb to signify idea">
-<label for="pending-action" id="pending-action-heading">Pending Action</label>
-</div>
-<div id="pending-action"></div>
-<br>
-<!--todo add logic to hide monitor mode elements unless/until monitor mode is enabled
-        if this is added, history panel's max size should be grow accordingly when monitor mode is disabled
-        and then shrink back to normal when monitor mode's enabled so the side panel as a whole doesn't
-        have to scroll on normal-height screens-->
-<div id="monitor-mode-container">
-    <div id="monitor-mode-heading">Monitor Mode</div>
-    <label for="monitor-feedback"
-           title="Hint- if you reject the proposed action after doing something to the page, please mention that thing in the feedback">Feedback
-        to Agent</label>
-    <textarea id="monitor-feedback" disabled>
 
-    </textarea>
+<div class="space-y-1 border bg-cyan-100/50 rounded-lg p-1">
+    <div id="status-update-container" class="flex items-center h-12 overflow-y-auto mb-1">
+        <img src="../images/status_update_icon.webp" alt="status icon" class="w-auto h-8 mr-2">
+        <div id="status" class="text-sm">No status update available at the moment.</div>
+    </div>
 
-    <div class="buttons_row_container">
-        <div class="icon_button_container">
-            <img src="../images/robot_thumbs_up.webp" alt="monitor approve button's icon" id="monitor-approve-icon">
-            <button id="approve" disabled>Approve</button>
-        </div>
-        <div class="icon_button_container">
-            <img src="../images/robot_thumbs_down.webp" alt="monitor reject button's icon" id="monitor-reject-icon">
-            <button id="reject" disabled>Reject</button>
-        </div>
+    <div class="flex items-center">
+        <img src="../images/proposed_action_icon.webp" alt="hopeful robot face with lightbulb" class="w-auto h-6 mr-2">
+        <label for="pending-action" class="text-lg font-semibold px-2 py-1 rounded">Pending Action</label>
     </div>
+    <div id="pending-action" class="h-24 mt-0.5 border-2 p-2 overflow-y-auto text-sm"></div>
 </div>
-<br>
-<hr>
-<div class="buttons_row_container">
-    <div class="icon_button_container">
-        <img src="../images/options_button_gear_icon.webp" alt="options button's icon" id="open-options-icon">
-        <button id="options">Options</button>
+
+<div id="monitor-mode-container" class="space-y-1 bg-violet-100/50 border p-1 rounded-lg">
+    <h2 class="text-xl font-bold text-center">Monitor Mode</h2>
+    <div class="space-y-1">
+        <label for="monitor-feedback" class="block text-sm font-medium"
+               title="Hint- if you reject the proposed action after doing something to the page, please mention that thing in the feedback">
+            Feedback to Agent
+        </label>
+        <textarea id="monitor-feedback" class="w-full h-24 text-sm p-2 bg-violet-100/50 border rounded resize-y" disabled></textarea>
     </div>
-    <div class="icon_button_container">
-        <img src="../images/logs_export_icon.webp" alt="logs export button's icon" id="export-unaffiliated-logs-icon">
-        <button id="export-unaffiliated-logs"
-                title="Most logs from this are the ones not affiliated with any task; however, some of the logs exported with this are some messages from the very beginning or the very end of each task">
-            Download misc logs
+    <div class="flex justify-evenly">
+        <button id="approve" class="flex items-center px-2 py-1 bg-lime-200 hover:bg-lime-300 rounded" disabled>
+            <img src="../images/monitor_approve_thumbs_up_icon.webp" alt="approve" class="w-auto h-5 mr-2">
+            Approve
+        </button>
+        <button id="reject" class="flex items-center px-2 py-1 bg-red-200 hover:bg-red-300 rounded" disabled>
+            <img src="../images/monitor_reject_thumbs_down_icon.webp" alt="reject" class="w-auto h-5 mr-2">
+            Reject
         </button>
     </div>
 </div>
+
+<hr class="border-gray-300">
+
+<div class="flex justify-evenly mt-1 p-1">
+    <button id="options" class="flex items-center px-2 py-1 bg-gray-200 hover:bg-gray-300 rounded">
+        <img src="../images/settings_gear_icon.webp" alt="options" class="w-auto h-7 mr-2">
+        Options
+    </button>
+    <button id="export-unaffiliated-logs" class="flex items-center px-2 py-1 bg-gray-200 hover:bg-gray-300 rounded"
+            title="Most logs from this are the ones not affiliated with any task; however, some of the logs exported with this are some messages from the very beginning or the very end of each task">
+        <img src="../images/misc_logs_export_icon.webp" alt="export logs" class="w-auto h-7 mr-2">
+        Download misc logs
+    </button>
+</div>
+
+<!-- Status details will be added to the tooltip dynamically when it is being made visible -->
+<span id="status-details-tooltip"
+      class="hidden absolute bg-white border border-gray-300 p-2 rounded shadow-lg max-w-full overflow-y-auto">
+</span>
 </body>
 </html>

@@ -15,15 +15,18 @@ import {
 import {Mutex} from "async-mutex";
 import {ActionInfo} from "./AgentController";
 import saveAs from "file-saver";
+import {marked} from "marked";
 
 
 export interface SidePanelElements {
     startButton: HTMLButtonElement;
     taskSpecField: HTMLTextAreaElement;
     statusDiv: HTMLDivElement;
+    statusPopup: HTMLSpanElement;
     killButton: HTMLButtonElement;
     historyList: HTMLOListElement;
     pendingActionDiv: HTMLDivElement;
+    monitorModeContainer: HTMLDivElement;
     monitorFeedbackField: HTMLTextAreaElement;
     monitorApproveButton: HTMLButtonElement;
     monitorRejectButton: HTMLButtonElement;
@@ -46,9 +49,11 @@ export class SidePanelManager {
     private readonly startButton: HTMLButtonElement;
     private readonly taskSpecField: HTMLTextAreaElement;
     private readonly statusDiv: HTMLDivElement;
+    private readonly statusPopup: HTMLSpanElement;
     private readonly killButton: HTMLButtonElement;
     private readonly historyList: HTMLOListElement;
     private readonly pendingActionDiv: HTMLDivElement;
+    private readonly monitorModeContainer: HTMLDivElement;
     private readonly monitorFeedbackField: HTMLTextAreaElement;
     private readonly monitorApproveButton: HTMLButtonElement;
     private readonly monitorRejectButton: HTMLButtonElement;
@@ -59,22 +64,30 @@ export class SidePanelManager {
 
     readonly mutex = new Mutex();
 
-    //allow read access to this without mutex because none of this class's code should _ever_ mutate it (only updated by storage change listener that was set up in constructor)
-    cachedMonitorMode = defaultIsMonitorMode;
+    //allow read access to this without mutex; only written to by the handleMonitorModeCacheUpdate method
+    //has to initially be true (even if the default is actually false) so that handleMonitorModeCacheUpdate() call
+    // in constructor will minimize the monitor mode UI
+    cachedMonitorMode = true;
     shouldWipeActionHistoryOnTaskStart = defaultShouldWipeActionHistoryOnStart;
 
 
     private state: SidePanelMgrState = SidePanelMgrState.IDLE;
     public serviceWorkerPort?: chrome.runtime.Port;
     public serviceWorkerReady = false;
+    lastHeightOfMonitorModeContainer = 0;//px
+
+    public mouseClientX = -1;
+    public mouseClientY = -1;
 
     constructor(elements: SidePanelElements, chromeWrapper?: ChromeWrapper, logger?: Logger, overrideDoc?: Document) {
         this.startButton = elements.startButton;
         this.taskSpecField = elements.taskSpecField;
         this.statusDiv = elements.statusDiv;
+        this.statusPopup = elements.statusPopup;
         this.killButton = elements.killButton;
         this.historyList = elements.historyList;
         this.pendingActionDiv = elements.pendingActionDiv;
+        this.monitorModeContainer = elements.monitorModeContainer;
         this.monitorFeedbackField = elements.monitorFeedbackField;
         this.monitorApproveButton = elements.monitorApproveButton;
         this.monitorRejectButton = elements.monitorRejectButton;
@@ -83,7 +96,10 @@ export class SidePanelManager {
         this.logger = logger ?? createNamedLogger('side-panel-mgr', false);
         this.dom = overrideDoc ?? document;
 
-        setupMonitorModeCache(this);
+        //have to initialize to default value this way to ensure that the monitor mode container is hidden if the default is false
+        this.handleMonitorModeCacheUpdate(defaultIsMonitorMode);
+
+        setupMonitorModeCache(this.handleMonitorModeCacheUpdate, this.logger);
         if (chrome?.storage?.local) {
             chrome.storage.local.get(["shouldWipeHistoryOnTaskStart"], (items) => {
                 this.validateAndApplySidePanelOptions(true, items.shouldWipeHistoryOnTaskStart);
@@ -493,19 +509,22 @@ export class SidePanelManager {
                 && this.state !== SidePanelMgrState.WAIT_FOR_TASK_ENDED) {
                 this.logger.error(`received TASK_ENDED message from service worker port unexpectedly (while in state ${SidePanelMgrState[this.state]})`);
             }
-            this.setStatusWithDelayedClear(`Task ${message.taskId} ended`, 20, message.details);
+            this.setStatusWithDelayedClear(`Task ${message.taskId} ended`, 30, message.details);
             this.addHistoryEntry(`Task ended`, `Ended task id: ${message.taskId} for reason ${message.details}`, "task_end");
         }
         this.reset();
     }
 
 
-    private setStatusWithDelayedClear(status: string, delay: number = 10, hovertext: string = "") {
+    private setStatusWithDelayedClear(status: string, delay: number = 10, hovertext?: string) {
         this.statusDiv.textContent = status;
-        this.statusDiv.title = hovertext;
+        if (hovertext) {
+            this.statusPopup.innerHTML = marked.setOptions({async: false}).parse(hovertext) as string;
+        }
         setTimeout(() => {
             this.statusDiv.textContent = 'No status update available at the moment.';
-            this.statusDiv.title = '';
+            this.statusPopup.innerHTML = '';
+            this.statusPopup.style.display = "none";
         }, delay * 1000)
     }
 
@@ -530,4 +549,47 @@ export class SidePanelManager {
         this.historyList.appendChild(newEntry);
     }
 
+    displayStatusPopup = (): void => {
+        if (this.statusPopup.style.display !== "block" && this.statusPopup.innerHTML.trim() !== "") {
+            this.statusPopup.style.display = "block";
+            const statusRect = this.statusDiv.getBoundingClientRect();
+            this.statusPopup.style.maxHeight = `${statusRect.top}px`;
+            this.statusPopup.style.left = `0px`;
+            //the addition of 5 is so the details popup overlaps a little with the status div and so you can move
+            // the mouse from the div to the popup without the popup sometimes disappearing
+            this.statusPopup.style.top = `${statusRect.y + 4 - this.statusPopup.offsetHeight + window.scrollY}px`;
+        }
+    }
+
+    handleMouseLeaveStatus = (elementThatWasLeft: HTMLElement): void => {
+        //using referential equality intentionally here
+        const otherStatusElemRect = (elementThatWasLeft == this.statusDiv ? this.statusPopup : this.statusDiv).getBoundingClientRect();
+        if (this.mouseClientX < otherStatusElemRect.left || this.mouseClientX > otherStatusElemRect.right
+            || this.mouseClientY < otherStatusElemRect.top || this.mouseClientY > otherStatusElemRect.bottom) {
+            this.statusPopup.style.display = 'none';
+        }
+    }
+
+    handleMonitorModeCacheUpdate = (newMonitorModeVal: boolean) => {
+        this.mutex.runExclusive(() => {
+            const priorCachedMonitorModeVal = this.cachedMonitorMode;
+            this.cachedMonitorMode = newMonitorModeVal;
+            if (priorCachedMonitorModeVal === newMonitorModeVal) {
+                this.logger.trace(`side panel cache of monitor mode received an update which agreed with the existing cached value ${this.cachedMonitorMode}`)
+                return;
+            }
+            const priorHistoryHeight = this.historyList.getBoundingClientRect().height;//px
+
+            if (newMonitorModeVal) {//re-displaying monitor mode UI
+                const newHistoryHeight = priorHistoryHeight-this.lastHeightOfMonitorModeContainer;//px
+                this.historyList.style.height = `${(newHistoryHeight)}px`;
+                this.monitorModeContainer.style.display = "block";
+            } else {//collapsing monitor mode UI
+                this.lastHeightOfMonitorModeContainer = this.monitorModeContainer.getBoundingClientRect().height;
+                const newHistoryHeight = priorHistoryHeight+this.lastHeightOfMonitorModeContainer;//px
+                this.historyList.style.height = `${(newHistoryHeight)}px`;
+                this.monitorModeContainer.style.display = "none";
+            }
+        }).catch((error) => this.logger.error(`error while updating monitor mode cache: ${renderUnknownValue(error)}`));
+    }
 }

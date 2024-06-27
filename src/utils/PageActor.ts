@@ -127,6 +127,8 @@ export class PageActor {
         // (that might only be necessary when doing a 'press sequentially' approach)
         if (tagName === "input") {
             const inputElem = elementToActOn as HTMLInputElement;
+            //interestingly, there's at least one case (MFA screen for OSU) where this doesn't work, even
+            // though doing the exact same operation via the console in Chrome Dev Tools does work
             inputElem.value = valueForAction;
             actionOutcome.success = true;
         } else if (tagName === "textarea") {

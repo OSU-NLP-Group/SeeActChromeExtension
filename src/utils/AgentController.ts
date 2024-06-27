@@ -87,6 +87,9 @@ export type ActionInfo = {
  */
 type ActionRecord = { actionDesc: string, success: boolean, noopType?: NoopType, explanation: string };
 
+/**
+ * stores all relevant info about a round of LMM output for later export at end of task
+ */
 type PredictionRecord = {
     modelPlanningOutput: string,
     modelGroundingOutput: string,
@@ -96,11 +99,16 @@ type PredictionRecord = {
     explanation: string
 };
 
+/**
+ * these alarms are turned on when the side panel makes contact with the service worker and turned off when that
+ * connection is lost. They serve to keep the service worker responsive to user input in the side panel
+ *
+ * with just 1 keepalive alarm, sometimes it would serve its purpose (if Chrome fired that event a fraction of a second early)
+ *  but it would fail to do its job if there was a 30 second period with no keepalive pings from the side panel (side
+ *  panel pings to service worker are bafflingly unreliable) and that time the alarm fired even a tiny fraction of a
+ * second more than 30 seconds after the previous firing
+ */
 export const serviceWorkerKeepaliveAlarmName = "serviceWorkerKeepaliveAlarm";
-//with just 1 keepalive alarm, sometimes it would serve its purpose (if Chrome fired that event a fraction of a second early)
-// but it would fail to do its job if there was a 30 second period with no keepalive pings from the side panel (side
-// panel pings to service worker are bafflingly unreliable) and that time the alarm fired even a tiny fraction of a
-// second more than 30 seconds after the previous firing
 export const serviceWorker2ndaryKeepaliveAlarmName = "serviceWorker2ndaryKeepaliveAlarm";
 
 
@@ -111,7 +119,7 @@ export const serviceWorker2ndaryKeepaliveAlarmName = "serviceWorker2ndaryKeepali
  * @description Controller for the agent that completes tasks for the user in their browser
  */
 export class AgentController {
-    terminationSignal: boolean = false;//this is the only piece of state that should be accessed without the mutex
+    terminationSignal: boolean = false;//this is the ~only piece of state that should be accessed without the mutex
 
     readonly mutex = new Mutex();
 
@@ -190,7 +198,7 @@ export class AgentController {
         this.logger = createNamedLogger('agent-controller', true);
         this.logger.debug(`max ops limit: ${this.maxOpsLimit}, max noop limit: ${this.maxNoopLimit}, max failure limit: ${this.maxFailureLimit}, max failure-or-noop streak limit: ${this.maxFailureOrNoopStreakLimit}`);
 
-        setupMonitorModeCache(this);
+        setupMonitorModeCache((newMonitorModeVal: boolean) => this.cachedMonitorMode = newMonitorModeVal, this.logger);
         if (chrome?.storage?.local) {
             chrome.storage.local.get(["maxOps", "maxNoops", "maxFailures", "maxFailureOrNoopStreak"], (items) => {
                 this.validateAndApplyAgentOptions(true, items.maxOps, items.maxNoops, items.maxFailures, items.maxFailureOrNoopStreak);
@@ -202,6 +210,16 @@ export class AgentController {
         }
     }
 
+    /**
+     * validates information from local storage about agent-controller-specific options and applies any valid updates
+     * to the controller's instance variables
+     * @param initOrUpdate whether this is being called for the lazy initialization of the controller's options on
+     *                      start-up (true) or for an update of those options based on a change in local storage (false)
+     * @param newMaxOps possible new value for this.maxOpsLimit
+     * @param newMaxNoops possible new value for this.maxNoopLimit
+     * @param newMaxFailures possible new value for this.maxFailureLimit
+     * @param newMaxFailureOrNoopStreak possible new value for this.maxFailureOrNoopStreakLimit
+     */
     validateAndApplyAgentOptions = (
         initOrUpdate: boolean, newMaxOps: unknown, newMaxNoops: unknown, newMaxFailures: unknown,
         newMaxFailureOrNoopStreak: unknown): void => {
@@ -317,6 +335,10 @@ export class AgentController {
         }
     }
 
+    /**
+     * processes new connection from a content script
+     * @param port the persistent communication connection with that content script
+     */
     addPageConnection = async (port: Port): Promise<void> => {
         await this.mutex.runExclusive(() => {
             if (this.state !== AgentControllerState.WAITING_FOR_CONTENT_SCRIPT_INIT) {
@@ -332,6 +354,10 @@ export class AgentController {
         });
     }
 
+    /**
+     * handles the creation of a new connection from the side panel
+     * @param port the persistent communication connection with the side panel
+     */
     addSidePanelConnection = async (port: Port): Promise<void> => {
         await this.mutex.runExclusive(() => {
             if (this.state !== AgentControllerState.IDLE) {
@@ -653,7 +679,7 @@ export class AgentController {
 
         this.predictionsInTask.push({
             modelPlanningOutput: planningOutput, modelGroundingOutput: groundingOutput,
-            targetElementData: chosenCandidateIndex && chosenCandidateIndex < candidateIds.length
+            targetElementData: chosenCandidateIndex !== undefined && chosenCandidateIndex < candidateIds.length
                 ? interactiveElements[candidateIds[chosenCandidateIndex]] : undefined,
             actionName: action, value: value, explanation: explanation
         });
@@ -692,8 +718,8 @@ export class AgentController {
             || action === Action.PRESS_ENTER;
 
 
-        if ((!chosenCandidateIndex || chosenCandidateIndex > candidateIds.length) && !actionNeedsNoElement) {
-            this.logger.warn(`ai selected invalid option ${element} ` + (chosenCandidateIndex
+        if ((chosenCandidateIndex == undefined || chosenCandidateIndex > candidateIds.length) && !actionNeedsNoElement) {
+            this.logger.warn(`ai selected invalid option ${element} ` + (chosenCandidateIndex !== undefined
                 ? `(was parsed as candidate index ${chosenCandidateIndex}, but the candidates list only had ${candidateIds.length} entries)`
                 : `(cannot be parsed into an index)`) + ", counting as noop action and reprompting");
             this.noopCount++;
@@ -739,11 +765,11 @@ export class AgentController {
         //todo if it says 'scroll down' when viewport info shows that we're already at the bottom, simply treat that as a no-op and remprompt
         // same for scroll up when at top
 
-        if (chosenCandidateIndex && chosenCandidateIndex >= candidateIds.length && actionNeedsNoElement) {
+        if (chosenCandidateIndex !== undefined && chosenCandidateIndex >= candidateIds.length && actionNeedsNoElement) {
             chosenCandidateIndex = undefined;
         }
 
-        const chosenElementIndex: number | undefined = chosenCandidateIndex ? candidateIds[chosenCandidateIndex] : undefined;
+        const chosenElementIndex: number | undefined = chosenCandidateIndex != undefined ? candidateIds[chosenCandidateIndex] : undefined;
         this.logger.debug(`acting on the ${chosenCandidateIndex} entry from the candidates list; which is the ${chosenElementIndex} element of the original interactiveElements list`);
 
         this.pendingActionInfo = {
@@ -757,6 +783,16 @@ export class AgentController {
         return LmmOutputReaction.PROCEED_WITH_ACTION;
     }
 
+    /**
+     * takes screenshot of current tab, tries to save it to database (asynchronously), and returns that screenshot
+     * as a data url
+     * @param screenshotType what the purpose of the screenshot is (e.g. initial for prompting the model to pick a
+     *          next action, 'targeted' to visually capture which element the model chose to target, etc.)
+     * @param promptingIndexForAction how many prompting screenshots had been taken before this one for the current
+     *          action (i.e. without an action being decided-on/performed between those prior prompting screenshots and
+     *          this screenshot)
+     * @return a data url of the screenshot (i.e. base64-encoded string for the png file's bytes)
+     */
     captureAndStoreScreenshot = async (screenshotType: string, promptingIndexForAction: number): Promise<string | undefined> => {
         let screenshotDataUrl: string | undefined;
         if (this.taskId === undefined) {
@@ -766,7 +802,14 @@ export class AgentController {
             return;
         }
 
-        const screenshotTs = new Date().toISOString();
+        //removing Z because it could throw off string-based ordering in browser db index if some entries timestamps
+        // were millisecond precision and others were microsecond precision.
+        // Realistically, this is probably not a possible problem for screenshot object store (since all entries in
+        // that store are created by the service worker), but it is a necessary measure for the logs store (since some
+        // entries in that store are created by things that can use performance.now() (i.e. side panel) while others
+        // are created by things that can't (i.e. the service worker and content script));
+        // It's better for all timestamps in the indexeddb to follow the same convention
+        const screenshotTs = new Date().toISOString().slice(0, -1);
         try {
             screenshotDataUrl = await this.chromeWrapper.fetchVisibleTabScreenshot();
         } catch (error: any) {
@@ -1028,16 +1071,18 @@ export class AgentController {
         } else if (message.type === Panel2BackgroundPortMsgType.MONITOR_REJECTED) {
             await this.mutex.runExclusive(() => this.processMonitorRejection(message));
         } else if (message.type === Panel2BackgroundPortMsgType.KEEP_ALIVE) {
-            this.logger.trace("received keep-alive message from side panel");//todo remove this after figuring out why keep-alive sometimes fails every 2 minutes or so
+            this.logger.trace("received keep-alive message from side panel");
             //ignore this message; just receiving it serves the purpose of keeping Chrome from killing the service
-            // worker for another 30sec
+            // worker for another 30sec; as an added layer of redundancy on top of the keep-alive alarms
+            // Just the alarms on their own still lead to service worker disconnects every few hours
         } else if (message.type === Panel2BackgroundPortMsgType.EXPORT_UNAFFILIATED_LOGS) {
             if (dbConnHolder.dbConn) {
                 const zip = new JSZip();
                 const logFileContents = await this.retrieveLogsForTaskId(dbConnHolder.dbConn, taskIdPlaceholderVal);
                 if (logFileContents != undefined) {
-                    zip.file(`non_task_specific_${new Date().toISOString()}.log`, logFileContents);
-                    this.sendZipToSidePanelForDownload(taskIdPlaceholderVal, zip, `misc_logs_${new Date().toISOString()}.zip`);
+                    const fileSafeTimestampStr = new Date().toISOString().split(":").join("-").split(".").join("_");
+                    zip.file(`non_task_specific_${fileSafeTimestampStr}.log`, logFileContents);
+                    this.sendZipToSidePanelForDownload(taskIdPlaceholderVal, zip, `misc_logs_${fileSafeTimestampStr}.zip`);
                 } //error message already logged in retrieveLogsForTaskId()
             } else { this.logger.error("no db connection available to export non-task-specific logs"); }
         } else {
@@ -1140,6 +1185,9 @@ export class AgentController {
                     this.terminateTask(termReason);
                     return;
                 }
+                await this.injectPageActorScript(false);
+            } else if (this.state === AgentControllerState.WAITING_FOR_CONTENT_SCRIPT_INIT) {
+                this.logger.info("service worker's connection to content script was lost while waiting for the new page to finish loading, probably means another navigation happened automatically. trying to inject the content script into the new page");
                 await this.injectPageActorScript(false);
             } else if (this.state === AgentControllerState.IDLE) {
                 this.logger.debug("service worker's connection to content script was lost while in idle state; ignoring");
@@ -1338,6 +1386,9 @@ export class AgentController {
             const screenshotBytes = base64ToByteArray(screenshotRecord.screenshot64);
             this.logger.debug(`after conversion from base64 to binary, screenshot bytes length: ${screenshotBytes.length}`);
             const fileSafeTimestampStr = screenshotRecord.timestamp.split(":").join("-").split(".").join("_");
+            //note - if prof or users request, can add the Z's back in when exporting from db to screenshot downloads,
+            // to make clear to consumers of those downloads that the timestamps in their file names are in UTC+0
+
             const screenshotFileName = `action-${screenshotRecord.numPriorActions}_promptingIndexForAction-${screenshotRecord.numPriorScreenshotsForPrompts}_type-${screenshotRecord.screenshotType}_ts-${fileSafeTimestampStr}.png`;
             screenshotsFolder.file(screenshotFileName, screenshotBytes);
         }
@@ -1359,14 +1410,15 @@ export class AgentController {
             return undefined;
         }
         logsForTask.sort((msg1, msg2) => {
-            //trimming Z timezone indicator to avoid throwing off comparison, since all timestamps are in UTC+0 and end with 'Z'
-            const msg1TzAgnosticTs = msg1.timestamp.slice(0, -1);
-            const msg2TzAgnosticTs = msg2.timestamp.slice(0, -1);
-            if (msg1TzAgnosticTs < msg2TzAgnosticTs) return -1;
-            if (msg1TzAgnosticTs > msg2TzAgnosticTs) return 1;
+            //Z timezone indicator was already trimmed off during storage in db to avoid screwing up ordering of
+            // by-ts index; this was safe because all timestamps are in UTC+0
+            if (msg1.timestamp < msg2.timestamp) return -1;
+            if (msg1.timestamp > msg2.timestamp) return 1;
             return 0;
         });
 
+        //note - if prof or users request, can add the Z's back in when exporting from db to log file, to make clear
+        // that they're in UTC+0
         const logFileContents = logsForTask.map(log =>
             `${log.timestamp} ${log.loggerName} ${log.level.toUpperCase()}: ${log.msg}`)
             .join("\n");

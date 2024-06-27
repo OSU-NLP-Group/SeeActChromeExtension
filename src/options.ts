@@ -7,6 +7,9 @@ import {
     defaultMaxOps, defaultShouldWipeActionHistoryOnStart, validateIntegerLimitUpdate
 } from "./utils/misc";
 
+import "./global_styles.css";
+import "./options.css";
+
 const logger = createNamedLogger('options-menu', false);
 
 const openAiApiKeyField = document.getElementById('open-ai-api-key') as HTMLInputElement;

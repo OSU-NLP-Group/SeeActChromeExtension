@@ -1,5 +1,7 @@
 import {createNamedLogger} from "./utils/shared_logging_setup";
 
+import "./global_styles.css";
+
 const logger = createNamedLogger("installation-greeting", false);
 
 const installWarningsList = document.getElementById("install-warnings") as HTMLOListElement;

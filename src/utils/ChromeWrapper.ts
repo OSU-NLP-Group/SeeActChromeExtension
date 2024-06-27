@@ -1,3 +1,4 @@
+import {expectedMsgForSendingRuntimeRequestFromDisconnectedContentScript, renderUnknownValue} from "./misc";
 
 
 /**
@@ -91,7 +92,16 @@ export class ChromeWrapper {
      * @return Promise that resolves with the response from the service worker
      */
     sendMessageToServiceWorker = <M = any, R = any>(message: M): Promise<R> => {
-        return chrome.runtime.sendMessage(message);
+        try {
+            return chrome.runtime.sendMessage(message);
+        } catch (error: any) {
+            if ('message' in error && error.message === expectedMsgForSendingRuntimeRequestFromDisconnectedContentScript) {
+                console.warn(`lost ability to send messages/requests to service-worker/agent-controller (probably page is being unloaded);\n message/request: ${renderUnknownValue(message)};\nerror: ${renderUnknownValue(error)}`);
+            } else {
+                console.error(`error encountered while trying to send message/request to service-worker/agent-controller;\n message/request: ${renderUnknownValue(message)};\nerror: ${renderUnknownValue(error)}`);
+            }
+            throw error;
+        }
     }
 
 

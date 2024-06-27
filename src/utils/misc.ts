@@ -5,6 +5,7 @@ import {SerializableElementData} from "./BrowserHelper";
 export const expectedMsgForPortDisconnection = "Attempting to use a disconnected port object";
 export const pageToControllerPort = `page-actor-2-agent-controller`;
 export const panelToControllerPort = "side-panel-2-agent-controller";
+export const expectedMsgForSendingRuntimeRequestFromDisconnectedContentScript = "Extension context invalidated.";
 
 //ms, how long to sleep (after editing an element for highlighting) before telling the service worker to take a
 // screenshot; i.e. longest realistic amount of time the browser might take to re-render the modified element
@@ -155,22 +156,22 @@ export function renderUnknownValue(val: unknown): string {
     }
 }
 
-function processUpdateToMonitorModeCache(storedMonitorMode: unknown, objWithMonitorMode: { cachedMonitorMode: boolean; logger: Logger}) {
+function processUpdateToMonitorModeCache(storedMonitorMode: unknown, cacheUpdater: (newVal: boolean) => void, logger: Logger) {
     if (typeof storedMonitorMode === "boolean") {
-        objWithMonitorMode.cachedMonitorMode = storedMonitorMode;
+        cacheUpdater(storedMonitorMode);
     } else if (typeof storedMonitorMode !== "undefined") {
-        objWithMonitorMode.logger.error(`invalid monitor mode value was inserted into local storage: ${storedMonitorMode}, ignoring it`)
+        logger.error(`invalid monitor mode value was inserted into local storage: ${storedMonitorMode}, ignoring it`);
     }
 }
 
-export function setupMonitorModeCache(objWithMonitorMode: {cachedMonitorMode: boolean, logger: Logger}) {
+export function setupMonitorModeCache(cacheUpdater: (newVal: boolean) => void, logger: Logger) {
     if (chrome?.storage?.local) {
         chrome.storage.local.get("isMonitorMode", (items) => {
-            processUpdateToMonitorModeCache(items.isMonitorMode, objWithMonitorMode);
+            processUpdateToMonitorModeCache(items.isMonitorMode, cacheUpdater, logger);
         });
         chrome.storage.local.onChanged.addListener((changes: {[p: string]: chrome.storage.StorageChange}) => {
             if (changes.isMonitorMode !== undefined) {
-                processUpdateToMonitorModeCache(changes.isMonitorMode.newValue, objWithMonitorMode);
+                processUpdateToMonitorModeCache(changes.isMonitorMode.newValue, cacheUpdater, logger);
             }
         });
     }

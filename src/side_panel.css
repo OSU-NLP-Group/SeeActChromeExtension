@@ -1,0 +1,38 @@
+/*todo use light touch css to ensure the focused element is clearly distinguishable from the rest
+   https://developer.chrome.com/docs/extensions/how-to/ui/a11y#navigation
+   seems to have been handled by tailwind's defaults, but need to double check again after finishing ui overhaul*/
+
+#history {
+    padding-left: 15px;/*todo check if still necessary*/
+}
+
+#history li {
+    border: 1px rgb(55, 48, 163) dotted;
+    margin: 5px;
+    padding: 5px;
+    font-size: 14px;
+}
+
+#history li.task_start {
+    background-color: rgba(187, 247, 208, 0.5);
+    color: black;
+}
+
+#history li.task_end {
+    background-color: rgba(216, 180, 254, 0.5);
+    color: black;
+}
+
+#status-details-tooltip {
+    color: black;/*todo check if necessary*/
+    border-radius: 6px;
+    box-sizing: border-box;
+}
+
+/*otherwise the planning output in the details popup has way too many blank lines/vertical whitespace*/
+#status-details-tooltip {
+    & p, & li, & ul, & ol, & h1, & h2, & h3, & h4, & h5 {
+        margin-top: 0;
+        margin-bottom: 0;
+    }
+}
