@@ -101,6 +101,7 @@ export class SidePanelManager {
 
         setupMonitorModeCache(this.handleMonitorModeCacheUpdate, this.logger);
         if (chrome?.storage?.local) {
+            //todo get following to use storage key string const in all 3 places
             chrome.storage.local.get(["shouldWipeHistoryOnTaskStart"], (items) => {
                 this.validateAndApplySidePanelOptions(true, items.shouldWipeHistoryOnTaskStart);
             });

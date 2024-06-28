@@ -23,6 +23,7 @@ export const origLoggerFactory = log.methodFactory;
 export const defaultLogLevel: keyof LogLevel = "TRACE";//todo change this to warn before release
 
 const logLevelCache: { chosenLogLevel: keyof LogLevel } = {chosenLogLevel: defaultLogLevel}
+//todo get following to use storage key string const in all 5 places
 chrome.storage.local.get("logLevel").then((items) => {
     if (isLogLevelName(items.logLevel)) {
         logLevelCache.chosenLogLevel = items.logLevel;
@@ -196,6 +197,7 @@ export const createNamedLogger = (loggerName: string, inServiceWorker: boolean):
     newLogger.rebuild();
 
     if (chrome?.storage?.local) {
+        //todo get following to use storage key string const in all 2 places
         chrome.storage.local.get("logLevel", (items) => {
             const storedLevel: unknown = items.logLevel;
             if (isLogLevelName(storedLevel)) {

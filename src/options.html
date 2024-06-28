@@ -8,9 +8,29 @@
 <section class="space-y-4 rounded-lg bg-blue-100 p-2">
     <h1 class="text-2xl font-bold" title="the agent will not be able to run unless these settings are configured">Required Settings</h1>
     <div class="space-y-2 flex items-center">
-        <label for="open-ai-api-key" class="block font-semibold mr-2" title="The agent will crash if it is not given the ability to query an AI model">OpenAI API Key</label>
+        <label for="model-provider" class="block font-semibold mr-2" title="The provider of the AI model that the agent will use">AI Model Provider</label>
+        <select id="model-provider" class="w-96 p-2 border rounded">
+            <option value="OPEN_AI" selected>OpenAI (e.g. ChatGPT)</option>
+            <option value="ANTHROPIC">Anthropic (e.g. Claude)</option>
+            <option value="GOOGLE_DEEPMIND">Google DeepMind (e.g. Gemini)</option>
+        </select>
+    </div>
+
+    <div class="space-y-2 flex items-center">
+        <label for="open-ai-api-key" class="block font-semibold mr-2" title="this is required if Open AI is selected as the AI model provider">OpenAI API Key</label>
         <input type="text" id="open-ai-api-key" placeholder="Enter OpenAI API key here" class="w-96 p-2 border rounded">
     </div>
+
+    <div class="space-y-2 flex items-center">
+        <label for="anthropic-api-key" class="block font-semibold mr-2" title="this is required if Anthropic is selected as the AI model provider">Anthropic API Key</label>
+        <input type="text" id="anthropic-api-key" placeholder="Enter Anthropic API key here" class="w-96 p-2 border rounded">
+    </div>
+
+    <div class="space-y-2 flex items-center">
+        <label for="google-deepmind-api-key" class="block font-semibold mr-2" title="this is required if Google Deepmind is selected as the AI model provider">Google Deepmind API Key</label>
+        <input type="text" id="google-deepmind-api-key" placeholder="Enter Google Deepmind API key here" class="w-96 p-2 border rounded">
+    </div>
+
 </section>
 
 <section class="space-y-4 rounded-lg bg-cyan-100 p-2">

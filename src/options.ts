@@ -1,10 +1,19 @@
 import {createNamedLogger, defaultLogLevel, isLogLevelName} from "./utils/shared_logging_setup";
 import {
+    AiProviders,
     defaultIsMonitorMode,
     defaultMaxFailureOrNoopStreak,
     defaultMaxFailures,
     defaultMaxNoops,
-    defaultMaxOps, defaultShouldWipeActionHistoryOnStart, validateIntegerLimitUpdate
+    defaultMaxOps,
+    defaultShouldWipeActionHistoryOnStart, storageKeyForAiProviderType,
+    storageKeyForLogLevel, storageKeyForMaxFailureOrNoopStreak,
+    storageKeyForMaxFailures,
+    storageKeyForMaxNoops,
+    storageKeyForMaxOps,
+    storageKeyForMonitorMode,
+    storageKeyForShouldWipeHistoryOnTaskStart,
+    validateIntegerLimitUpdate
 } from "./utils/misc";
 
 import "./global_styles.css";
@@ -12,8 +21,14 @@ import "./options.css";
 
 const logger = createNamedLogger('options-menu', false);
 
+//todo select elem for provider type
+
 const openAiApiKeyField = document.getElementById('open-ai-api-key') as HTMLInputElement;
 if (!openAiApiKeyField) throw new Error('open-ai-api-key field not found');
+
+//todo anthropic key field
+
+//todo google deepmind key field
 
 const logLevelSelector = document.getElementById('log-level') as HTMLSelectElement;
 if (!logLevelSelector) throw new Error('log-level selector not found');
@@ -43,48 +58,65 @@ const saveButton = document.getElementById('save');
 if (!saveButton) throw new Error('save button not found');
 
 
-chrome.storage.local.get(['openAiApiKey', 'logLevel', 'isMonitorMode', 'maxOps', 'maxNoops', 'maxFailures',
-    'maxFailureOrNoopStreak', 'shouldWipeHistoryOnTaskStart']).then(
+chrome.storage.local.get([storageKeyForAiProviderType, AiProviders.OPEN_AI.storageKeyForApiKey,
+    AiProviders.ANTHROPIC.storageKeyForApiKey, AiProviders.GOOGLE_DEEPMIND.storageKeyForApiKey, storageKeyForLogLevel,
+    storageKeyForMonitorMode, storageKeyForMaxOps, storageKeyForMaxNoops, storageKeyForMaxFailures,
+    storageKeyForMaxFailureOrNoopStreak, storageKeyForShouldWipeHistoryOnTaskStart]).then(
     (items) => {
+
+        //todo handle loading stored provider type
+
         openAiApiKeyField.value = '';
-        if (typeof items.openAiApiKey === 'string') {
-            openAiApiKeyField.value = items.openAiApiKey;
-        } else if (items.openAiApiKey !== undefined) {logger.error(`invalid openAiApiKey value was found in local storage: ${items.openAiApiKey}, ignoring it`);}
+        const openAiApiKeyVal: unknown = items[AiProviders.OPEN_AI.storageKeyForApiKey];
+        if (typeof openAiApiKeyVal === 'string') {
+            openAiApiKeyField.value = openAiApiKeyVal;
+        } else if (openAiApiKeyVal !== undefined) {logger.error(`invalid openAiApiKey value was found in local storage: ${openAiApiKeyVal}, ignoring it`);}
+
+        //todo handle loading anthropic api key
+        //todo handle loading google deepmind api key
+
 
         logLevelSelector.value = defaultLogLevel;
-        if (isLogLevelName(items.logLevel)) {
-            logLevelSelector.value = items.logLevel;
-        } else if (items.logLevel !== undefined) {logger.error(`invalid log level value was found in local storage: ${items.logLevel}, ignoring it`);}
+        const logLevelVal: unknown = items[storageKeyForLogLevel];
+        if (isLogLevelName(logLevelVal)) {
+            logLevelSelector.value = logLevelVal;
+        } else if (logLevelVal !== undefined) {logger.error(`invalid log level value was found in local storage: ${logLevelVal}, ignoring it`);}
 
         monitorModeToggle.checked = defaultIsMonitorMode;
-        if (typeof items.isMonitorMode === 'boolean') {
-            monitorModeToggle.checked = items.isMonitorMode;
-        } else if (items.isMonitorMode !== undefined) {logger.error(`invalid monitor mode value was found in local storage: ${items.isMonitorMode}, ignoring it`);}
+        const monitorModeVal = items[storageKeyForMonitorMode];
+        if (typeof monitorModeVal === 'boolean') {
+            monitorModeToggle.checked = monitorModeVal;
+        } else if (monitorModeVal !== undefined) {logger.error(`invalid monitor mode value was found in local storage: ${monitorModeVal}, ignoring it`);}
 
         maxOpsField.value = String(defaultMaxOps);
-        if (validateIntegerLimitUpdate(items.maxOps, 1)) {
-            maxOpsField.value = String(items.maxOps);
-        } else if (items.maxOps !== undefined) {logger.error(`invalid maxOps value was found in local storage: ${items.maxOps}, ignoring it`);}
+        const maxOpsVal = items[storageKeyForMaxOps];
+        if (validateIntegerLimitUpdate(maxOpsVal, 1)) {
+            maxOpsField.value = String(maxOpsVal);
+        } else if (maxOpsVal !== undefined) {logger.error(`invalid maxOps value was found in local storage: ${maxOpsVal}, ignoring it`);}
 
         maxNoopsField.value = String(defaultMaxNoops);
-        if (validateIntegerLimitUpdate(items.maxNoops)) {
-            maxNoopsField.value = String(items.maxNoops);
-        } else if (items.maxNoops !== undefined) {logger.error(`invalid maxNoops value was found in local storage: ${items.maxNoops}, ignoring it`);}
+        const maxNoopsVal = items[storageKeyForMaxNoops];
+        if (validateIntegerLimitUpdate(maxNoopsVal)) {
+            maxNoopsField.value = String(maxNoopsVal);
+        } else if (maxNoopsVal !== undefined) {logger.error(`invalid maxNoops value was found in local storage: ${maxNoopsVal}, ignoring it`);}
 
-        maxFailuresField.value = String(defaultMaxFailures);// items.maxFailures
-        if (validateIntegerLimitUpdate(items.maxFailures)) {
-            maxFailuresField.value = String(items.maxFailures);
-        } else if (items.maxFailures !== undefined) {logger.error(`invalid maxFailures value was found in local storage: ${items.maxFailures}, ignoring it`);}
+        maxFailuresField.value = String(defaultMaxFailures);
+        const maxFailuresVal = items[storageKeyForMaxFailures];
+        if (validateIntegerLimitUpdate(maxFailuresVal)) {
+            maxFailuresField.value = String(maxFailuresVal);
+        } else if (maxFailuresVal !== undefined) {logger.error(`invalid maxFailures value was found in local storage: ${maxFailuresVal}, ignoring it`);}
 
         maxFailOrNoopStreakField.value = String(defaultMaxFailureOrNoopStreak);
-        if (validateIntegerLimitUpdate(items.maxFailureOrNoopStreak)) {
-            maxFailuresField.value = String(items.maxFailureOrNoopStreak);
-        } else if (items.maxFailureOrNoopStreak !== undefined) {logger.error(`invalid maxFailureOrNoopStreak value was found in local storage: ${items.maxFailureOrNoopStreak}, ignoring it`);}
+        const maxFailOrNoopStreakVal = items[storageKeyForMaxFailureOrNoopStreak];
+        if (validateIntegerLimitUpdate(maxFailOrNoopStreakVal)) {
+            maxFailuresField.value = String(maxFailOrNoopStreakVal);
+        } else if (maxFailOrNoopStreakVal !== undefined) {logger.error(`invalid maxFailureOrNoopStreak value was found in local storage: ${maxFailOrNoopStreakVal}, ignoring it`);}
 
         wipeHistoryOnTaskStartToggle.checked = defaultShouldWipeActionHistoryOnStart;
-        if (typeof items.shouldWipeHistoryOnTaskStart === 'boolean') {
-            wipeHistoryOnTaskStartToggle.checked = items.shouldWipeHistoryOnTaskStart;
-        } else if (items.shouldWipeHistoryOnTaskStart !== undefined) {logger.error(`invalid shouldWipeHistoryOnTaskStart value was found in local storage: ${items.shouldWipeHistoryOnTaskStart}, ignoring it`);}
+        const wipeHistoryOnTaskStartVal = items[storageKeyForShouldWipeHistoryOnTaskStart];
+        if (typeof wipeHistoryOnTaskStartVal === 'boolean') {
+            wipeHistoryOnTaskStartToggle.checked = wipeHistoryOnTaskStartVal;
+        } else if (wipeHistoryOnTaskStartVal !== undefined) {logger.error(`invalid shouldWipeHistoryOnTaskStart value was found in local storage: ${wipeHistoryOnTaskStartVal}, ignoring it`);}
 
         statusDisplay.textContent = "Loaded";
     }, (err) => {
@@ -95,7 +127,12 @@ chrome.storage.local.get(['openAiApiKey', 'logLevel', 'isMonitorMode', 'maxOps',
 
 const pendingStatus = 'Pending changes not saved yet';
 
+//todo consider making list of these interactable elements and then doing a foreach or something for adding change listeners
+
+//todo change listener for provider select
 openAiApiKeyField.addEventListener('input', () => {statusDisplay.textContent = pendingStatus;});
+//todo change listener for anthropic api key
+//todo change listener for google deepmind api key
 logLevelSelector.addEventListener('change', () => {statusDisplay.textContent = pendingStatus;});
 monitorModeToggle.addEventListener('change', () => {statusDisplay.textContent = pendingStatus;});
 maxOpsField.addEventListener('change', () => {statusDisplay.textContent = pendingStatus;});
@@ -115,16 +152,26 @@ saveButton.addEventListener('click', () => {
     const maxNoopsVal = parseInt(maxNoopsField.value);
     const maxFailuresVal = parseInt(maxFailuresField.value);
     const maxFailOrNoopStreakVal = parseInt(maxFailOrNoopStreakField.value);
-    chrome.storage.local.set({
-        openAiApiKey: openAiApiKeyField.value,
-        logLevel: logLevelSelector.value || defaultLogLevel,
-        isMonitorMode: monitorModeToggle.checked,
-        shouldWipeHistoryOnTaskStart: wipeHistoryOnTaskStartToggle.checked,
-        maxOps: maxOpsVal || defaultMaxOps,
-        maxNoops: maxNoopsVal || defaultMaxNoops,
-        maxFailures: maxFailuresVal || defaultMaxFailures,
-        maxFailureOrNoopStreak: maxFailOrNoopStreakVal || defaultMaxFailureOrNoopStreak
-    }).then(() => {
+
+    const newValsForStorage: any = {};
+    //todo maybe add logic here to enforce maxOps having floor of 1
+
+    //todo show error if a given ai provider (with associated api key field) is selected, but its associated api key
+    // field is empty
+
+    //todo save provider type
+    newValsForStorage[AiProviders.OPEN_AI.storageKeyForApiKey] = openAiApiKeyField.value;
+    //todo save anthropic api key
+    //todo save google deepmind api key
+    newValsForStorage[storageKeyForLogLevel] = logLevelSelector.value || defaultLogLevel;
+    newValsForStorage[storageKeyForMonitorMode] = monitorModeToggle.checked;
+    newValsForStorage[storageKeyForShouldWipeHistoryOnTaskStart] = wipeHistoryOnTaskStartToggle.checked;
+    newValsForStorage[storageKeyForMaxOps] = Number.isNaN(maxOpsVal) ? defaultMaxOps : maxOpsVal;
+    newValsForStorage[storageKeyForMaxNoops] = Number.isNaN(maxNoopsVal) ? defaultMaxNoops : maxNoopsVal;
+    newValsForStorage[storageKeyForMaxFailures] = Number.isNaN(maxFailuresVal) ? defaultMaxFailures : maxFailuresVal;
+    newValsForStorage[storageKeyForMaxFailureOrNoopStreak] = Number.isNaN(maxFailOrNoopStreakVal) ? defaultMaxFailureOrNoopStreak : maxFailOrNoopStreakVal;
+
+    chrome.storage.local.set(newValsForStorage).then(() => {
         logger.debug("settings saved");
         statusDisplay.textContent = "Settings saved";
     }, (err) => {

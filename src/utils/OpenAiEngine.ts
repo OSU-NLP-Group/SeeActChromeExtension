@@ -1,136 +1,37 @@
-import {LmmPrompts} from "./format_prompts";
 import OpenAI from "openai";
 import {APIConnectionError, APIConnectionTimeoutError, InternalServerError, RateLimitError} from "openai/error";
-import {retryAsync} from "ts-retry";
-import log, {Logger} from "loglevel";
-import {createNamedLogger} from "./shared_logging_setup";
+import {AiEngine, AiEngineCreateOptions, GenerateOptions} from "./AiEngine";
+import {AiProviderDetails, AiProviders} from "./misc";
 import ChatCompletionMessageParam = OpenAI.ChatCompletionMessageParam;
 import ChatCompletionContentPart = OpenAI.ChatCompletionContentPart;
 
-/**
- * @description Options for generating a completion from the OpenAI API using the OpenAiEngine
- */
-export interface GenerateOptions {
-    /**
-     * system prompt, prompt for planning the next action,
-     *  prompt for identifying the specific next element to interact with next,
-     *  and alternative prompt for deciding on an element-independent action
-     */
-    prompts: LmmPrompts;
-    /**
-     * the 0-based index of the current query in the preparation for the current step's action
-     *  0 means we're asking the model to analyze situation and plan next move
-     *  1 means we're asking the model to identify the specific element to interact with next
-     */
-    turnInStep: 0 | 1;
-    /**
-     * a data url containing a base-64 encoded image to be used as input to the model
-     */
-    imgDataUrl?: string;
-    /**
-     * the output from the previous turn in the preparation for the current step's action
-     */
-    priorTurnOutput?: string;
-    /**
-     * the maximum number of tokens to generate in this turn
-     */
-    maxNewTokens?: number;
-    /**
-     * the temperature to use when sampling from the model
-     *  (optional, by default uses the temperature set in the engine's constructor)
-     */
-    temp?: number;
-    /**
-     * the model to use for this completion  (optional, by default uses the model set in the engine's constructor)
-     */
-    model?: string;
-}
-
-export class OpenAiEngine {
-    static readonly NO_API_KEY_ERR = "must pass on the api_key or set OPENAI_API_KEY in the environment";
-
-    readonly logger: Logger;
+export class OpenAiEngine extends AiEngine {
 
     openAi: OpenAI;
-    apiKeys: Array<string>;
-    stop: string;//todo check with Boyuan- is it correct that the python code doesn't actually use this?
-    model: string;
-    temperature: number;
 
-    requestInterval: number;
-    nextAvailTime: Array<number>;
-    currKeyIdx: number;
+    providerDetails(): AiProviderDetails { return AiProviders.OPEN_AI; }
 
     /**
      * @description Create an OpenAiEngine to call the OpenAI API for some particular model
-     * @param model Model type to call in OpenAI API
-     * @param apiKey one or more API keys to use for the OpenAI API (if more than one, will rotate through them)
+     * @param creationOptions object with options for creating the engine
      * @param openAi object for accessing OpenAI API (dependency injection)
-     * @param stop Tokens indicate stop of sequence
-     * @param rateLimit Max number of requests per minute
-     * @param temperature what temperature to use when sampling from the model
-     * @param loggerToUse the logger to use for logging, defaults to a logger named 'open-ai-engine'
      */
-    constructor(model: string, apiKey?: string | Array<string>, openAi?: OpenAI, stop: string = "\n\n", rateLimit: number = -1,
-                temperature: number = 0, loggerToUse?: log.Logger) {
+    constructor(creationOptions: AiEngineCreateOptions, openAi?: OpenAI) {
         //todo automatic unpacking trick for effectively having named arguments in the constructor, b/c this is absurd
-        let apiKeys: Array<string> = [];
-        const apiKeyInputUseless = apiKey == undefined ||
-            (Array.isArray(apiKey) && apiKey.length == 0);
-        if (apiKeyInputUseless) {
-            throw new Error(OpenAiEngine.NO_API_KEY_ERR);
-        } else {
-            if (typeof apiKey === "string") {
-                apiKeys.push(apiKey);
-            } else {
-                apiKeys = apiKey;
-            }
-        }
 
-        if (chrome?.storage?.local) {
-            chrome.storage.local.onChanged.addListener((changes: {[p: string]: chrome.storage.StorageChange}) => {
-                if (changes.openAiApiKey !== undefined) {
-                    const newKey: string = changes.openAiApiKey.newValue;
-                    this.apiKeys = [newKey];
-                }
-            });
-        }
+        //todo maybe validate model string against accepted (i.e. VLM) openai model names, which would be stored as static constants in this class?
+        super(creationOptions);
 
-        this.apiKeys = apiKeys;
         //only a person's own api key will be used, within their own browser instance, so it isn't dangerous
         // for this Chrome extension to use an api key in the browser
-        this.openAi = openAi ?? new OpenAI({dangerouslyAllowBrowser: true, apiKey: apiKeys[0]});
-
-        this.stop = stop;
-        this.model = model;
-        this.temperature = temperature;
-
-        this.requestInterval = rateLimit <= 0 ? 0 : 60 / rateLimit;
-
-        this.nextAvailTime = new Array<number>(this.apiKeys.length).fill(0);
-        this.currKeyIdx = 0;
-        this.logger = loggerToUse ?? createNamedLogger('open-ai-engine', true);
+        this.openAi = openAi ?? new OpenAI({dangerouslyAllowBrowser: true, apiKey: this.apiKeys[0]});
     }
 
-    /**
-     * @description Generate a completion from the OpenAI API
-     * @param prompts system prompt, prompt for planning the next action,
-     *                  prompt for identifying the specific next element to interact with next,
-     *                  and alternative prompt for deciding on an element-independent action
-     * @param turnInStep the 0-based index of the current query in the preparation for the current step's action
-     *                      0 means we're asking the model to analyze situation and plan next move
-     *                      1 means we're asking the model to identify the specific element to interact with next
-     * @param imgDataUrl a data url containing a base-64 encoded image to be used as input to the model
-     * @param priorTurnOutput the output from the previous turn in the preparation for the current step's action
-     * @param maxNewTokens the maximum number of tokens to generate in this turn
-     * @param temp the temperature to use when sampling from the model
-     *              (optional, by default uses the temperature set in the constructor)
-     * @param model the model to use for this completion
-     *               (optional, by default uses the model set in the constructor)
-     * @return the model's response for the current query
-     */
-    generate = async ({prompts, turnInStep, imgDataUrl, priorTurnOutput,
-                      maxNewTokens= 4096, temp = this.temperature, model = this.model}: GenerateOptions):
+
+    generate = async ({
+                          prompts, turnInStep, imgDataUrl, priorTurnOutput,
+                          maxNewTokens = 4096, temp = this.temperature, model = this.model
+                      }: GenerateOptions):
         Promise<string> => {
 
         this.currKeyIdx = (this.currKeyIdx + 1) % this.apiKeys.length;
@@ -170,15 +71,16 @@ export class OpenAiEngine {
                 throw new Error("priorTurnOutput must be provided for turn 1");
             }
 
-            if (priorTurnOutput.includes("SKIP_ELEMENT_SELECTION")) {
+            if (priorTurnOutput.includes(AiEngine.ELEMENTLESS_GROUNDING_TRIGGER)) {
                 messages.push({role: "user", content: prompts.elementlessActionPrompt});
             } else {
                 messages.push({role: "user", content: prompts.groundingPrompt});
             }
 
-            const response = await this.openAi.chat.completions.create(
-                {messages: messages, model: model, temperature: temp, max_tokens: maxNewTokens,
-                    response_format: {type: "json_object"}});
+            const response = await this.openAi.chat.completions.create({
+                messages: messages, model: model, temperature: temp, max_tokens: maxNewTokens,
+                response_format: {type: "json_object"}
+            });
             respStr = response.choices?.[0].message?.content;
             //confer with Boyuan- should this log warning with response object if respStr null? or throw error?
             // feedback - don't worry about the api being that weird/unreliable
@@ -190,45 +92,29 @@ export class OpenAiEngine {
                 self.next_avil_time[self.current_key_idx] = time.time() + self.request_interval
          */
 
-        return respStr ?? "no model output in response from OpenAI API";
+        return respStr ?? `no model output in response from ${this.providerDetails().label} API`;
     }
 
-    /**
-     * {@link generate} with retry logic
-     * @param options the options for the generate call
-     * @param backoffBaseDelay the base delay in ms for the exponential backoff algorithm
-     * @param backoffMaxTries maximum number of attempts for the exponential backoff algorithm
-     */
-    generateWithRetry = async (options: GenerateOptions,
-                               backoffBaseDelay: number = 100, backoffMaxTries: number = 10): Promise<string> => {
-        const generateCall = async () => this.generate(options);
+    checkIfRateLimitError(err: any): boolean { return err instanceof RateLimitError; }
 
-        return await retryAsync(generateCall, {
-            delay: (parameter: { currentTry: number, maxTry: number, lastDelay?: number, lastResult?: string }) => {
-                return backoffBaseDelay * Math.pow(3, parameter.currentTry - 1);
-            },
-            maxTry: backoffMaxTries,
-            onError: (err: Error) => {
-                if (err instanceof RateLimitError) {
-                    let rateLimitIssueDetails = "details couldn't be parsed";
-                    //sorry this is so hacky, but I want to keep some info without the retry log messages being massive
-                    // worst case, if/when the api rate limit message is restructured, all that will happen is that
-                    // these retry log messages become less detailed
-                    const indexOfPrefix = err.message.indexOf(" on ");
-                    const indexOfSuffix = err.message.indexOf(". Visit");
-                    if (indexOfPrefix > 0 && indexOfSuffix > 0 && indexOfPrefix + 4 < indexOfSuffix) {
-                        rateLimitIssueDetails = err.message.substring(indexOfPrefix + 4, indexOfSuffix);
-                    }
-                    this.logger.info(`hit OpenAI rate limit but will retry: ${rateLimitIssueDetails}`);
-                } else if (err instanceof APIConnectionError || err instanceof APIConnectionTimeoutError
-                    || err instanceof InternalServerError) {
-                    this.logger.warn(`non-fatal problem with OpenAI API, will retry; problem: ${err.message}`);
-                } else {
-                    this.logger.error(`problem (${err.message}) occurred with OpenAI API that isn't likely to get better, not retrying`);
-                    throw err;
-                }
+    extractRateLimitErrDetails(err: any): string | null {
+        let errDetails = null;
+        //sorry this is so hacky, but I want to keep some info without the retry log messages being massive
+        // worst case, if/when the api rate limit message is restructured, all that will happen is that
+        // these retry log messages become less detailed
+        if (err instanceof RateLimitError) {
+            const indexOfPrefix = err.message.indexOf(" on ");
+            const indexOfSuffix = err.message.indexOf(". Visit");
+            if (indexOfPrefix > 0 && indexOfSuffix > 0 && indexOfPrefix + 4 < indexOfSuffix) {
+                errDetails = err.message.substring(indexOfPrefix + 4, indexOfSuffix);
             }
-        });
-
+        } else { this.logger.warn("asked to extract details about hitting a rate limit from an object that wasn't actually a RateLimitError") }
+        return errDetails;
     }
+
+    checkIfNonfatalError(err: any): boolean {
+        return err instanceof APIConnectionError || err instanceof APIConnectionTimeoutError
+            || err instanceof InternalServerError;
+    }
+
 }
