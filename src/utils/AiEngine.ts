@@ -1,7 +1,7 @@
 import {Logger} from "loglevel";
 import {LmmPrompts} from "./format_prompts";
 import {retryAsync} from "ts-retry";
-import {AiProviderDetails, AiProviderKey, AiProviders, defaultAiProvider, storageKeyForAiProviderType} from "./misc";
+import {AiProviderDetails, AiProviderId, AiProviders, defaultAiProvider, storageKeyForAiProviderType} from "./misc";
 import {createNamedLogger} from "./shared_logging_setup";
 
 /**
@@ -13,9 +13,9 @@ export async function createSelectedAiEngine(): Promise<AiEngine> {
     const aiProviderSelectionQuery = await chrome.storage.local.get(storageKeyForAiProviderType);
     const selectedAiProvider = String(aiProviderSelectionQuery[storageKeyForAiProviderType] ?? defaultAiProvider);
     if (selectedAiProvider in AiProviders) {
-        const aiProviderDetails = AiProviders[selectedAiProvider as AiProviderKey];
+        const aiProviderDetails = AiProviders[selectedAiProvider as AiProviderId];
         const apiKeyQuery = await chrome.storage.local.get(aiProviderDetails.storageKeyForApiKey);
-        const userProvidedApiKey = String(apiKeyQuery[aiProviderDetails.storageKeyForApiKey] ?? "PLACEHOLDER_API_KEY");
+        const userProvidedApiKey = String(apiKeyQuery[aiProviderDetails.storageKeyForApiKey] ?? AiEngine.PLACEHOLDER_API_KEY);
         aiEngine = aiProviderDetails.engineCreator({apiKey: userProvidedApiKey});
     } else {//shouldn't be possible to reach this unless bug or else user seriously screwed with stuff via Chrome DevTools
         throw new Error(`invalid ai provider selected: ${selectedAiProvider}`);
@@ -29,6 +29,7 @@ export async function createSelectedAiEngine(): Promise<AiEngine> {
 export abstract class AiEngine {
     static readonly NO_API_KEY_ERR = "must pass the api_key to the AI engine";
     static readonly ELEMENTLESS_GROUNDING_TRIGGER = "SKIP_ELEMENT_SELECTION";
+    static readonly PLACEHOLDER_API_KEY = "PLACEHOLDER_API_KEY";
 
     readonly logger: Logger;
 

@@ -1,13 +1,16 @@
 import {createNamedLogger, defaultLogLevel, isLogLevelName} from "./utils/shared_logging_setup";
 import {
     AiProviders,
+    defaultAiProvider,
     defaultIsMonitorMode,
     defaultMaxFailureOrNoopStreak,
     defaultMaxFailures,
     defaultMaxNoops,
     defaultMaxOps,
-    defaultShouldWipeActionHistoryOnStart, storageKeyForAiProviderType,
-    storageKeyForLogLevel, storageKeyForMaxFailureOrNoopStreak,
+    defaultShouldWipeActionHistoryOnStart,
+    storageKeyForAiProviderType,
+    storageKeyForLogLevel,
+    storageKeyForMaxFailureOrNoopStreak,
     storageKeyForMaxFailures,
     storageKeyForMaxNoops,
     storageKeyForMaxOps,
@@ -21,42 +24,57 @@ import "./options.css";
 
 const logger = createNamedLogger('options-menu', false);
 
-//todo select elem for provider type
+const aiProviderElem = document.getElementById('model-provider');
+if (!(aiProviderElem && aiProviderElem instanceof HTMLSelectElement)) throw new Error('valid ai-model-provider select not found');
+const aiProviderSelect = aiProviderElem as HTMLSelectElement;
 
-const openAiApiKeyField = document.getElementById('open-ai-api-key') as HTMLInputElement;
-if (!openAiApiKeyField) throw new Error('open-ai-api-key field not found');
+const openAiApiKeyElem = document.getElementById('open-ai-api-key');
+if (!(openAiApiKeyElem && openAiApiKeyElem instanceof HTMLInputElement)) throw new Error('valid open-ai-api-key field not found');
+const openAiApiKeyField = openAiApiKeyElem as HTMLInputElement;
 
-//todo anthropic key field
+const anthropicApiKeyElem = document.getElementById('anthropic-api-key');
+if (!(anthropicApiKeyElem && anthropicApiKeyElem instanceof HTMLInputElement)) throw new Error('valid anthropic api-key field not found');
+const anthropicApiKeyField = anthropicApiKeyElem as HTMLInputElement;
 
-//todo google deepmind key field
+const googleDeepmindApiKeyElem = document.getElementById('google-deepmind-api-key');
+if (!(googleDeepmindApiKeyElem && googleDeepmindApiKeyElem instanceof HTMLInputElement)) throw new Error('valid google deepmind api-key field not found');
+const googleDeepmindApiKeyField = googleDeepmindApiKeyElem as HTMLInputElement;
 
-const logLevelSelector = document.getElementById('log-level') as HTMLSelectElement;
-if (!logLevelSelector) throw new Error('log-level selector not found');
+const logLevelElem = document.getElementById('log-level');
+if (!(logLevelElem && logLevelElem instanceof HTMLSelectElement)) throw new Error('valid log-level select not found');
+const logLevelSelector = logLevelElem as HTMLSelectElement;
 
-const monitorModeToggle = document.getElementById('monitor-mode') as HTMLInputElement;
-if (!monitorModeToggle) throw new Error('monitor-mode toggle not found');
+const monitorModeElem = document.getElementById('monitor-mode');
+if (!(monitorModeElem && monitorModeElem instanceof HTMLInputElement)) throw new Error('valid monitor-mode toggle not found');
+const monitorModeToggle = monitorModeElem as HTMLInputElement;
 
-const maxOpsField = document.getElementById('max-operations') as HTMLInputElement;
-if (!maxOpsField) throw new Error('max-ops field not found');
+const maxOpsElem = document.getElementById('max-operations');
+if (!(maxOpsElem && maxOpsElem instanceof HTMLInputElement)) throw new Error('valid max-operations field not found');
+const maxOpsField = maxOpsElem as HTMLInputElement;
 
-const maxNoopsField = document.getElementById('max-noops') as HTMLInputElement;
-if (!maxNoopsField) throw new Error('max-noops field not found');
+const maxNoopsElem = document.getElementById('max-noops');
+if (!(maxNoopsElem && maxNoopsElem instanceof HTMLInputElement)) throw new Error('valid max-noops field not found');
+const maxNoopsField = maxNoopsElem as HTMLInputElement;
 
-const maxFailuresField = document.getElementById('max-failures') as HTMLInputElement;
-if (!maxFailuresField) throw new Error('max-failures field not found');
+const maxFailuresElem = document.getElementById('max-failures');
+if (!(maxFailuresElem && maxFailuresElem instanceof HTMLInputElement)) throw new Error('valid max-failures field not found');
+const maxFailuresField = maxFailuresElem as HTMLInputElement;
 
-const maxFailOrNoopStreakField = document.getElementById('max-failure-or-noop-streak') as HTMLInputElement;
-if (!maxFailOrNoopStreakField) throw new Error('max-failure-or-noop-streak field not found');
+const maxFailOrNoopStreakElem = document.getElementById('max-failure-or-noop-streak');
+if (!(maxFailOrNoopStreakElem && maxFailOrNoopStreakElem instanceof HTMLInputElement)) throw new Error('valid max-failure-or-noop-streak field not found');
+const maxFailOrNoopStreakField = maxFailOrNoopStreakElem as HTMLInputElement;
 
-const wipeHistoryOnTaskStartToggle = document.getElementById('wipe-prior-history-on-task-start') as HTMLInputElement;
-if (!wipeHistoryOnTaskStartToggle) throw new Error('wipe-history-on-task-start toggle not found');
+const wipeHistoryOnTaskStartElem = document.getElementById('wipe-prior-history-on-task-start');
+if (!(wipeHistoryOnTaskStartElem && wipeHistoryOnTaskStartElem instanceof HTMLInputElement)) throw new Error('valid wipe-history-on-task-start toggle not found');
+const wipeHistoryOnTaskStartToggle = wipeHistoryOnTaskStartElem as HTMLInputElement;
 
-const statusDisplay = document.getElementById('status-display');
-if (!statusDisplay) throw new Error('status-display div not found');
+const statusDisplayElem = document.getElementById('status-display');
+if (!(statusDisplayElem && statusDisplayElem instanceof HTMLDivElement)) throw new Error('valid status-display div not found');
+const statusDisplay = statusDisplayElem as HTMLDivElement;
 
-const saveButton = document.getElementById('save');
-if (!saveButton) throw new Error('save button not found');
-
+const saveButtonElem = document.getElementById('save');
+if (!(saveButtonElem && saveButtonElem instanceof HTMLButtonElement)) throw new Error('valid save button not found');
+const saveButton = saveButtonElem as HTMLButtonElement;
 
 chrome.storage.local.get([storageKeyForAiProviderType, AiProviders.OPEN_AI.storageKeyForApiKey,
     AiProviders.ANTHROPIC.storageKeyForApiKey, AiProviders.GOOGLE_DEEPMIND.storageKeyForApiKey, storageKeyForLogLevel,
@@ -64,17 +82,29 @@ chrome.storage.local.get([storageKeyForAiProviderType, AiProviders.OPEN_AI.stora
     storageKeyForMaxFailureOrNoopStreak, storageKeyForShouldWipeHistoryOnTaskStart]).then(
     (items) => {
 
-        //todo handle loading stored provider type
+        aiProviderSelect.value = defaultAiProvider;
+        const aiProviderVal: unknown = items[storageKeyForAiProviderType];
+        if (typeof aiProviderVal === 'string' && aiProviderVal in AiProviders) {
+            aiProviderSelect.value = aiProviderVal;
+        } else if (aiProviderVal !== undefined) {logger.error(`invalid aiProvider value was found in local storage: ${aiProviderVal}, ignoring it`);}
 
         openAiApiKeyField.value = '';
         const openAiApiKeyVal: unknown = items[AiProviders.OPEN_AI.storageKeyForApiKey];
         if (typeof openAiApiKeyVal === 'string') {
             openAiApiKeyField.value = openAiApiKeyVal;
-        } else if (openAiApiKeyVal !== undefined) {logger.error(`invalid openAiApiKey value was found in local storage: ${openAiApiKeyVal}, ignoring it`);}
+        } else if (openAiApiKeyVal !== undefined) {logger.error(`invalid OpenAI ApiKey value was found in local storage: ${openAiApiKeyVal}, ignoring it`);}
 
-        //todo handle loading anthropic api key
-        //todo handle loading google deepmind api key
+        anthropicApiKeyField.value = '';
+        const anthropicApiKeyVal: unknown = items[AiProviders.ANTHROPIC.storageKeyForApiKey];
+        if (typeof anthropicApiKeyVal === 'string') {
+            anthropicApiKeyField.value = anthropicApiKeyVal;
+        } else if (anthropicApiKeyVal !== undefined) {logger.error(`invalid Anthropic ApiKey value was found in local storage: ${anthropicApiKeyVal}, ignoring it`);}
 
+        googleDeepmindApiKeyField.value = '';
+        const googleDeepmindApiKeyVal: unknown = items[AiProviders.GOOGLE_DEEPMIND.storageKeyForApiKey];
+        if (typeof googleDeepmindApiKeyVal === 'string') {
+            googleDeepmindApiKeyField.value = googleDeepmindApiKeyVal;
+        } else if (googleDeepmindApiKeyVal !== undefined) {logger.error(`invalid Google Deepmind ApiKey value was found in local storage: ${googleDeepmindApiKeyVal}, ignoring it`);}
 
         logLevelSelector.value = defaultLogLevel;
         const logLevelVal: unknown = items[storageKeyForLogLevel];
@@ -127,19 +157,12 @@ chrome.storage.local.get([storageKeyForAiProviderType, AiProviders.OPEN_AI.stora
 
 const pendingStatus = 'Pending changes not saved yet';
 
-//todo consider making list of these interactable elements and then doing a foreach or something for adding change listeners
-
-//todo change listener for provider select
-openAiApiKeyField.addEventListener('input', () => {statusDisplay.textContent = pendingStatus;});
-//todo change listener for anthropic api key
-//todo change listener for google deepmind api key
-logLevelSelector.addEventListener('change', () => {statusDisplay.textContent = pendingStatus;});
-monitorModeToggle.addEventListener('change', () => {statusDisplay.textContent = pendingStatus;});
-maxOpsField.addEventListener('change', () => {statusDisplay.textContent = pendingStatus;});
-maxNoopsField.addEventListener('change', () => {statusDisplay.textContent = pendingStatus;});
-maxFailuresField.addEventListener('change', () => {statusDisplay.textContent = pendingStatus;});
-maxFailOrNoopStreakField.addEventListener('change', () => {statusDisplay.textContent = pendingStatus;});
-wipeHistoryOnTaskStartToggle.addEventListener('change', () => {statusDisplay.textContent = pendingStatus;});
+const configInputElems = [aiProviderSelect, openAiApiKeyField, anthropicApiKeyField,
+    googleDeepmindApiKeyField, logLevelSelector, monitorModeToggle, maxOpsField, maxNoopsField, maxFailuresField,
+    maxFailOrNoopStreakField, wipeHistoryOnTaskStartToggle];
+for (const configElem of configInputElems) {
+    configElem.addEventListener('change', () => {statusDisplay.textContent = pendingStatus;})
+}
 
 saveButton.addEventListener('click', () => {
     if (statusDisplay.textContent !== pendingStatus) {
@@ -154,15 +177,25 @@ saveButton.addEventListener('click', () => {
     const maxFailOrNoopStreakVal = parseInt(maxFailOrNoopStreakField.value);
 
     const newValsForStorage: any = {};
-    //todo maybe add logic here to enforce maxOps having floor of 1
 
-    //todo show error if a given ai provider (with associated api key field) is selected, but its associated api key
-    // field is empty
+    if (!Number.isNaN(maxOpsVal) && maxOpsVal < 1) {
+        logger.warn(`user attempted to save max operations value that was less than 1: ${maxOpsVal}`);
+        statusDisplay.textContent = "Error: maxOps must be at least 1";
+        return;
+    }
 
-    //todo save provider type
+    if ((aiProviderSelect.value === AiProviders.OPEN_AI.id && openAiApiKeyField.value === '')
+        || (aiProviderSelect.value === AiProviders.ANTHROPIC.id && anthropicApiKeyField.value === '')
+        || (aiProviderSelect.value === AiProviders.GOOGLE_DEEPMIND.id && googleDeepmindApiKeyField.value === '')) {
+        logger.warn(`user attempted to save '${(aiProviderSelect.selectedOptions[0].value)}' choice of provider while that provider's api key field was empty`);
+        statusDisplay.textContent = `Error: API key must be provided for selected AI provider ${aiProviderSelect.selectedOptions[0].text}`;
+        return;
+    }
+
+    newValsForStorage[storageKeyForAiProviderType] = aiProviderSelect.value;
     newValsForStorage[AiProviders.OPEN_AI.storageKeyForApiKey] = openAiApiKeyField.value;
-    //todo save anthropic api key
-    //todo save google deepmind api key
+    newValsForStorage[AiProviders.ANTHROPIC.storageKeyForApiKey] = anthropicApiKeyField.value;
+    newValsForStorage[AiProviders.GOOGLE_DEEPMIND.storageKeyForApiKey] = googleDeepmindApiKeyField.value;
     newValsForStorage[storageKeyForLogLevel] = logLevelSelector.value || defaultLogLevel;
     newValsForStorage[storageKeyForMonitorMode] = monitorModeToggle.checked;
     newValsForStorage[storageKeyForShouldWipeHistoryOnTaskStart] = wipeHistoryOnTaskStartToggle.checked;

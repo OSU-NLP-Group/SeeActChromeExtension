@@ -14,7 +14,7 @@ import {
     taskIdPlaceholderVal
 } from "./shared_logging_setup";
 import {
-    Action,
+    Action, AiProviderId, AiProviders,
     Background2PagePortMsgType,
     Background2PanelPortMsgType,
     base64ToByteArray,
@@ -206,10 +206,24 @@ export class AgentController {
                     items[storageKeyForMaxNoops], items[storageKeyForMaxFailures],
                     items[storageKeyForMaxFailureOrNoopStreak]);
             });
-            chrome.storage.local.onChanged.addListener((changes: { [p: string]: chrome.storage.StorageChange }) => {
+            chrome.storage.local.onChanged.addListener(async (changes: {
+                [p: string]: chrome.storage.StorageChange
+            }) => {
                 this.validateAndApplyAgentOptions(false, changes[storageKeyForMaxOps]?.newValue,
                     changes[storageKeyForMaxNoops]?.newValue, changes[storageKeyForMaxFailures]?.newValue,
                     changes[storageKeyForMaxFailureOrNoopStreak]?.newValue);
+
+                const existingAiProvider = this.aiEngine.providerDetails().id;
+                const newAiProvider = changes["aiProviderChoice"]?.newValue;
+                if (newAiProvider && newAiProvider !== existingAiProvider
+                    && typeof newAiProvider === "string" && newAiProvider in AiProviders) {
+                    const newProviderDtls = AiProviders[newAiProvider as AiProviderId];
+                    this.logger.info(`Switching AI provider from ${existingAiProvider} to ${newAiProvider}`);
+                    const newProviderApiKey = String(
+                        (await chrome.storage.local.get(newProviderDtls.storageKeyForApiKey))[newProviderDtls.storageKeyForApiKey]
+                        ?? AiEngine.PLACEHOLDER_API_KEY);
+                    this.aiEngine = newProviderDtls.engineCreator({apiKey: newProviderApiKey});
+                }
             });
         }
     }
