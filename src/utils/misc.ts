@@ -92,7 +92,7 @@ export enum PageRequestType {
     LOG = "log",
     PRESS_ENTER = "pressEnter",
     HOVER = "hover",
-    SCREENSHOT_WITH_TARGET_HIGHLIGHTED= "screenshotWithTargetElementHighlighted"
+    SCREENSHOT_WITH_TARGET_HIGHLIGHTED = "screenshotWithTargetElementHighlighted"
 }
 
 /**
@@ -106,7 +106,7 @@ export enum Background2PanelPortMsgType {
     TASK_HISTORY_ENTRY = "taskHistoryEntry",
     TASK_ENDED = "taskEnded",
     ERROR = "error",//cases where the agent controller wants to tell the side panel about a problem with some message from the side panel which was identified before a task id was generated
-    NOTIFICATION="notification",//for agent notifying side panel of non-critical problem that will delay progress on the task (so the side panel can display that to user in status field and avoid user giving up on system)
+    NOTIFICATION = "notification",//for agent notifying side panel of non-critical problem that will delay progress on the task (so the side panel can display that to user in status field and avoid user giving up on system)
     HISTORY_EXPORT = "historyExport"//for when the controller has assembled a Blob for a zip file containing logs and/or screenshots and needs to send it to the side panel so that it can be downloaded to the user's computer
 }
 
@@ -211,15 +211,12 @@ function processUpdateToMonitorModeCache(storedMonitorMode: unknown, cacheUpdate
 }
 
 export function setupMonitorModeCache(cacheUpdater: (newVal: boolean) => void, logger: Logger) {
-    //todo fix this to use storage key string constant in all 4 places
     if (chrome?.storage?.local) {
-        chrome.storage.local.get("isMonitorMode", (items) => {
-            processUpdateToMonitorModeCache(items.isMonitorMode, cacheUpdater, logger);
+        chrome.storage.local.get(storageKeyForMonitorMode, (items) => {
+            processUpdateToMonitorModeCache(items[storageKeyForMonitorMode], cacheUpdater, logger);
         });
-        chrome.storage.local.onChanged.addListener((changes: {[p: string]: chrome.storage.StorageChange}) => {
-            if (changes.isMonitorMode !== undefined) {
-                processUpdateToMonitorModeCache(changes.isMonitorMode.newValue, cacheUpdater, logger);
-            }
+        chrome.storage.local.onChanged.addListener((changes: { [p: string]: chrome.storage.StorageChange }) => {
+            processUpdateToMonitorModeCache(changes[storageKeyForMonitorMode]?.newValue, cacheUpdater, logger);
         });
     }
 }

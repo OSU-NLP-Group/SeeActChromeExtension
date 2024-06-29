@@ -30,7 +30,7 @@ import {
     Panel2BackgroundPortMsgType,
     renderUnknownValue,
     setupMonitorModeCache,
-    sleep,
+    sleep, storageKeyForMaxFailureOrNoopStreak, storageKeyForMaxFailures, storageKeyForMaxNoops, storageKeyForMaxOps,
     validateIntegerLimitUpdate,
     ViewportDetails
 } from "./misc";
@@ -200,13 +200,16 @@ export class AgentController {
 
         setupMonitorModeCache((newMonitorModeVal: boolean) => this.cachedMonitorMode = newMonitorModeVal, this.logger);
         if (chrome?.storage?.local) {
-            //todo fix following 6 lines to use storage key string constants
-            chrome.storage.local.get(["maxOps", "maxNoops", "maxFailures", "maxFailureOrNoopStreak"], (items) => {
-                this.validateAndApplyAgentOptions(true, items.maxOps, items.maxNoops, items.maxFailures, items.maxFailureOrNoopStreak);
+            chrome.storage.local.get([storageKeyForMaxOps, storageKeyForMaxNoops, storageKeyForMaxFailures,
+                storageKeyForMaxFailureOrNoopStreak], (items) => {
+                this.validateAndApplyAgentOptions(true, items[storageKeyForMaxOps],
+                    items[storageKeyForMaxNoops], items[storageKeyForMaxFailures],
+                    items[storageKeyForMaxFailureOrNoopStreak]);
             });
             chrome.storage.local.onChanged.addListener((changes: { [p: string]: chrome.storage.StorageChange }) => {
-                this.validateAndApplyAgentOptions(false, changes.maxOps?.newValue, changes.maxNoops?.newValue,
-                    changes.maxFailures?.newValue, changes.maxFailureOrNoopStreak?.newValue);
+                this.validateAndApplyAgentOptions(false, changes[storageKeyForMaxOps]?.newValue,
+                    changes[storageKeyForMaxNoops]?.newValue, changes[storageKeyForMaxFailures]?.newValue,
+                    changes[storageKeyForMaxFailureOrNoopStreak]?.newValue);
             });
         }
     }

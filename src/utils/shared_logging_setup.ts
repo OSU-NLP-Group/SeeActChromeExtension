@@ -2,7 +2,7 @@ import log, {LogLevel, LogLevelNames} from "loglevel";
 import {
     expectedMsgForSendingRuntimeRequestFromDisconnectedContentScript,
     PageRequestType,
-    renderUnknownValue
+    renderUnknownValue, storageKeyForLogLevel
 } from "./misc";
 import {DBSchema, IDBPDatabase, openDB} from 'idb';
 import {Mutex} from "async-mutex";
@@ -23,12 +23,12 @@ export const origLoggerFactory = log.methodFactory;
 export const defaultLogLevel: keyof LogLevel = "TRACE";//todo change this to warn before release
 
 const logLevelCache: { chosenLogLevel: keyof LogLevel } = {chosenLogLevel: defaultLogLevel}
-//todo get following to use storage key string const in all 5 places
-chrome.storage.local.get("logLevel").then((items) => {
-    if (isLogLevelName(items.logLevel)) {
-        logLevelCache.chosenLogLevel = items.logLevel;
-    } else if (items.logLevel !== undefined) {
-        console.error(`invalid log level was stored: ${items.logLevel}, ignoring it when initializing logging script`)
+chrome.storage.local.get(storageKeyForLogLevel).then((items) => {
+    const logLevelVal = items[storageKeyForLogLevel]
+    if (isLogLevelName(logLevelVal)) {
+        logLevelCache.chosenLogLevel = logLevelVal;
+    } else if (logLevelVal !== undefined) {
+        console.error(`invalid log level was stored: ${logLevelVal}, ignoring it when initializing logging script`)
     }
 });
 
@@ -197,9 +197,8 @@ export const createNamedLogger = (loggerName: string, inServiceWorker: boolean):
     newLogger.rebuild();
 
     if (chrome?.storage?.local) {
-        //todo get following to use storage key string const in all 2 places
-        chrome.storage.local.get("logLevel", (items) => {
-            const storedLevel: unknown = items.logLevel;
+        chrome.storage.local.get(storageKeyForLogLevel, (items) => {
+            const storedLevel: unknown = items[storageKeyForLogLevel];
             if (isLogLevelName(storedLevel)) {
                 newLogger.setLevel(storedLevel);
                 newLogger.rebuild();
