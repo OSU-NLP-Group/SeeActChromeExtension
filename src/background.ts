@@ -21,7 +21,8 @@ import {PageRequestType, pageToControllerPort, panelToControllerPort, renderUnkn
 import {openDB} from "idb";
 import Port = chrome.runtime.Port;
 import MessageSender = chrome.runtime.MessageSender;
-import {AiEngine, createSelectedAiEngine} from "./utils/AiEngine";
+import {AiEngine} from "./utils/AiEngine";
+import {createSelectedAiEngine} from "./utils/ai_misc";
 
 
 console.log("successfully loaded background script in browser");

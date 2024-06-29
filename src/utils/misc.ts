@@ -1,8 +1,6 @@
 import {Logger} from "loglevel";
 import {SerializableElementData} from "./BrowserHelper";
-import {AiEngine, AiEngineCreateOptions} from "./AiEngine";
-import {OpenAiEngine} from "./OpenAiEngine";
-import {AnthropicEngine} from "./AnthropicEngine";
+
 
 
 export const expectedMsgForPortDisconnection = "Attempting to use a disconnected port object";
@@ -23,58 +21,6 @@ export const storageKeyForMaxOps = "maxOps";
 export const storageKeyForMaxNoops = "maxNoops";
 export const storageKeyForMaxFailures = "maxFailures";
 export const storageKeyForMaxFailureOrNoopStreak = "maxFailureOrNoopStreak";
-
-export interface AiProviderDetails {
-    /**
-     * unique identifier
-     */
-    id: AiProviderId;
-    /**
-     * human-readable name
-     */
-    label: string;
-    /**
-     * leaving nullable b/c some providers like locally-hosted Ollama won't have one
-     */
-    storageKeyForApiKey?: string;
-    /**
-     * exact value is based on the model names that the provider's api accepts
-     */
-    defaultModelName: string;
-    /**
-     * method for constructing the corresponding provider type's ai engine class; allows AiProviders to act like a Factory
-     * @param creationOptions the options to use when constructing the appropriate type of ai engine
-     */
-    engineCreator: (creationOptions: AiEngineCreateOptions) => AiEngine;
-    //later, can add list of acceptable model names (must be VLM's)
-}
-
-/**
- * mapping from the names of AI providers (as persisted in local storage in the provider option) to human-readable names
- */
-export const AiProviders = {
-    OPEN_AI: {
-        id: "OPEN_AI", label: "OpenAI", storageKeyForApiKey: "openAiApiKey", defaultModelName: "gpt-4o-2024-05-13",
-        engineCreator: (creationOptions: AiEngineCreateOptions) => new OpenAiEngine(creationOptions)
-    },
-    ANTHROPIC: {
-        id: "ANTHROPIC", label: "Anthropic", storageKeyForApiKey: "anthropicApiKey",
-        defaultModelName: "claude-3-5-sonnet-20240620",
-        engineCreator: (creationOptions: AiEngineCreateOptions) => new AnthropicEngine(creationOptions)
-    },
-    GOOGLE_DEEPMIND: {
-        id: "GOOGLE_DEEPMIND", label: "Google DeepMind", storageKeyForApiKey: "googleDeepmindApiKey",
-        defaultModelName: "gemini-1.5-pro",
-        engineCreator: (creationOptions: AiEngineCreateOptions) => new OpenAiEngine(creationOptions)//todo fix once GoogleDeepmindEngine built
-    }
-    //can later add Aliyun API (for Qwen-VL-Max) and Ollama (for local/personal hosting of misc small VLM's like phi-3-vision or paligemma)
-} as const;
-//Ensure that each value in AiProviders satisfies the interface AiProviderDetails
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- it's a type check
-const _typeCheck: Record<string, AiProviderDetails> = AiProviders;
-
-export type AiProviderId = keyof typeof AiProviders;
-export const defaultAiProvider: AiProviderId = AiProviders.OPEN_AI.id;
 
 
 export const defaultIsMonitorMode = false;

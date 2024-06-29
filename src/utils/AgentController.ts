@@ -14,7 +14,7 @@ import {
     taskIdPlaceholderVal
 } from "./shared_logging_setup";
 import {
-    Action, AiProviderId, AiProviders,
+    Action,
     Background2PagePortMsgType,
     Background2PanelPortMsgType,
     base64ToByteArray,
@@ -30,7 +30,12 @@ import {
     Panel2BackgroundPortMsgType,
     renderUnknownValue,
     setupMonitorModeCache,
-    sleep, storageKeyForMaxFailureOrNoopStreak, storageKeyForMaxFailures, storageKeyForMaxNoops, storageKeyForMaxOps,
+    sleep,
+    storageKeyForAiProviderType,
+    storageKeyForMaxFailureOrNoopStreak,
+    storageKeyForMaxFailures,
+    storageKeyForMaxNoops,
+    storageKeyForMaxOps,
     validateIntegerLimitUpdate,
     ViewportDetails
 } from "./misc";
@@ -41,6 +46,7 @@ import JSZip from "jszip";
 import {IDBPDatabase} from "idb";
 import Port = chrome.runtime.Port;
 import {AiEngine} from "./AiEngine";
+import {AiProviderId, AiProviders} from "./ai_misc";
 
 /**
  * states for the agent controller Finite State Machine
@@ -209,12 +215,13 @@ export class AgentController {
             chrome.storage.local.onChanged.addListener(async (changes: {
                 [p: string]: chrome.storage.StorageChange
             }) => {
+                this.logger.debug(`firing local-storage's change-listener for AgentController, based on changes object: ${JSON.stringify(changes)}`)
                 this.validateAndApplyAgentOptions(false, changes[storageKeyForMaxOps]?.newValue,
                     changes[storageKeyForMaxNoops]?.newValue, changes[storageKeyForMaxFailures]?.newValue,
                     changes[storageKeyForMaxFailureOrNoopStreak]?.newValue);
 
                 const existingAiProvider = this.aiEngine.providerDetails().id;
-                const newAiProvider = changes["aiProviderChoice"]?.newValue;
+                const newAiProvider = changes[storageKeyForAiProviderType]?.newValue;
                 if (newAiProvider && newAiProvider !== existingAiProvider
                     && typeof newAiProvider === "string" && newAiProvider in AiProviders) {
                     const newProviderDtls = AiProviders[newAiProvider as AiProviderId];

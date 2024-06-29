@@ -2,8 +2,8 @@ import {
     ImageBlockParam, MessageCreateParamsNonStreaming, TextBlock, TextBlockParam,
     ToolResultBlockParam, ToolUseBlock, ToolUseBlockParam
 } from "@anthropic-ai/sdk/resources/index.mjs";
-import {AiEngine, AiEngineCreateOptions, GenerateOptions} from "./AiEngine";
-import {Action, AiProviderDetails, AiProviders} from "./misc";
+import {AiEngine} from "./AiEngine";
+import {Action} from "./misc";
 import Anthropic, {
     APIConnectionError,
     APIConnectionTimeoutError,
@@ -15,6 +15,18 @@ import {
     groundingPromptExplanationParamDesc,
     groundingPromptValueParamDesc
 } from "./format_prompts";
+import {AiEngineCreateOptions, AiProviderDetails, AiProviders, GenerateOptions} from "./ai_misc";
+
+const anthropicSupportedMediaTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+function checkImageTypeIsAnthropicSupported(dataUrlImageType: string): dataUrlImageType is "image/jpeg" | "image/png" | "image/gif" | "image/webp" {
+    return anthropicSupportedMediaTypes.includes(dataUrlImageType);
+}
+
+const anthropicSupportedEncodingTypes = ["base64"];
+function checkImageEncodingTypeIsAnthropicSupported(dataUrlEncodingType: string): dataUrlEncodingType is "base64" {
+    return anthropicSupportedEncodingTypes.includes(dataUrlEncodingType);
+}
+
 
 export class AnthropicEngine extends AiEngine {
 
@@ -63,8 +75,25 @@ export class AnthropicEngine extends AiEngine {
             ]
         };
         if (imgDataUrl) {
+            let ssMediaType = "";
+            let ssEncodingType = "";
+            let ssEncodedBytes = "";
+            const dataUrlRegex = /^data:([^;]+);([^,]+),(.*)$/;
+            const matches = imgDataUrl.match(dataUrlRegex);
+            if (matches && matches.length === 4) {
+                ssMediaType = matches[1];
+                ssEncodingType = matches[2];
+                ssEncodedBytes = matches[3];
+            } else { throw new Error("imgDataUrl is not a valid data URL") }
+
+            const anthropicSupportedEncodingTypes = ["base64"]
+            if (!(checkImageTypeIsAnthropicSupported(ssMediaType)
+                && checkImageEncodingTypeIsAnthropicSupported(ssEncodingType))) {
+                throw new Error(`imgDataUrl is not a valid data URL for Anthropic API; its media type is ${ssMediaType} and its encoding type is ${ssEncodingType}, while Anthropic supports media types ${JSON.stringify(anthropicSupportedMediaTypes)} and encoding types ${JSON.stringify(anthropicSupportedEncodingTypes)}`);
+            }
+
             (requestBody.messages[0].content as Array<TextBlockParam | ImageBlockParam | ToolUseBlockParam | ToolResultBlockParam>)
-                .push({type: "image", source: {data: imgDataUrl, media_type: "image/png", type: "base64"}});
+                .push({type: "image", source: {data: ssEncodedBytes, media_type: ssMediaType, type: ssEncodingType}});
         }
 
         let respStr: string | undefined;

@@ -1,9 +1,9 @@
 import OpenAI from "openai";
 import {APIConnectionError, APIConnectionTimeoutError, InternalServerError, RateLimitError} from "openai/error";
-import {AiEngine, AiEngineCreateOptions, GenerateOptions} from "./AiEngine";
-import {AiProviderDetails, AiProviders} from "./misc";
+import {AiEngine} from "./AiEngine";
 import ChatCompletionMessageParam = OpenAI.ChatCompletionMessageParam;
 import ChatCompletionContentPart = OpenAI.ChatCompletionContentPart;
+import {AiEngineCreateOptions, AiProviderDetails, AiProviders, GenerateOptions} from "./ai_misc";
 
 export class OpenAiEngine extends AiEngine {
 

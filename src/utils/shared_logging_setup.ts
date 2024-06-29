@@ -206,10 +206,9 @@ export const createNamedLogger = (loggerName: string, inServiceWorker: boolean):
             } else if (storedLevel !== undefined) {newLogger.error(`invalid log level was detected in local storage: ${storedLevel}, ignoring it when initializing a logger`)}
         });
 
-        //todo unit testing this? maybe create a function that takes a logger and returns a "local storage changes handler" function, then just unit test that
         chrome.storage.local.onChanged.addListener((changes: { [p: string]: chrome.storage.StorageChange }) => {
-            if (changes.logLevel) {
-                const newLogLevel: unknown = changes.logLevel.newValue;
+            if (changes[storageKeyForLogLevel]) {
+                const newLogLevel: unknown = changes[storageKeyForLogLevel].newValue;
                 if (isLogLevelName(newLogLevel)) {
                     const existingLogLevel = LogLevelDict[newLogger.getLevel()];
                     if (newLogLevel !== existingLogLevel) {

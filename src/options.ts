@@ -1,7 +1,5 @@
 import {createNamedLogger, defaultLogLevel, isLogLevelName} from "./utils/shared_logging_setup";
 import {
-    AiProviders,
-    defaultAiProvider,
     defaultIsMonitorMode,
     defaultMaxFailureOrNoopStreak,
     defaultMaxFailures,
@@ -21,6 +19,7 @@ import {
 
 import "./global_styles.css";
 import "./options.css";
+import {AiProviders, defaultAiProvider} from "./utils/ai_misc";
 
 const logger = createNamedLogger('options-menu', false);
 
@@ -166,7 +165,7 @@ for (const configElem of configInputElems) {
 
 saveButton.addEventListener('click', () => {
     if (statusDisplay.textContent !== pendingStatus) {
-        logger.warn('save button clicked when no changes were pending');
+        logger.info('Options saving problem: save button clicked when no changes were pending');
         statusDisplay.textContent = "Cannot save with no pending changes";
         return;
     }
@@ -179,7 +178,7 @@ saveButton.addEventListener('click', () => {
     const newValsForStorage: any = {};
 
     if (!Number.isNaN(maxOpsVal) && maxOpsVal < 1) {
-        logger.warn(`user attempted to save max operations value that was less than 1: ${maxOpsVal}`);
+        logger.info(`Options saving problem: user attempted to save max operations value that was less than 1: ${maxOpsVal}`);
         statusDisplay.textContent = "Error: maxOps must be at least 1";
         return;
     }
@@ -187,7 +186,7 @@ saveButton.addEventListener('click', () => {
     if ((aiProviderSelect.value === AiProviders.OPEN_AI.id && openAiApiKeyField.value === '')
         || (aiProviderSelect.value === AiProviders.ANTHROPIC.id && anthropicApiKeyField.value === '')
         || (aiProviderSelect.value === AiProviders.GOOGLE_DEEPMIND.id && googleDeepmindApiKeyField.value === '')) {
-        logger.warn(`user attempted to save '${(aiProviderSelect.selectedOptions[0].value)}' choice of provider while that provider's api key field was empty`);
+        logger.info(`Options saving problem: user attempted to save '${(aiProviderSelect.selectedOptions[0].value)}' choice of provider while that provider's api key field was empty`);
         statusDisplay.textContent = `Error: API key must be provided for selected AI provider ${aiProviderSelect.selectedOptions[0].text}`;
         return;
     }
