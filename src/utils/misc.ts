@@ -2,6 +2,7 @@ import {Logger} from "loglevel";
 import {SerializableElementData} from "./BrowserHelper";
 import {AiEngine, AiEngineCreateOptions} from "./AiEngine";
 import {OpenAiEngine} from "./OpenAiEngine";
+import {AnthropicEngine} from "./AnthropicEngine";
 
 
 export const expectedMsgForPortDisconnection = "Attempting to use a disconnected port object";
@@ -25,9 +26,9 @@ export const storageKeyForMaxFailureOrNoopStreak = "maxFailureOrNoopStreak";
 
 export interface AiProviderDetails {
     /**
-     * unique identifier, should be identical to the provider details object's key in AiProviders
+     * unique identifier
      */
-    id: string;
+    id: AiProviderId;
     /**
      * human-readable name
      */
@@ -59,7 +60,7 @@ export const AiProviders = {
     ANTHROPIC: {
         id: "ANTHROPIC", label: "Anthropic", storageKeyForApiKey: "anthropicApiKey",
         defaultModelName: "claude-3-5-sonnet-20240620",
-        engineCreator: (creationOptions: AiEngineCreateOptions) => new OpenAiEngine(creationOptions)//todo fix once AnthropicEngine built
+        engineCreator: (creationOptions: AiEngineCreateOptions) => new AnthropicEngine(creationOptions)
     },
     GOOGLE_DEEPMIND: {
         id: "GOOGLE_DEEPMIND", label: "Google DeepMind", storageKeyForApiKey: "googleDeepmindApiKey",

@@ -1,5 +1,5 @@
 import {_formatOptions, generateNewQueryPrompt} from "./format_prompt_utils";
-import {Action, ViewportDetails} from "./misc";
+import {Action, AiProviderId, AiProviders, ViewportDetails} from "./misc";
 import {SerializableElementData} from "./BrowserHelper";
 
 
@@ -177,6 +177,7 @@ Please examine the choices one by one. Choose the matching one. If multiple opti
 
 export const groundingOutputPromptIntro = `(Response Format)
 Please present your output in JSON format, following the schema below. When a key ("value" or sometimes even "element") is irrelevant for the current response, use the json syntax for null (no double quotes around the word null)`;
+export const groundingOutputWithToolUsePromptIntro = "To respond, please call the 'browser_action' tool";
 export const groundingResponseJsonSchema = `{
     "reasoning": { "type": ["string"] },
     "explanation": { "type": ["string"] },
@@ -184,22 +185,27 @@ export const groundingResponseJsonSchema = `{
     "action": { "type": ["string"] },
     "value": {"type": ["string", "null"] }
 }`;
+export const groundingPromptExplanationParamDesc = `Provide a 1-sentence explanation of the action you are performing and what purpose it serves.`;
 export const groundingOutputPromptGeneralExplanation = `The parts of the JSON schema are explained below
 Generally-applicable response components:
 - reasoning: Perform all reasoning (as guided by the above prompt) in this string.
-- explanation: Provide a 1-sentence explanation of the action you are performing and what purpose it serves.`;
-export const groundingOutputPromptExplanation = `
-Response components for actions that might target an element:
-- element: The uppercase letter of your chosen element. (Not needed for PRESS_ENTER, SCROLL_UP, or SCROLL_DOWN)
-- action: Choose an action from {CLICK, SELECT, TYPE, PRESS_ENTER, SCROLL_UP, SCROLL_DOWN, HOVER, TERMINATE, NONE}.
-- value: Provide additional input based on action. The value means:
+- explanation: ${groundingPromptExplanationParamDesc}`;
+export const groundingPromptElementParamDesc = `The uppercase letter of your chosen element. (Not needed for PRESS_ENTER, SCROLL_UP, or SCROLL_DOWN)`;
+export const groundingPromptValueParamDesc = `Provide additional input based on action. The value means:
     - If action == TYPE, specify the text to be typed.
     - If action == SELECT, indicate the option to be chosen. Revise the selection value to align with the available options within the element.
     - If action == CLICK, PRESS_ENTER, SCROLL_UP, SCROLL_DOWN, TERMINATE or NONE, set this to null.`;
+export const groundingOutputPromptExplanation = `
+Response components for actions that might target an element:
+- element: ${groundingPromptElementParamDesc}
+- action: Choose an action from ${JSON.stringify(Object.keys(Action))}.
+- value: ${groundingPromptValueParamDesc}`;
 export const groundingElementlessActionPromptExplanation = `
 Based on your prior planning, the next action is not specific to an element.
 Response component for actions that will not target an element:
 - action: Choose an action from {SCROLL_UP, SCROLL_DOWN, PRESS_ENTER, TERMINATE, NONE}.`;
+export const groundingWithToolUseElementlessActionPromptExplanation = `Based on your prior planning, the next action is not specific to an element. 
+    When calling the 'browser_action' tool, the action should be chosen from the options {SCROLL_UP, SCROLL_DOWN, PRESS_ENTER, TERMINATE, NONE}`;
 
 /**
  * @description generate the prompts for the web agent for the current step of the task
@@ -211,24 +217,38 @@ Response component for actions that will not target an element:
  *                 list, with the first entry being the string version of the choice's index and the second entry
  *                 being an abbreviated version of the element's html
  * @param viewportInfo information about the viewport and the dimensions of the page that it's showing part of
+ * @param aiProviderType the type of AI model provider that the prompts will be sent to
  * @return four prompts for the language model: 1) a system prompt (used with both of the other prompts);
  *          2) a prompt for the model planning its next step; and
  *          3) a prompt for the model identifying the element to interact with and how to interact with it
  *          4) a prompt for the model to choose an action when there is no specific element to interact with
  */
 export const generatePrompt = (task: string, previousActions: Array<string>, choices: Array<string>,
-                               viewportInfo: ViewportDetails): LmmPrompts => {
+                               viewportInfo: ViewportDetails, aiProviderType: AiProviderId): LmmPrompts => {
     const [sysPrompt, queryPrompt] = generateNewQueryPrompt(onlineSystemPrompt, task, previousActions,
         onlineQuestionDesc, viewportInfo);
+
     let groundingPrompt: string = onlineReferringPromptDesc + "\n\n";
+    let customizedElementlessActionPrompt = "";
     if (choices) {
         groundingPrompt += _formatOptions(choices);
     }
-    groundingPrompt += groundingOutputPromptIntro + "\n" + groundingResponseJsonSchema + "\n" + groundingOutputPromptGeneralExplanation + "\n" + groundingOutputPromptExplanation;
+
+    if (aiProviderType === AiProviders.ANTHROPIC.id) {
+        //Anthropic's support for tool use means we can let the model do normal chain of thought (not jammed into a
+        // "reasoning" entry of a json document), which should be more on-policy for it and so hopefully more effective
+
+        groundingPrompt += groundingOutputWithToolUsePromptIntro;
+        customizedElementlessActionPrompt = groundingOutputWithToolUsePromptIntro + "\n" +
+            groundingWithToolUseElementlessActionPromptExplanation;
+    } else {
+        groundingPrompt += groundingOutputPromptIntro + "\n" + groundingResponseJsonSchema + "\n" + groundingOutputPromptGeneralExplanation + "\n" + groundingOutputPromptExplanation;
+        customizedElementlessActionPrompt = groundingOutputPromptIntro + "\n" + groundingResponseJsonSchema + "\n" + groundingElementlessActionPromptExplanation;
+    }
 
     return {
         sysPrompt: sysPrompt, queryPrompt: queryPrompt, groundingPrompt: groundingPrompt,
-        elementlessActionPrompt: groundingOutputPromptIntro + "\n" + groundingResponseJsonSchema + "\n" + groundingElementlessActionPromptExplanation
+        elementlessActionPrompt: customizedElementlessActionPrompt
     };
 }
 

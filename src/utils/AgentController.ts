@@ -652,7 +652,7 @@ export class AgentController {
 
         const prompts: LmmPrompts = generatePrompt(this.taskSpecification,
             this.actionsSoFar.map(entry => `${entry.success ? "SUCCEEDED" : "FAILED"}-${entry.actionDesc}; explanation: ${entry.explanation}`),
-            interactiveChoices, viewportInfo);
+            interactiveChoices, viewportInfo, this.aiEngine.providerDetails().id);
         if (monitorRejectionContext !== undefined) {
             prompts.queryPrompt += `\n${monitorRejectionContext}`;
         }

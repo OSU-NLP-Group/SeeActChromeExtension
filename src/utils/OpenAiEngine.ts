@@ -17,7 +17,6 @@ export class OpenAiEngine extends AiEngine {
      * @param openAi object for accessing OpenAI API (dependency injection)
      */
     constructor(creationOptions: AiEngineCreateOptions, openAi?: OpenAI) {
-        //todo automatic unpacking trick for effectively having named arguments in the constructor, b/c this is absurd
 
         //todo maybe validate model string against accepted (i.e. VLM) openai model names, which would be stored as static constants in this class?
         super(creationOptions);
