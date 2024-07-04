@@ -64,10 +64,12 @@ export class OpenAiEngine extends AiEngine {
             // feedback - don't worry about the api being that weird/unreliable
 
         } else if (turnInStep === 1) {
-            if (priorTurnOutput) {
+            if (priorTurnOutput === undefined) {
+                throw new Error("priorTurnOutput must be provided for turn 1");
+            } else if (priorTurnOutput.length > 0) {
                 messages.push({role: "assistant", content: priorTurnOutput});
             } else {
-                throw new Error("priorTurnOutput must be provided for turn 1");
+                this.logger.info("LLM MALFUNCTION- planning output was empty string");
             }
 
             if (priorTurnOutput.includes(AiEngine.ELEMENTLESS_GROUNDING_TRIGGER)) {

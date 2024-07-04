@@ -11,6 +11,7 @@ import Anthropic, {
     RateLimitError
 } from "@anthropic-ai/sdk";
 import {
+    browserActionFuncDesc, browserActionRequiredProps, browserActionSchemaActionDesc,
     groundingPromptElementParamDesc,
     groundingPromptExplanationParamDesc,
     groundingPromptValueParamDesc
@@ -40,7 +41,7 @@ export class AnthropicEngine extends AiEngine {
      * @param anthropic object for accessing Anthropic API (dependency injection)
      */
     constructor(creationOptions: AiEngineCreateOptions, anthropic?: Anthropic) {
-        //todo maybe validate model string against accepted (i.e. VLM) openai model names, which would be stored as static constants in this class?
+        //todo maybe validate model string against accepted (i.e. VLM) anthropic model names, which would be stored as static constants in this class?
         super(creationOptions);
         this.anthropic = anthropic ?? new Anthropic({apiKey: this.apiKeys[0]});
     }
@@ -101,27 +102,29 @@ export class AnthropicEngine extends AiEngine {
             const response = await this.anthropic.messages.create(requestBody);
             respStr = (response.content[0] as TextBlock).text;
         } else if (turnInStep === 1) {
-            if (priorTurnOutput) {
+            if (priorTurnOutput === undefined) {
+                throw new Error("priorTurnOutput must be provided for turn 1");
+            } else if (priorTurnOutput.length > 0) {
                 requestBody.messages.push({role: "assistant", content: priorTurnOutput});
             } else {
-                throw new Error("priorTurnOutput must be provided for turn 1");
+                this.logger.info("LLM MALFUNCTION- planning output was empty string");
             }
 
             requestBody.tools = [{
                 name: "browser_action",
-                description: "mechanism for acting on the web page on the user's behalf",
+                description: browserActionFuncDesc,
                 input_schema: {
                     type: "object",
                     properties: {
                         explanation: {type: ["string"], description: groundingPromptExplanationParamDesc},
                         element: {type: ["string", "null"], description: groundingPromptElementParamDesc},
                         action: {
-                            type: ["string"], description: "the type of the next action that should be taken",
+                            type: ["string"], description: browserActionSchemaActionDesc,
                             enum: Object.keys(Action)
                         },
                         value: {type: ["string", "null"], description: groundingPromptValueParamDesc},
                     },
-                    required: ["explanation", "element", "action", "value"]
+                    required: browserActionRequiredProps
                 }
             }];
 

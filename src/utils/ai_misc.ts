@@ -4,6 +4,7 @@ import {AnthropicEngine} from "./AnthropicEngine";
 import {storageKeyForAiProviderType} from "./misc";
 import {LmmPrompts} from "./format_prompts";
 import { Logger } from "loglevel";
+import {GoogleDeepmindEngine} from "./GoogleDeepmindEngine";
 
 
 
@@ -48,7 +49,7 @@ export const AiProviders = {
     GOOGLE_DEEPMIND: {
         id: "GOOGLE_DEEPMIND", label: "Google DeepMind", storageKeyForApiKey: "googleDeepmindApiKey",
         defaultModelName: "gemini-1.5-pro",
-        engineCreator: (creationOptions: AiEngineCreateOptions) => new OpenAiEngine(creationOptions)//todo fix once GoogleDeepmindEngine built
+        engineCreator: (creationOptions: AiEngineCreateOptions) => new GoogleDeepmindEngine(creationOptions)
     }
     //can later add Aliyun API (for Qwen-VL-Max) and Ollama (for local/personal hosting of misc small VLM's like phi-3-vision or paligemma)
 } as const;

@@ -152,12 +152,11 @@ To be successful, it is important to follow the following rules:
 3. For handling the select dropdown elements on the webpage, it's not necessary for you to provide completely accurate options right now. The full list of options for these elements will be supplied later.
 
 Sometimes the action won't require a target element: SCROLL_UP, SCROLL_DOWN, TERMINATE, or NONE; PRESS_ENTER also qualifies if your last action was TYPE.
-In such a case, it is important that you include the exact string SKIP_ELEMENT_SELECTION in your planning output. DO NOT include it if you want to do something else first (e.g. TYPE before PRESS_ENTER).`;
+In such a case, it is very important that you include the exact string SKIP_ELEMENT_SELECTION near the end of your initial/planning output. DO NOT include it if you want to do something else first (e.g. TYPE before PRESS_ENTER).`;
 //todo ask Boyuan about changing the action space- it keeps getting confused or doing things wrong related to the
 // sequence "TYPE on one step then PRESS ENTER on next step"; why don't we just make 2 actions TYPE and TYPE_THEN_ENTER?
 // and get rid of the PRESS_ENTER stand-alone action unless/until it becomes clear that it's needed?
 
-//todo update below prompt once formatted choices have been enriched with info about relative coordinates of elements within vs above/below the viewport
 export const onlineReferringPromptDesc = `(Reiteration)
 First, reiterate your next target element, its detailed location, and the corresponding operation.
 
@@ -178,7 +177,7 @@ Please examine the choices one by one. Choose the matching one. If multiple opti
 
 export const groundingOutputPromptIntro = `(Response Format)
 Please present your output in JSON format, following the schema below. When a key ("value" or sometimes even "element") is irrelevant for the current response, use the json syntax for null (no double quotes around the word null)`;
-export const groundingOutputWithToolUsePromptIntro = "To respond, please call the 'browser_action' tool";
+export const groundingOutputWithToolUsePromptIntro = "To respond, you _must_ call the 'browser_action' tool after reasoning about the provided options. Any response that doesn't call that tool at the end will be rejected!";
 export const groundingResponseJsonSchema = `{
     "reasoning": { "type": ["string"] },
     "explanation": { "type": ["string"] },
@@ -191,7 +190,12 @@ export const groundingOutputPromptGeneralExplanation = `The parts of the JSON sc
 Generally-applicable response components:
 - reasoning: Perform all reasoning (as guided by the above prompt) in this string.
 - explanation: ${groundingPromptExplanationParamDesc}`;
-export const groundingPromptElementParamDesc = `The uppercase letter of your chosen element. (Not needed for PRESS_ENTER, SCROLL_UP, or SCROLL_DOWN)`;
+export const browserActionFuncDesc = "mechanism for acting on the web page on the user's behalf";
+export const browserActionRequiredProps = ["explanation", "element", "action", "value"];
+//description for 'action' property in the json schema for the inputs to the 'browser_action' tool
+export const browserActionSchemaActionDesc = "the type of the next action that should be taken";
+
+export const groundingPromptElementParamDesc = `The two-uppercase-letters ID of your chosen element. (can be set to null for PRESS_ENTER, SCROLL_UP, SCROLL_DOWN, or TERMINATE)`;
 export const groundingPromptValueParamDesc = `Provide additional input based on action. The value means:
     - If action == TYPE, specify the text to be typed.
     - If action == SELECT, indicate the option to be chosen. Revise the selection value to align with the available options within the element.
@@ -235,9 +239,10 @@ export const generatePrompt = (task: string, previousActions: Array<string>, cho
         groundingPrompt += _formatOptions(choices);
     }
 
-    if (aiProviderType === AiProviders.ANTHROPIC.id) {
-        //Anthropic's support for tool use means we can let the model do normal chain of thought (not jammed into a
-        // "reasoning" entry of a json document), which should be more on-policy for it and so hopefully more effective
+    if (aiProviderType === AiProviders.ANTHROPIC.id || aiProviderType === AiProviders.GOOGLE_DEEPMIND.id) {
+        //Anthropic's/Google Deepmind's support for tool use means we can let the model do normal chain of thought
+        // (not jammed into a "reasoning" entry of a json document), which should be more on-policy for it and so
+        // hopefully more effective
 
         groundingPrompt += groundingOutputWithToolUsePromptIntro;
         customizedElementlessActionPrompt = groundingOutputWithToolUsePromptIntro + "\n" +
