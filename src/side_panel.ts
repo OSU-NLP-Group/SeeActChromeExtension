@@ -7,43 +7,43 @@ import "./side_panel.css";
 // const logger = createNamedLogger('side-panel', false);
 
 const startButton = document.getElementById('start-agent');
-if (!startButton || !(startButton instanceof HTMLButtonElement)) throw new Error('valid startAgent button not found');
+if (!(startButton && startButton instanceof HTMLButtonElement)) throw new Error('valid startAgent button not found');
 
 const taskSpecField = document.getElementById('task-spec');
-if (!taskSpecField || !(taskSpecField instanceof HTMLTextAreaElement)) throw new Error('valid task-spec field not found');
+if (!(taskSpecField && taskSpecField instanceof HTMLTextAreaElement)) throw new Error('valid task-spec field not found');
 
 const statusDiv = document.getElementById('status');
-if (!statusDiv  || !(statusDiv instanceof HTMLDivElement)) throw new Error('valid status div not found');
+if (!(statusDiv && statusDiv instanceof HTMLDivElement)) throw new Error('valid status div not found');
 
 const statusPopup = document.getElementById('status-details-tooltip');
-if (!statusPopup  || !(statusPopup instanceof HTMLSpanElement)) throw new Error('valid status-details-tooltip not found');
+if (!(statusPopup && statusPopup instanceof HTMLSpanElement)) throw new Error('valid status-details-tooltip not found');
 
 const killButton = document.getElementById('end-task');
-if (!killButton  || !(killButton instanceof HTMLButtonElement)) throw new Error('valid endTask button not found');
+if (!(killButton && killButton instanceof HTMLButtonElement)) throw new Error('valid endTask button not found');
 
 const optionsButton = document.getElementById('options');
-if (!optionsButton || !(optionsButton instanceof HTMLButtonElement)) throw new Error('valid options button not found');
+if (!(optionsButton && optionsButton instanceof HTMLButtonElement)) throw new Error('valid options button not found');
 
 const unaffiliatedLogsExportButton = document.getElementById('export-unaffiliated-logs');
-if (!unaffiliatedLogsExportButton || !(unaffiliatedLogsExportButton instanceof HTMLButtonElement)) throw new Error('valid export-unaffiliated-logs button not found');
+if (!(unaffiliatedLogsExportButton && unaffiliatedLogsExportButton instanceof HTMLButtonElement)) throw new Error('valid export-unaffiliated-logs button not found');
 
 const historyList = document.getElementById('history');
-if (!historyList || !(historyList instanceof HTMLOListElement)) throw new Error('valid history list not found');
+if (!(historyList && historyList instanceof HTMLOListElement)) throw new Error('valid history list not found');
 
 const pendingActionDiv = document.getElementById('pending-action');
-if (!pendingActionDiv || !(pendingActionDiv instanceof HTMLDivElement)) throw new Error('valid pending-action div not found');
+if (!(pendingActionDiv && pendingActionDiv instanceof HTMLDivElement)) throw new Error('valid pending-action div not found');
 
 const monitorModeContainer = document.getElementById('monitor-mode-container');
-if (!monitorModeContainer || !(monitorModeContainer instanceof HTMLDivElement)) throw new Error('valid monitor-mode-container not found');
+if (!(monitorModeContainer && monitorModeContainer instanceof HTMLDivElement)) throw new Error('valid monitor-mode-container not found');
 
 const monitorFeedbackField = document.getElementById('monitor-feedback');
-if (!monitorFeedbackField || !(monitorFeedbackField instanceof HTMLTextAreaElement)) throw new Error('valid monitor-feedback field not found');
+if (!(monitorFeedbackField && monitorFeedbackField instanceof HTMLTextAreaElement)) throw new Error('valid monitor-feedback field not found');
 
 const monitorApproveButton = document.getElementById('approve');
-if (!monitorApproveButton || !(monitorApproveButton instanceof HTMLButtonElement)) throw new Error('valid approve button not found');
+if (!(monitorApproveButton && monitorApproveButton instanceof HTMLButtonElement)) throw new Error('valid approve button not found');
 
 const monitorRejectButton = document.getElementById('reject');
-if (!monitorRejectButton || !(monitorRejectButton instanceof HTMLButtonElement)) throw new Error('valid reject button not found');
+if (!(monitorRejectButton && monitorRejectButton instanceof HTMLButtonElement)) throw new Error('valid reject button not found');
 
 const manager = new SidePanelManager({
     startButton: startButton as HTMLButtonElement,

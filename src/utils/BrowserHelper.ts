@@ -138,7 +138,13 @@ export class BrowserHelper {
             "label", "name", "option_selected", "placeholder", "readonly", "text-value", "title", "value"];
 
         let parentValue = "";
-        const parent = element.parentElement;
+        let parent = element.parentElement;
+        const parentNode = element.parentNode;//possible shadow root
+        if (parentNode && parentNode instanceof ShadowRoot) {
+            //this.logger.trace(`Parent node of current element is a shadow root, so getting host of shadow root as the real parent of current element; inner html of parent node which is a shadow-root: ${parentNode.innerHTML}`)
+            parent = parentNode.host as HTMLElement;
+            //this.logger.trace(`inner html of parent of shadow root: ${parent.innerHTML}`);
+        }
         //it's awkward that this 'first line' sometimes includes the innerText of elements below the main element (shown in a test case)
         // could get around that with parent.textContent and removing up to 1 linefeed at the start of it, for the
         // scenario where a label was the first child and there was a linefeed before the label element's text
@@ -228,8 +234,22 @@ export class BrowserHelper {
             }
         }
 
-        this.logger.info("ELEMENT DESCRIPTION PROBLEM- unable to create element description for element at xpath " + getXPath(element));
+        this.logger.info("ELEMENT DESCRIPTION PROBLEM- unable to create element description for element at xpath " + this.getFullXpath(element));
         return null;
+    }
+
+    /**
+     * extends library method getXPath to account for shadow DOM's
+     * @param element the element whose full xpath should be constructed
+     * @returns the full xpath of the given element (from the root of the page's document element)
+     */
+    getFullXpath = (element: HTMLElement): string => {
+        let xpath = getXPath(element);
+        const rootElem = element.getRootNode();
+        if (rootElem instanceof ShadowRoot) {
+            xpath = this.getFullXpath(rootElem.host as HTMLElement) + "/shadow-root()" + xpath;
+        }
+        return xpath;
     }
 
     /**

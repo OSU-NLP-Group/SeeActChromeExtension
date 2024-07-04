@@ -13,7 +13,6 @@ import {
     taskIdHolder,
     taskIdPlaceholderVal
 } from "./shared_logging_setup";
-import {OpenAiEngine} from "./OpenAiEngine";
 import {
     Action,
     Background2PagePortMsgType,
@@ -32,6 +31,11 @@ import {
     renderUnknownValue,
     setupMonitorModeCache,
     sleep,
+    storageKeyForAiProviderType,
+    storageKeyForMaxFailureOrNoopStreak,
+    storageKeyForMaxFailures,
+    storageKeyForMaxNoops,
+    storageKeyForMaxOps,
     validateIntegerLimitUpdate,
     ViewportDetails
 } from "./misc";
@@ -41,6 +45,8 @@ import {ChromeWrapper} from "./ChromeWrapper";
 import JSZip from "jszip";
 import {IDBPDatabase} from "idb";
 import Port = chrome.runtime.Port;
+import {AiEngine} from "./AiEngine";
+import {AiProviderId, AiProviders} from "./ai_misc";
 
 /**
  * states for the agent controller Finite State Machine
@@ -182,7 +188,7 @@ export class AgentController {
     portToContentScript: Port | undefined;
     portToSidePanel: Port | undefined;
 
-    private aiEngine: OpenAiEngine;
+    private aiEngine: AiEngine;
     private chromeWrapper: ChromeWrapper;
     readonly logger: Logger;
 
@@ -191,7 +197,7 @@ export class AgentController {
      * @param aiEngine The OpenAiEngine instance to use for analyzing the situation and generating actions
      * @param chromeWrapper a wrapper to allow mocking of Chrome extension API calls
      */
-    constructor(aiEngine: OpenAiEngine, chromeWrapper?: ChromeWrapper) {
+    constructor(aiEngine: AiEngine, chromeWrapper?: ChromeWrapper) {
         this.aiEngine = aiEngine;
         this.chromeWrapper = chromeWrapper ?? new ChromeWrapper();
 
@@ -200,12 +206,31 @@ export class AgentController {
 
         setupMonitorModeCache((newMonitorModeVal: boolean) => this.cachedMonitorMode = newMonitorModeVal, this.logger);
         if (chrome?.storage?.local) {
-            chrome.storage.local.get(["maxOps", "maxNoops", "maxFailures", "maxFailureOrNoopStreak"], (items) => {
-                this.validateAndApplyAgentOptions(true, items.maxOps, items.maxNoops, items.maxFailures, items.maxFailureOrNoopStreak);
+            chrome.storage.local.get([storageKeyForMaxOps, storageKeyForMaxNoops, storageKeyForMaxFailures,
+                storageKeyForMaxFailureOrNoopStreak], (items) => {
+                this.validateAndApplyAgentOptions(true, items[storageKeyForMaxOps],
+                    items[storageKeyForMaxNoops], items[storageKeyForMaxFailures],
+                    items[storageKeyForMaxFailureOrNoopStreak]);
             });
-            chrome.storage.local.onChanged.addListener((changes: { [p: string]: chrome.storage.StorageChange }) => {
-                this.validateAndApplyAgentOptions(false, changes.maxOps?.newValue, changes.maxNoops?.newValue,
-                    changes.maxFailures?.newValue, changes.maxFailureOrNoopStreak?.newValue);
+            chrome.storage.local.onChanged.addListener(async (changes: {
+                [p: string]: chrome.storage.StorageChange
+            }) => {
+                this.logger.debug(`firing local-storage's change-listener for AgentController, based on changes object: ${JSON.stringify(changes)}`)
+                this.validateAndApplyAgentOptions(false, changes[storageKeyForMaxOps]?.newValue,
+                    changes[storageKeyForMaxNoops]?.newValue, changes[storageKeyForMaxFailures]?.newValue,
+                    changes[storageKeyForMaxFailureOrNoopStreak]?.newValue);
+
+                const existingAiProvider = this.aiEngine.providerDetails().id;
+                const newAiProvider = changes[storageKeyForAiProviderType]?.newValue;
+                if (newAiProvider && newAiProvider !== existingAiProvider
+                    && typeof newAiProvider === "string" && newAiProvider in AiProviders) {
+                    const newProviderDtls = AiProviders[newAiProvider as AiProviderId];
+                    this.logger.info(`Switching AI provider from ${existingAiProvider} to ${newAiProvider}`);
+                    const newProviderApiKey = String(
+                        (await chrome.storage.local.get(newProviderDtls.storageKeyForApiKey))[newProviderDtls.storageKeyForApiKey]
+                        ?? AiEngine.PLACEHOLDER_API_KEY);
+                    this.aiEngine = newProviderDtls.engineCreator({apiKey: newProviderApiKey});
+                }
             });
         }
     }
@@ -502,19 +527,20 @@ export class AgentController {
             this.logger.debug(`noop count: ${this.noopCount}, failure-or-noop streak: ${this.failureOrNoopStreak}; noopLimit: ${this.maxNoopLimit}, failure-or-noop streak limit: ${this.maxFailureOrNoopStreakLimit}`);
             const reactionToLmmOutput = await this.queryLmmAndProcessResponsesForAction(interactiveChoices,
                 screenshotDataUrl, candidateIds, interactiveElements, monitorRejectionInfo, viewportInfo);
+            if (this.terminationSignal) {
+                this.logger.info("received termination signal while processing interactive elements; terminating task")
+                //the task termination will be handled by the terminateTask method being called by the handler (for
+                // messages from side panel) once this method ends and the controller's mutex is released
+                // This prevents the agent from performing a final action after the user presses the terminate button
+                // and also lets the user cut off a noop-loop.
+                return;
+            }
             if (reactionToLmmOutput === LmmOutputReaction.ABORT_TASK) {
                 return;
             } else if (reactionToLmmOutput === LmmOutputReaction.TRY_REPROMPT) {
                 continue;
             }
 
-            if (this.terminationSignal) {
-                this.logger.info("received termination signal while processing interactive elements; terminating task")
-                //the task termination will be handled by the terminateTask method being called by the handler (for
-                // messages from side panel) once this method ends and the controller's mutex is released
-                // This prevents the agent from performing a final action after the user presses the terminate button
-                return;
-            }
             if (this.pendingActionInfo === undefined) {
                 const termReason = "Bug in action selection code allowed the scaffolding to reach a point where it would commit to the chosen action while no action had actually been chosen";
                 this.logger.error(termReason + "; terminating task");
@@ -566,6 +592,13 @@ export class AgentController {
                 //to get high confidence that the screenshot with highlighted target element has been captured
                 if (this.pendingActionInfo.elementIndex !== undefined) { await sleep(40 + elementHighlightRenderDelay); }
 
+                if (this.terminationSignal) {
+                    this.logger.info("received termination signal after deciding on the action but before actually committing it (possibly while waiting for a screenshot to be captured with the target element highlighted; terminating task")
+                    //the task termination will be handled by the terminateTask method being called by the handler (for
+                    // messages from side panel) once this method ends and the controller's mutex is released
+                    // This prevents the agent from performing a final action after the user presses the terminate button
+                    return;
+                }
                 this.numPriorScreenshotsTakenForPromptingCurrentAction = 0;
                 this.state = AgentControllerState.WAITING_FOR_ACTION;
                 try {
@@ -626,7 +659,7 @@ export class AgentController {
 
         const prompts: LmmPrompts = generatePrompt(this.taskSpecification,
             this.actionsSoFar.map(entry => `${entry.success ? "SUCCEEDED" : "FAILED"}-${entry.actionDesc}; explanation: ${entry.explanation}`),
-            interactiveChoices, viewportInfo);
+            interactiveChoices, viewportInfo, this.aiEngine.providerDetails().id);
         if (monitorRejectionContext !== undefined) {
             prompts.queryPrompt += `\n${monitorRejectionContext}`;
         }

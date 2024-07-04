@@ -2,6 +2,7 @@ import {Logger} from "loglevel";
 import {SerializableElementData} from "./BrowserHelper";
 
 
+
 export const expectedMsgForPortDisconnection = "Attempting to use a disconnected port object";
 export const pageToControllerPort = `page-actor-2-agent-controller`;
 export const panelToControllerPort = "side-panel-2-agent-controller";
@@ -10,6 +11,17 @@ export const expectedMsgForSendingRuntimeRequestFromDisconnectedContentScript = 
 //ms, how long to sleep (after editing an element for highlighting) before telling the service worker to take a
 // screenshot; i.e. longest realistic amount of time the browser might take to re-render the modified element
 export const elementHighlightRenderDelay = 5;
+
+export const storageKeyForAiProviderType = "aiProviderType";
+
+export const storageKeyForLogLevel = "logLevel";
+export const storageKeyForMonitorMode = "isMonitorMode";
+export const storageKeyForShouldWipeHistoryOnTaskStart = "shouldWipeHistoryOnTaskStart";
+export const storageKeyForMaxOps = "maxOps";
+export const storageKeyForMaxNoops = "maxNoops";
+export const storageKeyForMaxFailures = "maxFailures";
+export const storageKeyForMaxFailureOrNoopStreak = "maxFailureOrNoopStreak";
+
 
 export const defaultIsMonitorMode = false;
 export const defaultShouldWipeActionHistoryOnStart = true;
@@ -46,7 +58,7 @@ export enum PageRequestType {
     LOG = "log",
     PRESS_ENTER = "pressEnter",
     HOVER = "hover",
-    SCREENSHOT_WITH_TARGET_HIGHLIGHTED= "screenshotWithTargetElementHighlighted"
+    SCREENSHOT_WITH_TARGET_HIGHLIGHTED = "screenshotWithTargetElementHighlighted"
 }
 
 /**
@@ -60,7 +72,7 @@ export enum Background2PanelPortMsgType {
     TASK_HISTORY_ENTRY = "taskHistoryEntry",
     TASK_ENDED = "taskEnded",
     ERROR = "error",//cases where the agent controller wants to tell the side panel about a problem with some message from the side panel which was identified before a task id was generated
-    NOTIFICATION="notification",//for agent notifying side panel of non-critical problem that will delay progress on the task (so the side panel can display that to user in status field and avoid user giving up on system)
+    NOTIFICATION = "notification",//for agent notifying side panel of non-critical problem that will delay progress on the task (so the side panel can display that to user in status field and avoid user giving up on system)
     HISTORY_EXPORT = "historyExport"//for when the controller has assembled a Blob for a zip file containing logs and/or screenshots and needs to send it to the side panel so that it can be downloaded to the user's computer
 }
 
@@ -166,13 +178,11 @@ function processUpdateToMonitorModeCache(storedMonitorMode: unknown, cacheUpdate
 
 export function setupMonitorModeCache(cacheUpdater: (newVal: boolean) => void, logger: Logger) {
     if (chrome?.storage?.local) {
-        chrome.storage.local.get("isMonitorMode", (items) => {
-            processUpdateToMonitorModeCache(items.isMonitorMode, cacheUpdater, logger);
+        chrome.storage.local.get(storageKeyForMonitorMode, (items) => {
+            processUpdateToMonitorModeCache(items[storageKeyForMonitorMode], cacheUpdater, logger);
         });
-        chrome.storage.local.onChanged.addListener((changes: {[p: string]: chrome.storage.StorageChange}) => {
-            if (changes.isMonitorMode !== undefined) {
-                processUpdateToMonitorModeCache(changes.isMonitorMode.newValue, cacheUpdater, logger);
-            }
+        chrome.storage.local.onChanged.addListener((changes: { [p: string]: chrome.storage.StorageChange }) => {
+            processUpdateToMonitorModeCache(changes[storageKeyForMonitorMode]?.newValue, cacheUpdater, logger);
         });
     }
 }

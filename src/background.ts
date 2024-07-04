@@ -9,7 +9,7 @@ import {
     LOGS_OBJECT_STORE, logsNotYetSavedToDb, mislaidLogsQueueMutex, saveLogMsgToDb,
     SCREENSHOTS_OBJECT_STORE,
 } from "./utils/shared_logging_setup";
-import {OpenAiEngine} from "./utils/OpenAiEngine";
+
 import log from "loglevel";
 import {
     AgentController,
@@ -21,6 +21,8 @@ import {PageRequestType, pageToControllerPort, panelToControllerPort, renderUnkn
 import {openDB} from "idb";
 import Port = chrome.runtime.Port;
 import MessageSender = chrome.runtime.MessageSender;
+import {AiEngine} from "./utils/AiEngine";
+import {createSelectedAiEngine} from "./utils/ai_misc";
 
 
 console.log("successfully loaded background script in browser");
@@ -160,13 +162,8 @@ sleep(20).then(() => {
     }
 });
 
-//eventually allow other api's/model-providers? depends on how much we rely on audio modality of gpt-4o and how quickly others catch up there
-const modelName: string = "gpt-4o-2024-05-13";
-
 async function initializeAgentController(): Promise<AgentController> {
-    const apiKeyQuery = await chrome.storage.local.get("openAiApiKey");
-    const apiKey: string = apiKeyQuery.openAiApiKey ?? "PLACEHOLDER_API_KEY";
-    const aiEngine: OpenAiEngine = new OpenAiEngine(modelName, apiKey);
+    const aiEngine: AiEngine = await createSelectedAiEngine();
     return new AgentController(aiEngine);
 }
 

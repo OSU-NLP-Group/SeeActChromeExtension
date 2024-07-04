@@ -10,7 +10,7 @@ import {
     Panel2BackgroundPortMsgType,
     panelToControllerPort,
     renderUnknownValue,
-    setupMonitorModeCache
+    setupMonitorModeCache, storageKeyForShouldWipeHistoryOnTaskStart
 } from "./misc";
 import {Mutex} from "async-mutex";
 import {ActionInfo} from "./AgentController";
@@ -101,11 +101,11 @@ export class SidePanelManager {
 
         setupMonitorModeCache(this.handleMonitorModeCacheUpdate, this.logger);
         if (chrome?.storage?.local) {
-            chrome.storage.local.get(["shouldWipeHistoryOnTaskStart"], (items) => {
-                this.validateAndApplySidePanelOptions(true, items.shouldWipeHistoryOnTaskStart);
+            chrome.storage.local.get([storageKeyForShouldWipeHistoryOnTaskStart], (items) => {
+                this.validateAndApplySidePanelOptions(true, items[storageKeyForShouldWipeHistoryOnTaskStart]);
             });
             chrome.storage.local.onChanged.addListener((changes: { [p: string]: chrome.storage.StorageChange }) => {
-                this.validateAndApplySidePanelOptions(false, changes.shouldWipeHistoryOnTaskStart?.newValue);
+                this.validateAndApplySidePanelOptions(false, changes[storageKeyForShouldWipeHistoryOnTaskStart]?.newValue);
             });
         }
 

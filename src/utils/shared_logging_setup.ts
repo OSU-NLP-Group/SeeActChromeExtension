@@ -2,7 +2,7 @@ import log, {LogLevel, LogLevelNames} from "loglevel";
 import {
     expectedMsgForSendingRuntimeRequestFromDisconnectedContentScript,
     PageRequestType,
-    renderUnknownValue
+    renderUnknownValue, storageKeyForLogLevel
 } from "./misc";
 import {DBSchema, IDBPDatabase, openDB} from 'idb';
 import {Mutex} from "async-mutex";
@@ -23,11 +23,12 @@ export const origLoggerFactory = log.methodFactory;
 export const defaultLogLevel: keyof LogLevel = "TRACE";//todo change this to warn before release
 
 const logLevelCache: { chosenLogLevel: keyof LogLevel } = {chosenLogLevel: defaultLogLevel}
-chrome.storage.local.get("logLevel").then((items) => {
-    if (isLogLevelName(items.logLevel)) {
-        logLevelCache.chosenLogLevel = items.logLevel;
-    } else if (items.logLevel !== undefined) {
-        console.error(`invalid log level was stored: ${items.logLevel}, ignoring it when initializing logging script`)
+chrome.storage.local.get(storageKeyForLogLevel).then((items) => {
+    const logLevelVal = items[storageKeyForLogLevel]
+    if (isLogLevelName(logLevelVal)) {
+        logLevelCache.chosenLogLevel = logLevelVal;
+    } else if (logLevelVal !== undefined) {
+        console.error(`invalid log level was stored: ${logLevelVal}, ignoring it when initializing logging script`)
     }
 });
 
@@ -196,8 +197,8 @@ export const createNamedLogger = (loggerName: string, inServiceWorker: boolean):
     newLogger.rebuild();
 
     if (chrome?.storage?.local) {
-        chrome.storage.local.get("logLevel", (items) => {
-            const storedLevel: unknown = items.logLevel;
+        chrome.storage.local.get(storageKeyForLogLevel, (items) => {
+            const storedLevel: unknown = items[storageKeyForLogLevel];
             if (isLogLevelName(storedLevel)) {
                 newLogger.setLevel(storedLevel);
                 newLogger.rebuild();
@@ -205,10 +206,9 @@ export const createNamedLogger = (loggerName: string, inServiceWorker: boolean):
             } else if (storedLevel !== undefined) {newLogger.error(`invalid log level was detected in local storage: ${storedLevel}, ignoring it when initializing a logger`)}
         });
 
-        //todo unit testing this? maybe create a function that takes a logger and returns a "local storage changes handler" function, then just unit test that
         chrome.storage.local.onChanged.addListener((changes: { [p: string]: chrome.storage.StorageChange }) => {
-            if (changes.logLevel) {
-                const newLogLevel: unknown = changes.logLevel.newValue;
+            if (changes[storageKeyForLogLevel]) {
+                const newLogLevel: unknown = changes[storageKeyForLogLevel].newValue;
                 if (isLogLevelName(newLogLevel)) {
                     const existingLogLevel = LogLevelDict[newLogger.getLevel()];
                     if (newLogLevel !== existingLogLevel) {
