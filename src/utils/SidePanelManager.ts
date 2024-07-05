@@ -557,7 +557,7 @@ export class SidePanelManager {
             this.statusPopup.style.left = `0px`;
             //the addition of 5 is so the details popup overlaps a little with the status div and so you can move
             // the mouse from the div to the popup without the popup sometimes disappearing
-            this.statusPopup.style.top = `${statusRect.y + 4 - this.statusPopup.offsetHeight + window.scrollY}px`;
+            this.statusPopup.style.top = `${statusRect.y + 5 - this.statusPopup.offsetHeight + window.scrollY}px`;
         }
     }
 

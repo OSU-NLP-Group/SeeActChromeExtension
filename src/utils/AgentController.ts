@@ -140,6 +140,7 @@ export class AgentController {
     private mightNextActionCausePageNav: boolean = false;
 
     private actionsSoFar: ActionRecord[] = [];
+    //todo per Zeyuan, it would be useful if current URL was captured after every action
     private predictionsInTask: PredictionRecord[] = [];
 
     /**

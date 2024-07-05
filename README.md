@@ -5,6 +5,10 @@ just installing a chrome extension from chrome web store rather than having to i
 then download/run SeeAct). It also allows them to use their own login sessions (since it runs in their existing Chrome
 window/tab rather than in a separate/playwright-created browser window).
 
+TODO before chrome-web-store submission: from chrome_web_store_submission_materials folder, 
+  move the user_manual.md, privacy_policy.md, and rail_a_eula.pdf files 
+  to a chrome_extension folder in the main branch of OSU-NLP-Group/SeeAct repo
+
 # Setup
 
 The zip of this repo included the dist folder for ease of installing the built extension. However, the zip omits the 
@@ -75,7 +79,7 @@ in the extension's side panel. Alternatively, the user's actual cursor can be ke
 For a given task, almost all of the logs related to it will have been associated with its task id and will be automatically
 exported upon task termination (whether by task-completion, error, or user intervention) to a zip file in the downloads folder (along with screenshots and a few summary json files about the task).
 
-However, logs related to the options menu will only be accessible by clicking the "Export non-task-specific logs" button in the upper right corner of the side panel.
+However, logs related to the options menu will only be accessible by clicking the "Download misc logs" button near the bottom right corner of the side panel.
 
 Also, more troublesomely, a handful of the first logs that're conceptually/temporally related to a task and several of the last logs that're conceptually/temporally related to a task will not be associated with the task id and will not be exported in that task's zip file. These logs can be found based on timestamp in the "non-task-specific" logs export by clicking the "Export non-task-specific logs" button (in the upper right corner of the side panel) again a bit after the task ended.
 
@@ -102,8 +106,6 @@ error, controller is in a particular state at a point in code execution where th
 Some timestamps are higher precision (5 to 100 microseconds precision rather than 1 millisecond precision). They use the
 Performance browser API. Please [beware](https://developer.mozilla.org/en-US/docs/Web/API/Performance/now#description) 
 possible confusion from system clock adjustments (e.g. DST) or clock skew when comparing high-precision vs normal timestamps.
-
-
 
 ## Developer notes
 
