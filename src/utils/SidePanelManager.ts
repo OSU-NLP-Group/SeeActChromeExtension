@@ -592,4 +592,7 @@ export class SidePanelManager {
             }
         }).catch((error) => this.logger.error(`error while updating monitor mode cache: ${renderUnknownValue(error)}`));
     }
+
+    //todo add feature for state-changing-action manual annotation/collection
+    // when doing so, remember to modify list-of-interactive-elements so each entry has an id (i.e. the index within the list)
 }

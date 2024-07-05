@@ -17,6 +17,7 @@ export type ElementData = {
         bRx: number;
         bRy: number
     },
+    //todo add xpath string
     width: number,
     height: number,
     tagName: string,
