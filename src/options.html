@@ -19,17 +19,17 @@
     </div>
 
     <div class="space-y-2 flex items-center">
-        <label for="open-ai-api-key" class="block font-semibold mr-2" title="this is required if Open AI is selected as the AI model provider">OpenAI API Key</label>
+        <label for="open-ai-api-key" class="block font-semibold mr-2" title="Allows the web agent in your browser to leverage Open AI's GPT AI models for analysis and decision-making. This is required if Open AI is selected as the AI model provider">OpenAI API Key</label>
         <input type="text" id="open-ai-api-key" placeholder="Enter OpenAI API key here" class="w-96 p-2 border rounded">
     </div>
 
     <div class="space-y-2 flex items-center">
-        <label for="anthropic-api-key" class="block font-semibold mr-2" title="this is required if Anthropic is selected as the AI model provider">Anthropic API Key</label>
+        <label for="anthropic-api-key" class="block font-semibold mr-2" title="Allows the web agent in your browser to leverage Anthropic's Claude AI models for analysis and decision-making. This is required if Anthropic is selected as the AI model provider">Anthropic API Key</label>
         <input type="text" id="anthropic-api-key" placeholder="Enter Anthropic API key here" class="w-96 p-2 border rounded">
     </div>
 
     <div class="space-y-2 flex items-center">
-        <label for="google-deepmind-api-key" class="block font-semibold mr-2" title="this is required if Google Deepmind is selected as the AI model provider">Google Deepmind API Key</label>
+        <label for="google-deepmind-api-key" class="block font-semibold mr-2" title="Allows the web agent in your browser to leverage Google Deepmind's Gemini AI models for analysis and decision-making. This is required if Google Deepmind is selected as the AI model provider">Google Deepmind API Key</label>
         <input type="text" id="google-deepmind-api-key" placeholder="Enter Google Deepmind API key here" class="w-96 p-2 border rounded">
     </div>
 
@@ -74,7 +74,7 @@
 <section class="space-y-4 rounded-lg bg-sky-100 p-2">
     <h1 class="text-2xl font-bold ">Technical/Troubleshooting Options</h1>
     <div class="space-y-2 flex items-center">
-        <label for="log-level" class="block font-semibold mr-2" title="the minimum level of logs which will be saved (SILENT means no logs will be saved)">Log Level</label>
+        <label for="log-level" class="block font-semibold mr-2" title="the minimum level of logs which will be saved (SILENT means no logs will be saved); Setting this to higher values will make it easier to skim through the logs, while setting it to lower values will give more thorough information that is often necessary for troubleshooting">Log Level</label>
         <select id="log-level" class="w-fit p-2 border rounded">
             <option value="SILENT">SILENT</option>
             <option value="ERROR">ERROR</option>
