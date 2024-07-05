@@ -25,6 +25,8 @@ Key features:
 
 Whether you're looking to automate a tedious web task (while you do something else away from the computer) or simply to explore the capabilities of AI-assisted browsing, SeeAct is here to help.
 
+Please be aware that using this extension with a given AI cloud provider incurs modest costs (e.g. several cents per task) for the AI model's usage. The extension will not perform tasks without your explicit instruction, so you can control the costs by limiting the number of tasks you ask the agent to perform. There are also [configuration options](#configuration) that can limit costs in cases where the agent gets stuck or confused.
+
 ## Initial Setup
 
 1. Install the SeeAct Chrome Web Agent extension from the Chrome Web Store.
@@ -35,6 +37,10 @@ Whether you're looking to automate a tedious web task (while you do something el
 6. On the Options page, you'll need to set up the following:
     - Choose your preferred AI Model Provider (e.g., OpenAI, Anthropic, Google DeepMind)
     - Enter the API key for your chosen provider
+      - If you don't have an API key, you can get one from the provider's website after making an account with them (note that this would be a separate account from any account you may have already made for use of that company's chatbot page):
+        - [OpenAI](https://platform.openai.com/signup)
+        - [Anthropic](https://console.anthropic.com/)
+        - [Google DeepMind](https://ai.google.dev/gemini-api/docs/api-key/)
     - Adjust other settings as desired (we'll cover these in the [Configuration](#configuration) section)
 7. Click "Save" to store your settings.
 
@@ -142,17 +148,33 @@ The code under this repo is licensed under an [OPEN RAIL-S](https://www.licenses
 TODO confirm with Boyuan and Professor Su about copyright line in LICENSE file
 
 ## Privacy Policy
+This extension only intentionally and inevitably captures a small amount of personal information- the personal API key(s) used to power the web agent with a frontier AI model from one of the big AI labs.  
+Your personal API keys (for the AI cloud providers) are only stored locally in your browser.
 
-This extension can potentially capture a great deal of personal information, depending on the tasks that the user asks the agent to perform.  
-This is because screenshots (and collection of under-the-hood webpage information called 'HTML') are collected for the agent's decision-making and for later review by the user.  
-These screenshots and HTML data may contain personal information (e.g. from the user previously filling some things in, a password manager automatically filling things in, or from the user already being signed in to a given website).
+If all tasks avoid pages with sensitive information, then the extension will not capture any further personal information.  
 
-However, this data is only ever sent to a server of the user's choice (see "AI Model Provider" [configuration option](#configuration)). Even then, it is only sent so it can be fed to an AI model to make decisions on the user's behalf.  
-The data is stored _locally_ on the user's machine to allow for review of the agent's decisions and of the behavior of the extension. However, a given screenshot or other piece of stored information is deleted after 14-28 days.  
+### Reasons why sensitive information may be collected
+However, to avoid 'pages with sensitive information', the user would need to refrain from starting tasks on websites which the user is signed in to, as well as websites which have forms (e.g. login, newsletter-subscription, or payment pages) where the browser might auto-fill credentials, payment information, addresses, phone numbers, etc. Additionally, sometimes a task that starts on one website will lead to navigating to a different website, and that second site could also have such sensitive pages.
 
-Your personal API keys (for the AI cloud providers) are only stored locally in your browser, of course.
+In practice, then, this extension can potentially capture a great deal of personal information, depending on the tasks that the user asks the agent to perform.  
+This is because screenshots (and under-the-hood webpage information called 'HTML') are collected for the agent's decision-making and for later review by the user.  
+These screenshots and HTML data may contain personal information (e.g. from the user previously filling some things in, a password manager automatically filling things in, or the user already being signed in to a given website).
 
-TODO link to privacy policy
+### How customer information is used
+This data is only ever sent to a server of the user's choice (see "AI Model Provider" [configuration option](#configuration)). Even then, it is only sent so that it can be fed to an AI model to make decisions on the user's behalf.   
+The user should consult the privacy policy of their chosen AI Model Provider for how it handles customer data that is sent to its API's. Many of them commit to not training their models on data sent to their API's (a guarantee they frequently do not make for use of their chatbot web pages).    
+
+The data is stored _locally_ on the user's machine to allow for review of the agent's decisions and of the behavior of the extension. However, a given screenshot or other piece of stored information is automatically deleted after 14-28 days.   
+Finally, the collection of potentially-sensitive data only occurs during a user-initiated task, and the user can terminate the task at any time.
+
+### Full list of information collected
+- Website URL's visited during tasks
+- Screenshots of websites visited during tasks
+- HTML data of websites visited during tasks (including any personal information that may be present on the page)
+- Configuration choices, including API keys for AI cloud providers
+- Logs of the agent's actions and decisions during tasks
+- Logs of miscellaneous internal activity in the extension's programming
+
 
 ## Acknowledgements
 
