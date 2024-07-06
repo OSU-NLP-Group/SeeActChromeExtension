@@ -12,9 +12,9 @@
         <!-- options' value strings must exactly match the 'id' strings in utils/misc.ts!/AiProviders, but display text
                 here doesn't have to match the 'label' string there -->
         <select id="model-provider" class="w-96 p-2 border rounded">
-            <option value="OPEN_AI" selected>OpenAI (e.g. ChatGPT)</option>
-            <option value="ANTHROPIC">Anthropic (e.g. Claude)</option>
-            <option value="GOOGLE_DEEPMIND">Google DeepMind (e.g. Gemini)</option>
+            <option value="OPEN_AI" title="currently chosen model is GPT-4o" selected>OpenAI (e.g. ChatGPT)</option>
+            <option value="ANTHROPIC" title="currently chosen model is Claude 3.5 Sonnet">Anthropic (e.g. Claude)</option>
+            <option value="GOOGLE_DEEPMIND"  title="currently chosen model is Gemini 1.5 Pro">Google DeepMind (e.g. Gemini)</option>
         </select>
     </div>
 
@@ -104,5 +104,9 @@
 </div>
 
 <button id="save" class="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">Save</button>
+<div class="flex justify-around">
+    <a href="../rail_a_eula.pdf">EULA</a>
+    <a href="../privacy_policy.pdf">Privacy Policy</a>
+</div>
 </body>
 </html>

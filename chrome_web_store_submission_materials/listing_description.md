@@ -13,4 +13,4 @@ The extension provides an informative yet compact UI:
 
 Thorough record-keeping allows a curious user to investigate the details of the inputs and outputs of the AI model after it behaved perplexingly in a task, or to share evidence of the AI model's actions with others.
 
-Please be aware that use of this extension is subject to a [EULA](https://github.com/OSU-NLP-Group/SeeAct/blob/main/chrome_extension/rail_a_eula.pdf) and a [privacy policy](https://github.com/OSU-NLP-Group/SeeAct/blob/main/chrome_extension/privacy_policy.md).
+Please be aware that use of this extension is subject to a [EULA](https://github.com/OSU-NLP-Group/SeeAct/blob/main/chrome_extension/rail_a_eula.pdf) and a [privacy policy](https://github.com/OSU-NLP-Group/SeeAct/blob/main/chrome_extension/privacy_policy.pdf).

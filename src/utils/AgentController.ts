@@ -31,7 +31,7 @@ import {
     renderUnknownValue,
     setupMonitorModeCache,
     sleep,
-    storageKeyForAiProviderType,
+    storageKeyForAiProviderType, storageKeyForEulaAcceptance,
     storageKeyForMaxFailureOrNoopStreak,
     storageKeyForMaxFailures,
     storageKeyForMaxNoops,
@@ -178,6 +178,8 @@ export class AgentController {
     maxFailureOrNoopStreakLimit: number = defaultMaxFailureOrNoopStreak;
 
     cachedMonitorMode: boolean = defaultIsMonitorMode;
+    isDisabledUntilEulaAcceptance: boolean = false;
+
     wasPrevActionRejectedByMonitor: boolean = false;
     monitorFeedback: string = "";
 
@@ -208,30 +210,20 @@ export class AgentController {
         setupMonitorModeCache((newMonitorModeVal: boolean) => this.cachedMonitorMode = newMonitorModeVal, this.logger);
         if (chrome?.storage?.local) {
             chrome.storage.local.get([storageKeyForMaxOps, storageKeyForMaxNoops, storageKeyForMaxFailures,
-                storageKeyForMaxFailureOrNoopStreak], (items) => {
-                this.validateAndApplyAgentOptions(true, items[storageKeyForMaxOps],
+                storageKeyForMaxFailureOrNoopStreak, storageKeyForEulaAcceptance], async (items) => {
+                await this.validateAndApplyAgentOptions(true, items[storageKeyForMaxOps],
                     items[storageKeyForMaxNoops], items[storageKeyForMaxFailures],
-                    items[storageKeyForMaxFailureOrNoopStreak]);
+                    items[storageKeyForMaxFailureOrNoopStreak], undefined,
+                    items[storageKeyForEulaAcceptance]);
             });
             chrome.storage.local.onChanged.addListener(async (changes: {
                 [p: string]: chrome.storage.StorageChange
             }) => {
                 this.logger.debug(`firing local-storage's change-listener for AgentController, based on changes object: ${JSON.stringify(changes)}`)
-                this.validateAndApplyAgentOptions(false, changes[storageKeyForMaxOps]?.newValue,
+                await this.validateAndApplyAgentOptions(false, changes[storageKeyForMaxOps]?.newValue,
                     changes[storageKeyForMaxNoops]?.newValue, changes[storageKeyForMaxFailures]?.newValue,
-                    changes[storageKeyForMaxFailureOrNoopStreak]?.newValue);
-
-                const existingAiProvider = this.aiEngine.providerDetails().id;
-                const newAiProvider = changes[storageKeyForAiProviderType]?.newValue;
-                if (newAiProvider && newAiProvider !== existingAiProvider
-                    && typeof newAiProvider === "string" && newAiProvider in AiProviders) {
-                    const newProviderDtls = AiProviders[newAiProvider as AiProviderId];
-                    this.logger.info(`Switching AI provider from ${existingAiProvider} to ${newAiProvider}`);
-                    const newProviderApiKey = String(
-                        (await chrome.storage.local.get(newProviderDtls.storageKeyForApiKey))[newProviderDtls.storageKeyForApiKey]
-                        ?? AiEngine.PLACEHOLDER_API_KEY);
-                    this.aiEngine = newProviderDtls.engineCreator({apiKey: newProviderApiKey});
-                }
+                    changes[storageKeyForMaxFailureOrNoopStreak]?.newValue,
+                    changes[storageKeyForAiProviderType]?.newValue, changes[storageKeyForEulaAcceptance]?.newValue);
             });
         }
     }
@@ -245,10 +237,12 @@ export class AgentController {
      * @param newMaxNoops possible new value for this.maxNoopLimit
      * @param newMaxFailures possible new value for this.maxFailureLimit
      * @param newMaxFailureOrNoopStreak possible new value for this.maxFailureOrNoopStreakLimit
+     * @param newAiProvider the id of the newly-chosen provider for the AI engine
+     * @param eulaAcceptance whether the user has accepted the EULA yet
      */
-    validateAndApplyAgentOptions = (
+    validateAndApplyAgentOptions = async (
         initOrUpdate: boolean, newMaxOps: unknown, newMaxNoops: unknown, newMaxFailures: unknown,
-        newMaxFailureOrNoopStreak: unknown): void => {
+        newMaxFailureOrNoopStreak: unknown, newAiProvider: unknown, eulaAcceptance: unknown): Promise<void> => {
         const contextStr = initOrUpdate ? "when loading options from storage" : "when processing an update from storage";
         if (validateIntegerLimitUpdate(newMaxOps, 1)) {
             this.maxOpsLimit = newMaxOps;
@@ -265,6 +259,22 @@ export class AgentController {
         if (validateIntegerLimitUpdate(newMaxFailureOrNoopStreak)) {
             this.maxFailureOrNoopStreakLimit = newMaxFailureOrNoopStreak;
         } else if (newMaxFailureOrNoopStreak !== undefined) {this.logger.error(`invalid maxFailureOrNoopStreak value ${newMaxFailureOrNoopStreak} in chrome.storage detected ${contextStr}; ignoring it`);}
+
+        const existingAiProvider = this.aiEngine.providerDetails().id;
+        if (newAiProvider && newAiProvider !== existingAiProvider
+            && typeof newAiProvider === "string" && newAiProvider in AiProviders) {
+            const newProviderDtls = AiProviders[newAiProvider as AiProviderId];
+            this.logger.info(`Switching AI provider from ${existingAiProvider} to ${newAiProvider}`);
+            const newProviderApiKey = String(
+                (await chrome.storage.local.get(newProviderDtls.storageKeyForApiKey))[newProviderDtls.storageKeyForApiKey]
+                ?? AiEngine.PLACEHOLDER_API_KEY);
+            this.aiEngine = newProviderDtls.engineCreator({apiKey: newProviderApiKey});
+        }
+
+        if (typeof eulaAcceptance === "boolean") {
+            this.logger.debug(`EULA acceptance value from storage: ${eulaAcceptance}`);
+            this.isDisabledUntilEulaAcceptance = !eulaAcceptance;
+        } else if (typeof eulaAcceptance !== "undefined") { this.logger.error(`invalid EULA acceptance value ${renderUnknownValue(eulaAcceptance)} in chrome.storage detected ${contextStr}; ignoring it`); }
     }
 
     /**
@@ -329,7 +339,16 @@ export class AgentController {
      * @param port the connection to the side panel which requested the start of the task
      */
     startTask = async (message: any, port: Port): Promise<void> => {
-        if (this.taskId !== undefined) {
+        if (this.isDisabledUntilEulaAcceptance) {
+            const taskRejectMsg = `Cannot start new tasks until user accepts the EULA (and privacy policy)`;
+            this.logger.warn(taskRejectMsg);
+            this.state = AgentControllerState.IDLE;
+            try {
+                port.postMessage({type: Background2PanelPortMsgType.ERROR, msg: taskRejectMsg});
+            } catch (error: any) {
+                this.logger.error(`error while trying to send error message to side panel about task-start request being received when EULA has not yet been accepted; error: ${renderUnknownValue(error)}`);
+            }
+        } else if (this.taskId !== undefined) {
             const taskRejectMsg = `Task ${this.taskId} already in progress; not starting new task`;
             this.logger.warn(taskRejectMsg);
             try {
@@ -1110,7 +1129,9 @@ export class AgentController {
             // worker for another 30sec; as an added layer of redundancy on top of the keep-alive alarms
             // Just the alarms on their own still lead to service worker disconnects every few hours
         } else if (message.type === Panel2BackgroundPortMsgType.EXPORT_UNAFFILIATED_LOGS) {
-            if (dbConnHolder.dbConn) {
+            if (this.isDisabledUntilEulaAcceptance) {
+                this.logger.warn("cannot export logs until user accepts EULA");
+            } else if (dbConnHolder.dbConn) {
                 const zip = new JSZip();
                 const logFileContents = await this.retrieveLogsForTaskId(dbConnHolder.dbConn, taskIdPlaceholderVal);
                 if (logFileContents != undefined) {

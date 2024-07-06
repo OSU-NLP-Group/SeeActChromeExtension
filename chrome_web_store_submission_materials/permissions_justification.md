@@ -50,4 +50,4 @@ pretty much all of them? or possibly just "website content"; not sure what they 
 
 
 ## Privacy Policy
-https://github.com/OSU-NLP-Group/SeeAct/blob/main/chrome_extension/privacy_policy.md
+https://github.com/OSU-NLP-Group/SeeAct/blob/main/chrome_extension/privacy_policy.pdf

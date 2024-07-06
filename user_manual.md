@@ -148,8 +148,8 @@ TODO change that to hyperlink to the SeeAct github link https://github.com/OSU-N
 
 ## Privacy Policy
 
-Please see the [full privacy policy](privacy_policy.md)
-TODO change that to hyperlink to the SeeAct github link https://github.com/OSU-NLP-Group/SeeAct/blob/main/chrome_extension/privacy_policy.md
+Please see the [full privacy policy](privacy_policy.pdf)
+TODO change that to hyperlink to the SeeAct github link https://github.com/OSU-NLP-Group/SeeAct/blob/main/chrome_extension/privacy_policy.pdf
 
 ## Acknowledgements
 

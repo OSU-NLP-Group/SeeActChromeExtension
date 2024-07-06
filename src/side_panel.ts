@@ -6,6 +6,16 @@ import "./side_panel.css";
 
 // const logger = createNamedLogger('side-panel', false);
 
+const eulaComplaintElem = document.getElementById('eula-complaint');
+if (!(eulaComplaintElem && eulaComplaintElem instanceof HTMLDivElement)) throw new Error('valid eula-complaint div not found');
+
+const eulaReviewButton = document.getElementById('eula-review');
+if (!(eulaReviewButton && eulaReviewButton instanceof HTMLButtonElement)) throw new Error('valid eula-review button not found');
+
+//button rather than link b/c we want to open in new tab and <a> behaves unintuitively in side panel
+const userGuideButton = document.getElementById('user-guide');
+if (!(userGuideButton && userGuideButton instanceof HTMLButtonElement)) throw new Error('valid user-guide button not found');
+
 const startButton = document.getElementById('start-agent');
 if (!(startButton && startButton instanceof HTMLButtonElement)) throw new Error('valid startAgent button not found');
 
@@ -46,6 +56,7 @@ const monitorRejectButton = document.getElementById('reject');
 if (!(monitorRejectButton && monitorRejectButton instanceof HTMLButtonElement)) throw new Error('valid reject button not found');
 
 const manager = new SidePanelManager({
+    eulaComplaintContainer: eulaComplaintElem as HTMLDivElement,
     startButton: startButton as HTMLButtonElement,
     taskSpecField: taskSpecField as HTMLTextAreaElement,
     statusDiv: statusDiv as HTMLDivElement,
@@ -56,13 +67,17 @@ const manager = new SidePanelManager({
     monitorModeContainer: monitorModeContainer as HTMLDivElement,
     monitorFeedbackField: monitorFeedbackField as HTMLTextAreaElement,
     monitorApproveButton: monitorApproveButton as HTMLButtonElement,
-    monitorRejectButton: monitorRejectButton as HTMLButtonElement
+    monitorRejectButton: monitorRejectButton as HTMLButtonElement,
+    unaffiliatedLogsExportButton: unaffiliatedLogsExportButton as HTMLButtonElement
 });
 
 document.addEventListener('mousemove', (e) => {
     manager.mouseClientX = e.clientX;
     manager.mouseClientY = e.clientY;
 });
+
+eulaReviewButton.addEventListener('click', () => chrome.tabs.create({url: './src/installation_greeting.html'}));
+userGuideButton.addEventListener('click', () => chrome.tabs.create({url: 'user_manual.pdf'}));
 
 //redirecting click on icon to click on button so that disabling the button effectively disables its icon as well
 startButton.addEventListener('click', manager.startTaskClickHandler);

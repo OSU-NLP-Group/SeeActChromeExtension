@@ -5,8 +5,7 @@ just installing a chrome extension from chrome web store rather than having to i
 then download/run SeeAct). It also allows them to use their own login sessions (since it runs in their existing Chrome
 window/tab rather than in a separate/playwright-created browser window).
 
-TODO before chrome-web-store submission: from chrome_web_store_submission_materials folder, 
-  move the user_manual.md, privacy_policy.md, and rail_a_eula.pdf files 
+TODO before chrome-web-store submission: copy the user_manual.md, privacy_policy.pdf, and rail_a_eula.pdf files 
   to a chrome_extension folder in the main branch of OSU-NLP-Group/SeeAct repo
 
 # Setup
