@@ -143,6 +143,7 @@ export class PageActor {
             elementToActOn.click();
             actionOutcome.result += "; element is not an input, textarea, or contenteditable element; can't type in it. Tried clicking with js instead";
         }
+        elementToActOn.dispatchEvent(new Event('input', {bubbles: true}));
         elementToActOn.dispatchEvent(new Event('change', {bubbles: true}));
 
         if (actionOutcome.success) {
@@ -472,13 +473,14 @@ export class PageActor {
         const maxPollingTime = 10_000;//ms
         const numPollingIterations = (maxPollingTime-initialWait) / pollingIncrement;
 
+        let didPageRegisterStartOfUnload = false;
         // needed because sometimes weird things happen like unload event not firing for 540+ms after you pressed enter
         await sleep(initialWait);
         for (let i = 0; i < numPollingIterations; i++) {
 
             if (this.isPageBeingUnloaded) {
-                this.logger.info(`page is being unloaded; will not try to ${reasonForWait}`);
-                return true;
+                this.logger.info(`page is being unloaded; will probably not try to ${reasonForWait}`);
+                didPageRegisterStartOfUnload = true;
             }
             const currTime = Date.now();
             if (currTime - this.lastPageModificationTimestamp > pollingIncrement) {
@@ -487,6 +489,20 @@ export class PageActor {
             }
             await sleep(pollingIncrement);
         }
+        if (didPageRegisterStartOfUnload) {
+            //sometimes the page registers an 'unload' event but isn't actually going to unload
+            // (e.g. clicking a 'write email' link which causes the OS to open a pop-up for choosing how to handle it)
+            await sleep(initialWait);
+            //todo test whether this extra logic is relevant
+            const isCurrentTabStillActive = this.domWrapper.getVisibilityState() === "visible";
+            if (isCurrentTabStillActive) {
+                this.logger.info(`while waiting before ${reasonForWait}, there was a signal that the page was unloading, but the page didn't actually unload; continuing to ${reasonForWait}`);
+            } else {
+                this.logger.info(`while waiting before ${reasonForWait}, there was a signal that the page was unloading, and it turned out that focus shifted to a new tab while the existing page was left in the old tab; old tab's content script is no longer relevant, so will not ${reasonForWait}`);
+                return true;
+            }
+        }
+
         this.logger.debug(`waited ${(Date.now() - startOfPostActionStabilityWait)}ms for page to become stable before ${reasonForWait}`);
         return false;
     }

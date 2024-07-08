@@ -1,5 +1,11 @@
 import {createNamedLogger} from "./utils/shared_logging_setup";
-import {Page2BackgroundPortMsgType, pageToControllerPort, renderUnknownValue, sleep} from "./utils/misc";
+import {
+    expectedMsgForPortDisconnection,
+    Page2BackgroundPortMsgType,
+    pageToControllerPort,
+    renderUnknownValue,
+    sleep
+} from "./utils/misc";
 import {PageActor} from "./utils/PageActor";
 
 
@@ -59,7 +65,11 @@ window.addEventListener('load', async () => {
         try {
             portToBackground.postMessage({type: Page2BackgroundPortMsgType.READY});
         } catch (error: any) {
-            logger.error(`error sending backup READY message to background: ${renderUnknownValue(error)}`);
+            if ('message' in error && error.message === expectedMsgForPortDisconnection) {
+                logger.info("background disconnected port before backup READY message could be sent");
+            } else {
+                logger.error(`error sending backup READY message to background: ${renderUnknownValue(error)}`);
+            }
         }
     }
 })();

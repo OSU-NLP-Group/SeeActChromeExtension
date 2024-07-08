@@ -177,7 +177,7 @@ Please examine the choices one by one. Choose the matching one. If multiple opti
 
 export const groundingOutputPromptIntro = `(Response Format)
 Please present your output in JSON format, following the schema below. When a key ("value" or sometimes even "element") is irrelevant for the current response, use the json syntax for null (no double quotes around the word null)`;
-export const groundingOutputWithToolUsePromptIntro = "To respond, you _must_ call the 'browser_action' tool after reasoning about the provided options. Any response that doesn't call that tool at the end will be rejected!";
+export const groundingOutputWithToolUsePromptIntro = "To respond, you _must_ call the 'browser_action' tool after reasoning about the provided options. Any response that doesn't call that tool at the end will be rejected! When setting a parameter to null because it's irrelevant, use json syntax for null (no double quotes around the word null)";
 export const groundingResponseJsonSchema = `{
     "reasoning": { "type": ["string"] },
     "explanation": { "type": ["string"] },

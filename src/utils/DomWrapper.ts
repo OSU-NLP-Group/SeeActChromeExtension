@@ -129,5 +129,13 @@ export class DomWrapper {
         }
     }
 
+    /**
+     * @description trivial wrapper around document.visibilityState to allow jsdom-based unit tests to work
+     * @return the visibility state of the document
+     */
+    getVisibilityState = (): string => {
+        return this.dom.visibilityState;
+    }
+
 
 }
