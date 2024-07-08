@@ -93,6 +93,10 @@ You're now ready to start using SeeAct!
 4. **The Hover action isn't working**
     - Make sure you keep your actual mouse cursor either inside the side panel or entirely outside of the browser window. 
 
+5. **Weird Chrome extension error when agent tries to press Enter**
+    - i.e. "Cannot access a chrome-extension:// URL of different extension"
+    - This seems to involve a conflict between the SeeAct extension and another extension that's also trying to do something with the current website. Please try again in a [new Chrome 'profile'](https://support.google.com/chrome/answer/2364824?hl=en&co=GENIE.Platform%3DDesktop) which only has SeeAct enabled.
+
 ### Possible fixes for rare/extreme issues:
 
 1. **The extension isn't responding**:
