@@ -79,7 +79,7 @@ export const formatChoices = (elements: Array<SerializableElementData>, candidat
             possiblyAbbrevDesc = descriptionSplit.slice(0, 29).join(" ") + "...";
         }
 
-        return `${positionInfo}; ${sizeInfo}Element: <${tagAndRoleType} id="${id}">${possiblyAbbrevDesc}</${tagName}>`;
+        return `${positionInfo}; ${sizeInfo}Element: <${tagAndRoleType}>${possiblyAbbrevDesc}</${tagName}>`;
     });
 }
 

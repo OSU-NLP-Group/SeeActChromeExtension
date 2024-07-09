@@ -186,8 +186,8 @@ export const createNamedLogger = (loggerName: string, inServiceWorker: boolean):
                         console.warn(`lost ability to send messages/requests to service-worker/agent-controller (probably page is being unloaded) while trying to send log message to background script for persistence;\n log message: ${msg};\nerror: ${renderUnknownValue(error)}`);
                     } else {
                         console.error(`error encountered while trying to send log message to background script for persistence;\n log message: ${msg};\nerror: ${renderUnknownValue(error)}`);
+                        throw error;
                     }
-                    throw error;
                 }
             };
         };

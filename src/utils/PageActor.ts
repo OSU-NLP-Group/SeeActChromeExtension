@@ -241,6 +241,17 @@ export class PageActor {
     performPressEnterAction = async (actionOutcome: ActionOutcome,
                                      targetElementDesc: string): Promise<void> => {
         this.logger.trace(`about to press Enter on ${targetElementDesc}`);
+        const activeElem = this.domWrapper.getActiveElement();
+        if (activeElem === null) {
+            actionOutcome.success = false;
+            actionOutcome.result += "; no element is currently focused in the tab";
+            return;
+        } else {
+            this.logger.debug(`active element is a ${activeElem.tagName} at xpath: ${this.browserHelper.getFullXpath(activeElem)}`);
+            //if it comes up, we can add more layers of logic here for identifying the real active element even if it's
+            // hidden inside some number of nested iframes and/or shadow roots
+        }
+
         try {
             const resp = await this.chromeWrapper.sendMessageToServiceWorker({reqType: PageRequestType.PRESS_ENTER});
             if (resp.success) {
@@ -471,7 +482,7 @@ export class PageActor {
         const initialWait = 1000;//ms,
         const pollingIncrement = 100;//ms
         const maxPollingTime = 10_000;//ms
-        const numPollingIterations = (maxPollingTime-initialWait) / pollingIncrement;
+        const numPollingIterations = (maxPollingTime - initialWait) / pollingIncrement;
 
         let didPageRegisterStartOfUnload = false;
         // needed because sometimes weird things happen like unload event not firing for 540+ms after you pressed enter
