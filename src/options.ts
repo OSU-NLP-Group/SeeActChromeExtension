@@ -1,12 +1,13 @@
 import {createNamedLogger, defaultLogLevel, isLogLevelName} from "./utils/shared_logging_setup";
 import {
+    defaultIsAnnotatorMode,
     defaultIsMonitorMode,
     defaultMaxFailureOrNoopStreak,
     defaultMaxFailures,
     defaultMaxNoops,
     defaultMaxOps,
     defaultShouldWipeActionHistoryOnStart,
-    storageKeyForAiProviderType,
+    storageKeyForAiProviderType, storageKeyForAnnotatorMode,
     storageKeyForLogLevel,
     storageKeyForMaxFailureOrNoopStreak,
     storageKeyForMaxFailures,
@@ -47,6 +48,10 @@ const monitorModeElem = document.getElementById('monitor-mode');
 if (!(monitorModeElem && monitorModeElem instanceof HTMLInputElement)) throw new Error('valid monitor-mode toggle not found');
 const monitorModeToggle = monitorModeElem as HTMLInputElement;
 
+const annotatorModeElem = document.getElementById('annotator-mode');
+if (!(annotatorModeElem && annotatorModeElem instanceof HTMLInputElement)) throw new Error('valid annotator-mode toggle not found');
+const annotatorModeToggle = annotatorModeElem as HTMLInputElement;
+
 const maxOpsElem = document.getElementById('max-operations');
 if (!(maxOpsElem && maxOpsElem instanceof HTMLInputElement)) throw new Error('valid max-operations field not found');
 const maxOpsField = maxOpsElem as HTMLInputElement;
@@ -77,7 +82,7 @@ const saveButton = saveButtonElem as HTMLButtonElement;
 
 chrome.storage.local.get([storageKeyForAiProviderType, AiProviders.OPEN_AI.storageKeyForApiKey,
     AiProviders.ANTHROPIC.storageKeyForApiKey, AiProviders.GOOGLE_DEEPMIND.storageKeyForApiKey, storageKeyForLogLevel,
-    storageKeyForMonitorMode, storageKeyForMaxOps, storageKeyForMaxNoops, storageKeyForMaxFailures,
+    storageKeyForMonitorMode, storageKeyForAnnotatorMode, storageKeyForMaxOps, storageKeyForMaxNoops, storageKeyForMaxFailures,
     storageKeyForMaxFailureOrNoopStreak, storageKeyForShouldWipeHistoryOnTaskStart]).then(
     (items) => {
 
@@ -116,6 +121,12 @@ chrome.storage.local.get([storageKeyForAiProviderType, AiProviders.OPEN_AI.stora
         if (typeof monitorModeVal === 'boolean') {
             monitorModeToggle.checked = monitorModeVal;
         } else if (monitorModeVal !== undefined) {logger.error(`invalid monitor mode value was found in local storage: ${monitorModeVal}, ignoring it`);}
+
+        annotatorModeToggle.checked = defaultIsAnnotatorMode;
+        const annotatorModeVal = items[storageKeyForAnnotatorMode];
+        if (typeof annotatorModeVal === 'boolean') {
+            annotatorModeToggle.checked = annotatorModeVal;
+        } else if (annotatorModeVal !== undefined) {logger.error(`invalid annotator mode value was found in local storage: ${annotatorModeVal}, ignoring it`);}
 
         maxOpsField.value = String(defaultMaxOps);
         const maxOpsVal = items[storageKeyForMaxOps];
@@ -157,7 +168,7 @@ chrome.storage.local.get([storageKeyForAiProviderType, AiProviders.OPEN_AI.stora
 const pendingStatus = 'Pending changes not saved yet';
 
 const configInputElems = [aiProviderSelect, openAiApiKeyField, anthropicApiKeyField,
-    googleDeepmindApiKeyField, logLevelSelector, monitorModeToggle, maxOpsField, maxNoopsField, maxFailuresField,
+    googleDeepmindApiKeyField, logLevelSelector, monitorModeToggle, annotatorModeToggle, maxOpsField, maxNoopsField, maxFailuresField,
     maxFailOrNoopStreakField, wipeHistoryOnTaskStartToggle];
 for (const configElem of configInputElems) {
     configElem.addEventListener('change', () => {statusDisplay.textContent = pendingStatus;})
@@ -197,6 +208,7 @@ saveButton.addEventListener('click', () => {
     newValsForStorage[AiProviders.GOOGLE_DEEPMIND.storageKeyForApiKey] = googleDeepmindApiKeyField.value;
     newValsForStorage[storageKeyForLogLevel] = logLevelSelector.value || defaultLogLevel;
     newValsForStorage[storageKeyForMonitorMode] = monitorModeToggle.checked;
+    newValsForStorage[storageKeyForAnnotatorMode] = annotatorModeToggle.checked;
     newValsForStorage[storageKeyForShouldWipeHistoryOnTaskStart] = wipeHistoryOnTaskStartToggle.checked;
     newValsForStorage[storageKeyForMaxOps] = Number.isNaN(maxOpsVal) ? defaultMaxOps : maxOpsVal;
     newValsForStorage[storageKeyForMaxNoops] = Number.isNaN(maxNoopsVal) ? defaultMaxNoops : maxNoopsVal;

@@ -1,6 +1,7 @@
 import {Logger} from "loglevel";
 import {SerializableElementData} from "./BrowserHelper";
 
+//todo consider breaking large parts of this off into 2 separate files, for inter-component communications and for options management in storage
 
 export const expectedMsgForPortDisconnection = "Attempting to use a disconnected port object";
 export const pageToControllerPort = `page-actor-2-agent-controller`;
@@ -23,6 +24,8 @@ export const storageKeyForMaxNoops = "maxNoops";
 export const storageKeyForMaxFailures = "maxFailures";
 export const storageKeyForMaxFailureOrNoopStreak = "maxFailureOrNoopStreak";
 
+export const storageKeyForAnnotatorMode = "isAnnotatorMode";
+
 
 export const defaultIsMonitorMode = false;
 export const defaultShouldWipeActionHistoryOnStart = true;
@@ -31,6 +34,8 @@ export const defaultMaxOps = 50;
 export const defaultMaxNoops = 7;
 export const defaultMaxFailures = 10;
 export const defaultMaxFailureOrNoopStreak = 4;
+
+export const defaultIsAnnotatorMode = false;
 
 export const validateIntegerLimitUpdate = (newLimitVal: unknown, min: number = 0): newLimitVal is number => {
     return typeof newLimitVal === "number" && Number.isInteger(newLimitVal) && newLimitVal >= min;
