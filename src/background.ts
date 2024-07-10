@@ -337,7 +337,11 @@ function handleKeyCommand(command: string, tab: chrome.tabs.Tab): void {
         }, (error) => {
             centralLogger.error(`error processing monitor-mode rejection key command: ${renderUnknownValue(error)}`);
         });
-    } else {
+    }
+        //todo add annotator-capture key command
+        // relatedly, idea- separate class from AgentController for this, maybe ActionAnnotationCoordinator
+
+    else {
         centralLogger.error(`unrecognized key command: ${command} from tab: ${JSON.stringify(tab)}`);
     }
 }

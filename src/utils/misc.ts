@@ -175,21 +175,21 @@ export function renderUnknownValue(val: unknown): string {
     }
 }
 
-function processUpdateToMonitorModeCache(storedMonitorMode: unknown, cacheUpdater: (newVal: boolean) => void, logger: Logger) {
-    if (typeof storedMonitorMode === "boolean") {
-        cacheUpdater(storedMonitorMode);
-    } else if (typeof storedMonitorMode !== "undefined") {
-        logger.error(`invalid monitor mode value was inserted into local storage: ${storedMonitorMode}, ignoring it`);
+function processUpdateToModeCache(modeName: string, storedModeValue: unknown, cacheUpdater: (newVal: boolean) => void, logger: Logger) {
+    if (typeof storedModeValue === "boolean") {
+        cacheUpdater(storedModeValue);
+    } else if (typeof storedModeValue !== "undefined") {
+        logger.error(`invalid ${modeName} value was inserted into local storage: ${storedModeValue}, ignoring it`);
     }
 }
 
-export function setupMonitorModeCache(cacheUpdater: (newVal: boolean) => void, logger: Logger) {
+export function setupModeCache(cacheUpdater: (newVal: boolean) => void, modeName: string, storageKeyForMode: string, logger: Logger) {
     if (chrome?.storage?.local) {
-        chrome.storage.local.get(storageKeyForMonitorMode, (items) => {
-            processUpdateToMonitorModeCache(items[storageKeyForMonitorMode], cacheUpdater, logger);
+        chrome.storage.local.get(storageKeyForMode, (items) => {
+            processUpdateToModeCache(modeName, items[storageKeyForMode], cacheUpdater, logger);
         });
         chrome.storage.local.onChanged.addListener((changes: { [p: string]: chrome.storage.StorageChange }) => {
-            processUpdateToMonitorModeCache(changes[storageKeyForMonitorMode]?.newValue, cacheUpdater, logger);
+            processUpdateToModeCache(modeName, changes[storageKeyForMode]?.newValue, cacheUpdater, logger);
         });
     }
 }

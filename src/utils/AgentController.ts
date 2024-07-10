@@ -29,13 +29,13 @@ import {
     Page2BackgroundPortMsgType,
     Panel2BackgroundPortMsgType,
     renderUnknownValue,
-    setupMonitorModeCache,
+    setupModeCache,
     sleep,
     storageKeyForAiProviderType, storageKeyForEulaAcceptance,
     storageKeyForMaxFailureOrNoopStreak,
     storageKeyForMaxFailures,
     storageKeyForMaxNoops,
-    storageKeyForMaxOps,
+    storageKeyForMaxOps, storageKeyForMonitorMode,
     validateIntegerLimitUpdate,
     ViewportDetails
 } from "./misc";
@@ -207,7 +207,7 @@ export class AgentController {
         this.logger = createNamedLogger('agent-controller', true);
         this.logger.debug(`max ops limit: ${this.maxOpsLimit}, max noop limit: ${this.maxNoopLimit}, max failure limit: ${this.maxFailureLimit}, max failure-or-noop streak limit: ${this.maxFailureOrNoopStreakLimit}`);
 
-        setupMonitorModeCache((newMonitorModeVal: boolean) => this.cachedMonitorMode = newMonitorModeVal, this.logger);
+        setupModeCache((newMonitorModeVal: boolean) => this.cachedMonitorMode = newMonitorModeVal, "monitor mode", storageKeyForMonitorMode, this.logger);
         if (chrome?.storage?.local) {
             chrome.storage.local.get([storageKeyForMaxOps, storageKeyForMaxNoops, storageKeyForMaxFailures,
                 storageKeyForMaxFailureOrNoopStreak, storageKeyForEulaAcceptance], async (items) => {

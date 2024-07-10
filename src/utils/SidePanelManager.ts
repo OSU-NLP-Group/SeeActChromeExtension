@@ -3,14 +3,17 @@ import {createNamedLogger} from "./shared_logging_setup";
 import {Logger} from "loglevel";
 import {
     Background2PanelPortMsgType,
-    buildGenericActionDesc,
+    buildGenericActionDesc, defaultIsAnnotatorMode,
     defaultIsMonitorMode,
     defaultShouldWipeActionHistoryOnStart,
     expectedMsgForPortDisconnection,
     Panel2BackgroundPortMsgType,
     panelToControllerPort,
     renderUnknownValue,
-    setupMonitorModeCache, storageKeyForEulaAcceptance, storageKeyForShouldWipeHistoryOnTaskStart
+    setupModeCache, storageKeyForAnnotatorMode,
+    storageKeyForEulaAcceptance,
+    storageKeyForMonitorMode,
+    storageKeyForShouldWipeHistoryOnTaskStart
 } from "./misc";
 import {Mutex} from "async-mutex";
 import {ActionInfo} from "./AgentController";
@@ -20,6 +23,10 @@ import {marked} from "marked";
 
 export interface SidePanelElements {
     eulaComplaintContainer: HTMLDivElement,
+    annotatorContainer: HTMLDivElement,
+    annotatorActionType: HTMLSelectElement,
+    annotatorActionStateChangeSeverity: HTMLSelectElement,
+    annotatorExplanationField: HTMLTextAreaElement,
     startButton: HTMLButtonElement;
     taskSpecField: HTMLTextAreaElement;
     statusDiv: HTMLDivElement;
@@ -49,6 +56,12 @@ enum SidePanelMgrState {
 
 export class SidePanelManager {
     private readonly eulaComplaintContainer: HTMLDivElement;
+
+    private readonly annotatorContainer: HTMLDivElement;
+    private readonly annotatorActionType: HTMLSelectElement;
+    private readonly annotatorActionStateChangeSeverity: HTMLSelectElement;
+    private readonly annotatorExplanationField: HTMLTextAreaElement;
+
     private readonly startButton: HTMLButtonElement;
     private readonly taskSpecField: HTMLTextAreaElement;
     private readonly statusDiv: HTMLDivElement;
@@ -73,7 +86,8 @@ export class SidePanelManager {
     // in constructor will minimize the monitor mode UI
     cachedMonitorMode = true;
     shouldWipeActionHistoryOnTaskStart = defaultShouldWipeActionHistoryOnStart;
-
+    //because this is above other ui elements, we don't need complex resizing logic for when it becomes enabled/visible vs disabled/hidden
+    cachedIsAnnotatorMode = defaultIsAnnotatorMode;
 
     private state: SidePanelMgrState = SidePanelMgrState.IDLE;
     public serviceWorkerPort?: chrome.runtime.Port;
@@ -85,6 +99,10 @@ export class SidePanelManager {
 
     constructor(elements: SidePanelElements, chromeWrapper?: ChromeWrapper, logger?: Logger, overrideDoc?: Document) {
         this.eulaComplaintContainer = elements.eulaComplaintContainer;
+        this.annotatorContainer = elements.annotatorContainer;
+        this.annotatorActionType = elements.annotatorActionType;
+        this.annotatorActionStateChangeSeverity = elements.annotatorActionStateChangeSeverity;
+        this.annotatorExplanationField = elements.annotatorExplanationField;
         this.startButton = elements.startButton;
         this.taskSpecField = elements.taskSpecField;
         this.statusDiv = elements.statusDiv;
@@ -105,7 +123,8 @@ export class SidePanelManager {
         //have to initialize to default value this way to ensure that the monitor mode container is hidden if the default is false
         this.handleMonitorModeCacheUpdate(defaultIsMonitorMode);
 
-        setupMonitorModeCache(this.handleMonitorModeCacheUpdate, this.logger);
+        setupModeCache(this.handleMonitorModeCacheUpdate, "monitor mode", storageKeyForMonitorMode, this.logger);
+        setupModeCache(this.handleAnnotatorModeCacheUpdate, "annotator mode", storageKeyForAnnotatorMode, this.logger);
         if (chrome?.storage?.local) {
             chrome.storage.local.get([storageKeyForShouldWipeHistoryOnTaskStart, storageKeyForEulaAcceptance], (items) => {
                 this.validateAndApplySidePanelOptions(true, items[storageKeyForShouldWipeHistoryOnTaskStart], items[storageKeyForEulaAcceptance]);
@@ -623,6 +642,15 @@ export class SidePanelManager {
                 this.monitorModeContainer.style.display = "none";
             }
         }).catch((error) => this.logger.error(`error while updating monitor mode cache: ${renderUnknownValue(error)}`));
+    }
+
+    handleAnnotatorModeCacheUpdate = (newAnnotatorModeVal: boolean) => {
+        this.cachedIsAnnotatorMode = newAnnotatorModeVal;
+        if (newAnnotatorModeVal) {
+            this.annotatorContainer.style.display = "block";
+        } else {
+            this.annotatorContainer.style.display = "none";
+        }
     }
 
     //todo add feature for state-changing-action manual annotation/collection

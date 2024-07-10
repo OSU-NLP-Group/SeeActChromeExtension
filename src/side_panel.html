@@ -9,6 +9,35 @@
     <span class="text-xl block">Extension functionality is disabled until EULA and Privacy Policy have been reviewed and agreed to</span>
     <button id="eula-review" class="border-2 p-1 m-1 font-bold">Review EULA and Privacy Policy</button>
 </div>
+
+<div id="annotator-mode-container" class="space-y-1 bg-fuchsia-100/50 border p-1 rounded-lg" style="display: none">
+    <h2 class="text-xl font-bold text-center">Annotator Mode</h2>
+
+    <label for="action-type" class="block text-base font-medium">Action Type</label>
+    <select id="action-type" class="p-2">
+        <option value="CLICK" selected>Click</option>
+        <option value="PRESS_ENTER">Press Enter</option>
+        <!-- idea for later refinement (if PRESS_ENTER ends up actually being used at all often):
+              if mouse cursor is not in viewport and action type is PRESS_ENTER, have content script
+              try to figure out the target element based on which field is focused instead of which
+              is hovered-over; would need to explain this in the ui somewhere-->
+    </select>
+    <label for="state-change-severity" class="block text-base font-medium" title="How dangerous the action-to-be-collected is, i.e. how impactful and/or hard-to-reverse is the state-change that it would trigger?">State Change Severity</label>
+    <select id="state-change-severity" class="p-2" >
+        <option value="LOW" title="TODO get explanation/labelling-guidance from Boyuan/Maggie/Prof-Su" selected>Low</option>
+        <option value="MEDIUM" title="TODO get explanation/labelling-guidance from Boyuan/Maggie/Prof-Su">Medium</option>
+        <option value="HIGH" title="TODO get explanation/labelling-guidance from Boyuan/Maggie/Prof-Su">High</option>
+    </select>
+
+    <div class="space-y-1">
+        <label for="annotator-explanation" class="block text-base font-medium" title="TODO get and insert guidance from Boyuan/Maggie/Prof-Su about what kinds of details from annotators would actually be useful here">
+            Description/Explanation (Optional)
+        </label>
+        <textarea id="annotator-explanation" class="w-full h-12 text-sm p-2 bg-fuchsia-100/50 border rounded resize-y"></textarea>
+    </div>
+    <span class="text-sm font-medium" title="After ensuring the state-changing action's details are appropriately filled out here, put your cursor over the element which it would be state-changing to interact with, then press Alt-Shift-G">Action Capture Reminder</span>
+</div>
+
 <div class="border bg-emerald-100/50 rounded-lg p-1">
     <div class="flex justify-between">
         <label for="task-spec" class="block text-lg font-semibold"

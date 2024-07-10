@@ -12,6 +12,18 @@ if (!(eulaComplaintElem && eulaComplaintElem instanceof HTMLDivElement)) throw n
 const eulaReviewButton = document.getElementById('eula-review');
 if (!(eulaReviewButton && eulaReviewButton instanceof HTMLButtonElement)) throw new Error('valid eula-review button not found');
 
+const annotatorModeContainer = document.getElementById('annotator-mode-container');
+if (!(annotatorModeContainer && annotatorModeContainer instanceof HTMLDivElement)) throw new Error('valid annotator-mode-container not found');
+
+const annotatorActionType = document.getElementById('action-type');
+if (!(annotatorActionType && annotatorActionType instanceof HTMLSelectElement)) throw new Error('valid action-type not found');
+
+const annotatorActionStateChangeSeverity = document.getElementById('state-change-severity');
+if (!(annotatorActionStateChangeSeverity && annotatorActionStateChangeSeverity instanceof HTMLSelectElement)) throw new Error('valid state-change-severity not found');
+
+const annotatorExplanationField = document.getElementById('annotator-explanation');
+if (!(annotatorExplanationField && annotatorExplanationField instanceof HTMLTextAreaElement)) throw new Error('valid annotator-explanation field not found');
+
 //button rather than link b/c we want to open in new tab and <a> behaves unintuitively in side panel
 const userGuideButton = document.getElementById('user-guide');
 if (!(userGuideButton && userGuideButton instanceof HTMLButtonElement)) throw new Error('valid user-guide button not found');
@@ -57,6 +69,10 @@ if (!(monitorRejectButton && monitorRejectButton instanceof HTMLButtonElement)) 
 
 const manager = new SidePanelManager({
     eulaComplaintContainer: eulaComplaintElem as HTMLDivElement,
+    annotatorContainer: annotatorModeContainer as HTMLDivElement,
+    annotatorActionType: annotatorActionType as HTMLSelectElement,
+    annotatorActionStateChangeSeverity: annotatorActionStateChangeSeverity as HTMLSelectElement,
+    annotatorExplanationField: annotatorExplanationField as HTMLTextAreaElement,
     startButton: startButton as HTMLButtonElement,
     taskSpecField: taskSpecField as HTMLTextAreaElement,
     statusDiv: statusDiv as HTMLDivElement,
