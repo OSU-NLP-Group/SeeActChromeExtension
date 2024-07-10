@@ -15,6 +15,7 @@ import {
     GenerateContentRequest,
     GenerateContentResult,
     GoogleGenerativeAI,
+    GoogleGenerativeAIFetchError,
     HarmBlockThreshold,
     HarmCategory,
     HarmProbability,
@@ -203,7 +204,8 @@ export class GoogleDeepmindEngine extends AiEngine {
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars -- override
     checkIfNonfatalError(err: any): boolean {
-        return false;//google deepmind library doesn't break its errors into subtypes in a way that would make this easy
+        //google deepmind library doesn't break its errors into subtypes in a way that would make this easy
+        return err instanceof GoogleGenerativeAIFetchError && err.status != undefined && err.status >= 500;
     }
 
 }

@@ -10,7 +10,7 @@ import {
     Panel2BackgroundPortMsgType,
     panelToControllerPort,
     renderUnknownValue,
-    setupMonitorModeCache, storageKeyForShouldWipeHistoryOnTaskStart
+    setupMonitorModeCache, storageKeyForEulaAcceptance, storageKeyForShouldWipeHistoryOnTaskStart
 } from "./misc";
 import {Mutex} from "async-mutex";
 import {ActionInfo} from "./AgentController";
@@ -19,6 +19,7 @@ import {marked} from "marked";
 
 
 export interface SidePanelElements {
+    eulaComplaintContainer: HTMLDivElement,
     startButton: HTMLButtonElement;
     taskSpecField: HTMLTextAreaElement;
     statusDiv: HTMLDivElement;
@@ -30,6 +31,7 @@ export interface SidePanelElements {
     monitorFeedbackField: HTMLTextAreaElement;
     monitorApproveButton: HTMLButtonElement;
     monitorRejectButton: HTMLButtonElement;
+    unaffiliatedLogsExportButton: HTMLButtonElement;
 }
 
 /**
@@ -46,6 +48,7 @@ enum SidePanelMgrState {
 }
 
 export class SidePanelManager {
+    private readonly eulaComplaintContainer: HTMLDivElement;
     private readonly startButton: HTMLButtonElement;
     private readonly taskSpecField: HTMLTextAreaElement;
     private readonly statusDiv: HTMLDivElement;
@@ -57,6 +60,7 @@ export class SidePanelManager {
     private readonly monitorFeedbackField: HTMLTextAreaElement;
     private readonly monitorApproveButton: HTMLButtonElement;
     private readonly monitorRejectButton: HTMLButtonElement;
+    private readonly unaffiliatedLogsExportButton: HTMLButtonElement;
 
     private readonly chromeWrapper: ChromeWrapper;
     readonly logger: Logger;
@@ -80,6 +84,7 @@ export class SidePanelManager {
     public mouseClientY = -1;
 
     constructor(elements: SidePanelElements, chromeWrapper?: ChromeWrapper, logger?: Logger, overrideDoc?: Document) {
+        this.eulaComplaintContainer = elements.eulaComplaintContainer;
         this.startButton = elements.startButton;
         this.taskSpecField = elements.taskSpecField;
         this.statusDiv = elements.statusDiv;
@@ -91,6 +96,7 @@ export class SidePanelManager {
         this.monitorFeedbackField = elements.monitorFeedbackField;
         this.monitorApproveButton = elements.monitorApproveButton;
         this.monitorRejectButton = elements.monitorRejectButton;
+        this.unaffiliatedLogsExportButton = elements.unaffiliatedLogsExportButton;
 
         this.chromeWrapper = chromeWrapper ?? new ChromeWrapper();
         this.logger = logger ?? createNamedLogger('side-panel-mgr', false);
@@ -101,11 +107,12 @@ export class SidePanelManager {
 
         setupMonitorModeCache(this.handleMonitorModeCacheUpdate, this.logger);
         if (chrome?.storage?.local) {
-            chrome.storage.local.get([storageKeyForShouldWipeHistoryOnTaskStart], (items) => {
-                this.validateAndApplySidePanelOptions(true, items[storageKeyForShouldWipeHistoryOnTaskStart]);
+            chrome.storage.local.get([storageKeyForShouldWipeHistoryOnTaskStart, storageKeyForEulaAcceptance], (items) => {
+                this.validateAndApplySidePanelOptions(true, items[storageKeyForShouldWipeHistoryOnTaskStart], items[storageKeyForEulaAcceptance]);
             });
             chrome.storage.local.onChanged.addListener((changes: { [p: string]: chrome.storage.StorageChange }) => {
-                this.validateAndApplySidePanelOptions(false, changes[storageKeyForShouldWipeHistoryOnTaskStart]?.newValue);
+                this.validateAndApplySidePanelOptions(false, changes[storageKeyForShouldWipeHistoryOnTaskStart]?.newValue,
+                    changes[storageKeyForEulaAcceptance]?.newValue);
             });
         }
 
@@ -122,11 +129,36 @@ export class SidePanelManager {
         }
     }
 
-    validateAndApplySidePanelOptions = (initOrUpdate: boolean, newShouldWipeHistoryOnTaskStartVal: unknown): void => {
+    /**
+     * @description validates and applies the side panel options that are stored in local storage
+     * @param initOrUpdate whether the context for the call is the initial loading of options from storage or a later update
+     * @param newShouldWipeHistoryOnTaskStartVal the new value for shouldWipeHistoryOnTaskStart, if it is a valid boolean
+     * @param isEulaAccepted whether the EULA has been accepted, if it is a valid boolean
+     */
+    validateAndApplySidePanelOptions = (initOrUpdate: boolean, newShouldWipeHistoryOnTaskStartVal: unknown,
+                                        isEulaAccepted: unknown): void => {
         const contextStr = initOrUpdate ? "when loading options from storage" : "when processing an update from storage";
         if (typeof newShouldWipeHistoryOnTaskStartVal === "boolean") {
             this.shouldWipeActionHistoryOnTaskStart = newShouldWipeHistoryOnTaskStartVal;
         } else if (typeof newShouldWipeHistoryOnTaskStartVal !== "undefined") {this.logger.error(`invalid shouldWipeHistoryOnTaskStart value ${newShouldWipeHistoryOnTaskStartVal} detected in local storage ${contextStr}, ignoring it`)}
+
+        if (typeof isEulaAccepted === "undefined") {
+            this.logger.debug(`EULA acceptance value not found in local storage ${contextStr}, ignoring`);
+        } else if (typeof isEulaAccepted !== "boolean") {
+            this.logger.error(`invalid EULA acceptance value ${renderUnknownValue(isEulaAccepted)} detected in local storage ${contextStr}, ignoring`);
+        } else if (isEulaAccepted) {
+            this.logger.debug("EULA acceptance detected in local storage, hiding EULA complaint and re-enabling relevant interactive parts of UI");
+            this.eulaComplaintContainer.hidden = true;
+            this.startButton.disabled = false;
+            this.taskSpecField.disabled = false;
+            this.unaffiliatedLogsExportButton.disabled = false;
+        } else {
+            this.logger.debug("EULA acceptance not detected in local storage, showing EULA complaint and disabling relevant interactive parts of UI");
+            this.eulaComplaintContainer.hidden = false;
+            this.startButton.disabled = true;
+            this.taskSpecField.disabled = true;
+            this.unaffiliatedLogsExportButton.disabled = true;
+        }
     }
 
     establishServiceWorkerConnection = (): void => {
@@ -557,7 +589,7 @@ export class SidePanelManager {
             this.statusPopup.style.left = `0px`;
             //the addition of 5 is so the details popup overlaps a little with the status div and so you can move
             // the mouse from the div to the popup without the popup sometimes disappearing
-            this.statusPopup.style.top = `${statusRect.y + 4 - this.statusPopup.offsetHeight + window.scrollY}px`;
+            this.statusPopup.style.top = `${statusRect.y + 5 - this.statusPopup.offsetHeight + window.scrollY}px`;
         }
     }
 
@@ -592,4 +624,7 @@ export class SidePanelManager {
             }
         }).catch((error) => this.logger.error(`error while updating monitor mode cache: ${renderUnknownValue(error)}`));
     }
+
+    //todo add feature for state-changing-action manual annotation/collection
+    // when doing so, remember to modify list-of-interactive-elements so each entry has an id (i.e. the index within the list)
 }

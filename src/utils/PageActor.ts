@@ -143,6 +143,7 @@ export class PageActor {
             elementToActOn.click();
             actionOutcome.result += "; element is not an input, textarea, or contenteditable element; can't type in it. Tried clicking with js instead";
         }
+        elementToActOn.dispatchEvent(new Event('input', {bubbles: true}));
         elementToActOn.dispatchEvent(new Event('change', {bubbles: true}));
 
         if (actionOutcome.success) {
@@ -240,6 +241,17 @@ export class PageActor {
     performPressEnterAction = async (actionOutcome: ActionOutcome,
                                      targetElementDesc: string): Promise<void> => {
         this.logger.trace(`about to press Enter on ${targetElementDesc}`);
+        const activeElem = this.domWrapper.getActiveElement();
+        if (activeElem === null) {
+            actionOutcome.success = false;
+            actionOutcome.result += "; no element is currently focused in the tab";
+            return;
+        } else {
+            this.logger.debug(`active element is a ${activeElem.tagName} at xpath: ${this.browserHelper.getFullXpath(activeElem)}`);
+            //if it comes up, we can add more layers of logic here for identifying the real active element even if it's
+            // hidden inside some number of nested iframes and/or shadow roots
+        }
+
         try {
             const resp = await this.chromeWrapper.sendMessageToServiceWorker({reqType: PageRequestType.PRESS_ENTER});
             if (resp.success) {
@@ -470,15 +482,16 @@ export class PageActor {
         const initialWait = 1000;//ms,
         const pollingIncrement = 100;//ms
         const maxPollingTime = 10_000;//ms
-        const numPollingIterations = (maxPollingTime-initialWait) / pollingIncrement;
+        const numPollingIterations = (maxPollingTime - initialWait) / pollingIncrement;
 
+        let didPageRegisterStartOfUnload = false;
         // needed because sometimes weird things happen like unload event not firing for 540+ms after you pressed enter
         await sleep(initialWait);
         for (let i = 0; i < numPollingIterations; i++) {
 
             if (this.isPageBeingUnloaded) {
-                this.logger.info(`page is being unloaded; will not try to ${reasonForWait}`);
-                return true;
+                this.logger.info(`page is being unloaded; will probably not try to ${reasonForWait}`);
+                didPageRegisterStartOfUnload = true;
             }
             const currTime = Date.now();
             if (currTime - this.lastPageModificationTimestamp > pollingIncrement) {
@@ -487,6 +500,20 @@ export class PageActor {
             }
             await sleep(pollingIncrement);
         }
+        if (didPageRegisterStartOfUnload) {
+            //sometimes the page registers an 'unload' event but isn't actually going to unload
+            // (e.g. clicking a 'write email' link which causes the OS to open a pop-up for choosing how to handle it)
+            await sleep(initialWait);
+            //todo test whether this extra logic is relevant
+            const isCurrentTabStillActive = this.domWrapper.getVisibilityState() === "visible";
+            if (isCurrentTabStillActive) {
+                this.logger.info(`while waiting before ${reasonForWait}, there was a signal that the page was unloading, but the page didn't actually unload; continuing to ${reasonForWait}`);
+            } else {
+                this.logger.info(`while waiting before ${reasonForWait}, there was a signal that the page was unloading, and it turned out that focus shifted to a new tab while the existing page was left in the old tab; old tab's content script is no longer relevant, so will not ${reasonForWait}`);
+                return true;
+            }
+        }
+
         this.logger.debug(`waited ${(Date.now() - startOfPostActionStabilityWait)}ms for page to become stable before ${reasonForWait}`);
         return false;
     }

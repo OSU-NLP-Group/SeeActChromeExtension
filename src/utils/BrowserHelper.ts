@@ -17,6 +17,7 @@ export type ElementData = {
         bRx: number;
         bRy: number
     },
+    //todo add xpath string
     width: number,
     height: number,
     tagName: string,
@@ -86,6 +87,7 @@ export class BrowserHelper {
         console.timeEnd("timeFor_selectOptionFuzzyStringCompares");
         selectElem.selectedIndex = bestOptIndex;
         this.logger.trace("sending change event to select element");
+        selectElem.dispatchEvent(new Event('input', {bubbles: true}));
         selectElem.dispatchEvent(new Event('change', {bubbles: true}));
 
         return bestOptVal;

@@ -6,6 +6,13 @@ const {CleanWebpackPlugin} = require('clean-webpack-plugin');
 const CopyPlugin = require('copy-webpack-plugin');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 
+
+/*
+maybe at some point try turning this into a webpack.config.ts file, then using templateParameters in each HtmlWebpackPlugin to
+ pass in appropriate values from misc.ts for various constants' placeholders (especially URL's and the
+ id/defaultModelName strings from the AiProviders object)
+ */
+
 const root = path.resolve(__dirname, "..");
 const pathsToClean = [path.resolve(root, 'dist')];
 module.exports = {
@@ -50,6 +57,9 @@ module.exports = {
         new CopyPlugin({
             patterns: [
                 {from: path.resolve(root, "manifest.json"), to: path.resolve(root, "dist")},
+                {from: path.resolve(root, "privacy_policy.pdf"), to: path.resolve(root, "dist")},
+                {from: path.resolve(root, "rail_a_eula.pdf"), to: path.resolve(root, "dist")},
+                {from: path.resolve(root, "user_manual.pdf"), to: path.resolve(root, "dist")},
                 {from: "images", to: path.resolve(root, "dist", "images"), context: root},
             ]
         }),

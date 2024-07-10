@@ -5,7 +5,7 @@
     "minimum_chrome_version": "120",
     "description": "Allows the user to invoke the SeeAct web agent to perform tasks in the current browser tab/window.",
     "permissions": [
-        "tabCapture", "scripting", "debugger", "tabs", "debugger", "storage", "sidePanel", "alarms"
+        "scripting", "tabs", "debugger", "storage", "sidePanel", "alarms"
     ],
     "host_permissions": [
         "<all_urls>"

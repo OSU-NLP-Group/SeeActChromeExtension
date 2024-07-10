@@ -17,7 +17,14 @@ import {
     serviceWorker2ndaryKeepaliveAlarmName,
     serviceWorkerKeepaliveAlarmName
 } from "./utils/AgentController";
-import {PageRequestType, pageToControllerPort, panelToControllerPort, renderUnknownValue, sleep} from "./utils/misc";
+import {
+    PageRequestType,
+    pageToControllerPort,
+    panelToControllerPort,
+    renderUnknownValue,
+    sleep,
+    storageKeyForEulaAcceptance
+} from "./utils/misc";
 import {openDB} from "idb";
 import Port = chrome.runtime.Port;
 import MessageSender = chrome.runtime.MessageSender;
@@ -74,6 +81,12 @@ chrome.runtime.onInstalled.addListener(async function (details) {
             initErrMsgs.push(dbInitErrMsg);
             initErrMsgs.push("--------------");
         }
+
+        chrome.storage.local.set({[storageKeyForEulaAcceptance]: false}, () => {
+            if (chrome.runtime.lastError) {
+                centralLogger.error("error setting eulaAccepted to false in local storage on install:", chrome.runtime.lastError);
+            } else {centralLogger.info("set eulaAccepted to false in local storage on install");}
+        });
 
         centralLogger.info("This is a first install! checking keyboard shortcuts");
         checkCommandShortcutsOnInstall(initErrMsgs);
@@ -254,6 +267,13 @@ function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (r
         //idea for later space-efficiency refinement - when saving a "targeted" screenshot, maybe could reduce its
         // quality drastically b/c you only care about an indication of which element in the screen was being targeted,
         // and you can consult the corresponding "initial" screenshot for more detail?
+    } else if (request.reqType === PageRequestType.EULA_ACCEPTANCE) {
+        chrome.storage.local.set({[storageKeyForEulaAcceptance]: true}, () => {
+            if (chrome.runtime.lastError) {
+                centralLogger.error("error setting eulaAccepted to true in local storage:", chrome.runtime.lastError);
+            } else {centralLogger.info("set eulaAccepted to true in local storage");}
+        });
+
     } else {
         centralLogger.error("unrecognized request type:", request.reqType);
     }
