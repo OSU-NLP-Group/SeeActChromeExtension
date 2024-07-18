@@ -141,4 +141,7 @@ export class DomWrapper {
         return this.dom.activeElement as HTMLElement;
     }
 
+    getUrl = (): string => {
+        return this.dom.URL;
+    }
 }

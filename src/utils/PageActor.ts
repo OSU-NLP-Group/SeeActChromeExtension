@@ -85,7 +85,7 @@ export class PageActor {
         try {
             this.portToBackground.postMessage({
                 type: Page2BackgroundPortMsgType.PAGE_STATE, interactiveElements: elementsInSerializableForm,
-                viewportInfo: this.domWrapper.getViewportInfo()
+                viewportInfo: this.domWrapper.getViewportInfo(), url: this.domWrapper.getUrl()
             });
         } catch (error: any) {
             if ('message' in error && error.message === expectedMsgForPortDisconnection) {

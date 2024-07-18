@@ -31,11 +31,13 @@ import {
     renderUnknownValue,
     setupModeCache,
     sleep,
-    storageKeyForAiProviderType, storageKeyForEulaAcceptance,
+    storageKeyForAiProviderType,
+    storageKeyForEulaAcceptance,
     storageKeyForMaxFailureOrNoopStreak,
     storageKeyForMaxFailures,
     storageKeyForMaxNoops,
-    storageKeyForMaxOps, storageKeyForMonitorMode,
+    storageKeyForMaxOps,
+    storageKeyForMonitorMode,
     validateIntegerLimitUpdate,
     ViewportDetails
 } from "./misc";
@@ -44,9 +46,9 @@ import {getIndexFromOptionName} from "./format_prompt_utils";
 import {ChromeWrapper} from "./ChromeWrapper";
 import JSZip from "jszip";
 import {IDBPDatabase} from "idb";
-import Port = chrome.runtime.Port;
 import {AiEngine} from "./AiEngine";
 import {AiProviderId, AiProviders} from "./ai_misc";
+import Port = chrome.runtime.Port;
 
 /**
  * states for the agent controller Finite State Machine
@@ -91,7 +93,13 @@ export type ActionInfo = {
  * used to store information about an action that was performed, so that the controller can give the AI a clear history
  * of what actions have been tried and what the results were
  */
-type ActionRecord = { actionDesc: string, success: boolean, noopType?: NoopType, explanation: string };
+type ActionRecord = {
+    priorUrl: string,
+    actionDesc: string,
+    success: boolean,
+    noopType?: NoopType,
+    explanation: string
+};
 
 /**
  * stores all relevant info about a round of LMM output for later export at end of task
@@ -135,12 +143,12 @@ export class AgentController {
 
     initWebsiteForTask: string | undefined;
 
+    currUrlBeforeAction: string | undefined
 
     private pendingActionInfo: ActionInfo | undefined;
     private mightNextActionCausePageNav: boolean = false;
 
     private actionsSoFar: ActionRecord[] = [];
-    //todo per Zeyuan, it would be useful if current URL was captured after every action
     private predictionsInTask: PredictionRecord[] = [];
 
     /**
@@ -503,6 +511,7 @@ export class AgentController {
         this.state = AgentControllerState.ACTIVE;
         const interactiveElements = message.interactiveElements as SerializableElementData[];
         const viewportInfo = message.viewportInfo as ViewportDetails;
+        this.currUrlBeforeAction = message.url as string;
         //todo consider removing the candidateIds complication since BrowserHelper.getInteractiveElements is already
         // filtering out all of the elements that are not really visible&interactive, and candidateIds adds annoying complexity throughout the planning code in this class
         const candidateIds = interactiveElements.map((element, index) => {
@@ -739,8 +748,10 @@ export class AgentController {
 
         if (action === Action.TERMINATE) {
             this.logger.info("Task completed!");
-            this.actionsSoFar.push(
-                {actionDesc: "Terminate task as completed", success: true, explanation: explanation});
+            this.actionsSoFar.push({
+                priorUrl: this.currUrlBeforeAction ?? "no_URL", actionDesc: "Terminate task as completed",
+                success: true, explanation: explanation
+            });
             this.terminateTask("Task completed: " + explanation);
             return LmmOutputReaction.ABORT_TASK;
         } else if (action === Action.NONE) {
@@ -751,8 +762,8 @@ export class AgentController {
             this.noopCount++;
             this.failureOrNoopStreak++;
             this.actionsSoFar.push({
-                actionDesc: `NOOP: ai selected NONE action type`, explanation: explanation,
-                success: false, noopType: NoopType.AI_SELECTED_NONE_ACTION
+                priorUrl: this.currUrlBeforeAction ?? "no_URL", actionDesc: `NOOP: ai selected NONE action type`,
+                explanation: explanation, success: false, noopType: NoopType.AI_SELECTED_NONE_ACTION
             });
             try {
                 this.portToSidePanel.postMessage({
@@ -778,8 +789,8 @@ export class AgentController {
             this.noopCount++;
             this.failureOrNoopStreak++;
             this.actionsSoFar.push({
-                actionDesc: `NOOP: ai selected invalid option ${element}`,
-                success: false, noopType: NoopType.INVALID_ELEMENT, explanation: explanation
+                priorUrl: this.currUrlBeforeAction ?? "no_URL", success: false, noopType: NoopType.INVALID_ELEMENT,
+                actionDesc: `NOOP: ai selected invalid option ${element}`, explanation: explanation
             });
             try {
                 this.portToSidePanel.postMessage({
@@ -798,9 +809,9 @@ export class AgentController {
             this.noopCount++;
             this.failureOrNoopStreak++;
             this.actionsSoFar.push({
+                priorUrl: this.currUrlBeforeAction ?? "no_URL", success: false, explanation: explanation,
                 actionDesc: `NOOP: ai selected 'none of the above' option for element selection when action ${action} targets specific element`,
-                success: false, noopType: NoopType.ACTION_INCOMPATIBLE_WITH_NONE_OF_ABOVE_ELEMENT,
-                explanation: explanation
+                noopType: NoopType.ACTION_INCOMPATIBLE_WITH_NONE_OF_ABOVE_ELEMENT
             });
             try {
                 this.portToSidePanel.postMessage({
@@ -974,7 +985,10 @@ export class AgentController {
      */ //todo write at least skeleton of unit test suite for this
     updateActionHistory(actionDesc: string, wasSuccessful: boolean, explanation: string = "explanation unavailable") {
         let shouldAbort: boolean = false;
-        this.actionsSoFar.push({actionDesc: actionDesc, success: wasSuccessful, explanation: explanation});
+        this.actionsSoFar.push({
+            priorUrl: this.currUrlBeforeAction ?? "no_URL", actionDesc: actionDesc, success: wasSuccessful,
+            explanation: explanation
+        });
 
         if (!this.portToSidePanel) {
             const termReason = "no side panel connection to send action history to";
@@ -1158,11 +1172,7 @@ export class AgentController {
         } else if (message.type === Page2BackgroundPortMsgType.ACTION_DONE) {
             await this.mutex.runExclusive(async () => {await this.processActionPerformedConfirmation(message, port);});
         } else if (message.type === Page2BackgroundPortMsgType.TERMINAL) {
-            await this.mutex.runExclusive(() => {
-                const termReason = `something went horribly wrong in the content script; details: ${message.error}`;
-                this.logger.error(`${termReason}; terminating task`);
-                this.terminateTask(termReason);
-            });
+            await this.mutex.runExclusive(() => { this.terminateTask(`something went horribly wrong in the content script; details: ${message.error}`);});
         } else {
             this.logger.warn("unknown message from content script:", message);
         }
