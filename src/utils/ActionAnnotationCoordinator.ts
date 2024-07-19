@@ -6,6 +6,7 @@ import {
     Action,
     ActionStateChangeSeverity,
     AnnotationCoordinator2PanelPortMsgType,
+    base64ToByteArray,
     defaultIsAnnotatorMode,
     PanelToAnnotationCoordinatorPortMsgType,
     renderUnknownValue,
@@ -56,6 +57,7 @@ export class ActionAnnotationCoordinator {
     currAnnotationStateChangeSeverity: ActionStateChangeSeverity | undefined;
     currAnnotationActionDesc: string | undefined;
 
+    currActionContextScreenshotBase64: string | undefined;
 
 
     constructor(logger?: Logger, serviceWorkerHelper?: ServiceWorkerHelper, chromeWrapper?: ChromeWrapper) {
@@ -134,10 +136,9 @@ export class ActionAnnotationCoordinator {
                 this.currAnnotationActionDesc = message.explanation;
                 //todo next step!
 
-                //temp, todo move next 3 lines to appropriate new place once more complex flow is implemented
-                this.exportActionAnnotation().then(() => {
-                    this.terminateAnnotationCapture("action annotation successfully exported").catch((error) => this.logger.error(`error while terminating annotation capture after exporting action annotation: ${renderUnknownValue(error)}`));
-                });
+                //temp, todo move next 2 lines to appropriate new place once more complex flow is implemented
+                this.exportActionAnnotation().then(() =>
+                    this.terminateAnnotationCapture("action annotation successfully exported"));
 
 
                 //todo change state to appropriate value for next step
@@ -150,18 +151,27 @@ export class ActionAnnotationCoordinator {
     exportActionAnnotation = async (): Promise<void> => {
         const zip = new JSZip();
 
+        function replaceBlankWithNull(key: any, value: any) {return typeof value === "string" && value.trim().length === 0 ? null : value;}
+
         const annotationDetailsStr = JSON.stringify({
             annotationId: this.currAnnotationId,
             actionType: this.currAnnotationAction,
             actionStateChangeSeverity: this.currAnnotationStateChangeSeverity,
-            explanation: this.currAnnotationActionDesc
-        }, null, 4);
+            description: this.currAnnotationActionDesc
+        }, replaceBlankWithNull, 4);
         zip.file("annotation_details.json", annotationDetailsStr);
+
+        if (!this.currActionContextScreenshotBase64) {
+            this.logger.error(`no screenshot found for action annotation ${this.currAnnotationId}`);
+        } else {
+            const contextScreenshotBytes = base64ToByteArray(this.currActionContextScreenshotBase64);
+            zip.file("action_context_screenshot.png", contextScreenshotBytes)
+        }
 
         if (!this.portToSidePanel) {
             const errMsg = `no side panel port to send action annotation zip to for download`;
             this.logger.error(errMsg);
-            await this.terminateAnnotationCapture(errMsg);
+            this.terminateAnnotationCapture(errMsg);
             return;
         }
 
@@ -171,7 +181,7 @@ export class ActionAnnotationCoordinator {
     }
 
     initiateActionAnnotationCapture = async (): Promise<void> => {
-        await this.mutex.runExclusive(() => {
+        await this.mutex.runExclusive(async () => {
             if (this.isDisabledUntilEulaAcceptance) {
                 this.logger.warn(`asked to initiate annotation capture while EULA acceptance is still pending; ignoring`);
                 return;
@@ -193,6 +203,13 @@ export class ActionAnnotationCoordinator {
             }
 
             this.currAnnotationId = uuidV4();
+            const screenshotCapture = await this.swHelper.captureScreenshot("annotation_action_context");
+            if (screenshotCapture.error) {
+                this.terminateAnnotationCapture(screenshotCapture.error);
+                return;
+            }
+            this.currActionContextScreenshotBase64 = screenshotCapture.screenshotBase64;
+
             this.state = AnnotationCoordinatorState.WAITING_FOR_ANNOTATION_DETAILS;
             this.portToSidePanel.postMessage({type: AnnotationCoordinator2PanelPortMsgType.ANNOTATION_DETAILS_REQ});
         });
@@ -206,7 +223,7 @@ export class ActionAnnotationCoordinator {
 
     //todo highlight the hovered element visually and capture another screenshot
 
-    terminateAnnotationCapture = async (reason: string): Promise<void> => {
+    terminateAnnotationCapture = (reason: string): void => {
         this.logger.info(`terminating the capture of action annotation ${this.currAnnotationId} for reason: ${reason}`);
 
         this.state = AnnotationCoordinatorState.IDLE;
@@ -214,5 +231,6 @@ export class ActionAnnotationCoordinator {
         this.currAnnotationAction = undefined;
         this.currAnnotationStateChangeSeverity = undefined;
         this.currAnnotationActionDesc = undefined;
+        this.currActionContextScreenshotBase64 = undefined;
     }
 }

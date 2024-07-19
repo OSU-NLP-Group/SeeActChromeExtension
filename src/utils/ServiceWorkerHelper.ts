@@ -4,6 +4,15 @@ import log from "loglevel";
 import {renderUnknownValue} from "./misc";
 import JSZip from "jszip";
 
+/**
+ * the non-error parts of an object of this type should be disregarded if the error field is defined
+ */
+export interface ScreenshotCapture {
+    screenshotBase64: string;
+    screenshotDataUrl: string;
+    error?: string;
+}
+
 export class ServiceWorkerHelper {
     //for dependency injection in unit tests
     private chromeWrapper: ChromeWrapper;
@@ -12,6 +21,30 @@ export class ServiceWorkerHelper {
     constructor(chromeWrapper?: ChromeWrapper, loggerToUse?: log.Logger) {
         this.chromeWrapper = chromeWrapper ?? new ChromeWrapper();
         this.logger = loggerToUse ?? createNamedLogger('service-worker-helper', true);
+    }
+
+    captureScreenshot = async (screenshotType: string): Promise<ScreenshotCapture> => {
+        const dummyResult: ScreenshotCapture = {screenshotBase64: "fake", screenshotDataUrl: "fake"};
+        let screenshotDataUrl: string|undefined;
+        try {
+            screenshotDataUrl = await this.chromeWrapper.fetchVisibleTabScreenshot();
+        } catch (error: any) {
+            const termReason = `error while trying to get screenshot of current tab; error: ${renderUnknownValue(error)}`;
+            this.logger.error(termReason);
+            return { ...dummyResult, error: termReason };
+        }
+        this.logger.debug(`${screenshotType} screenshot data url (truncated): ${screenshotDataUrl.slice(0, 100)}...`);
+        const startIndexForBase64Data = screenshotDataUrl.indexOf(';base64,') + 8;
+        if (startIndexForBase64Data <= 7) {//if indexOf returns -1
+            const termReason = "error while trying to extract base64-encoded data from screenshot data url: screenshot data url does not contain expected prefix";
+            this.logger.error(termReason);
+            return { ...dummyResult, error: termReason };
+        } else if (startIndexForBase64Data >= screenshotDataUrl.length) {
+            const termReason = "error while trying to extract base64-encoded data from screenshot data url: screenshot data url does not contain any data after the prefix";
+            this.logger.error(termReason);
+            return { ...dummyResult, error: termReason };
+        }
+        return { screenshotBase64: screenshotDataUrl.substring(startIndexForBase64Data), screenshotDataUrl: screenshotDataUrl };
     }
 
     sendZipToSidePanelForDownload(zipDescription: string, zip: JSZip, sidePanelPort: chrome.runtime.Port, zipFilename: string, sidePanelMsgType: string) {

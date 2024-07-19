@@ -844,7 +844,6 @@ export class AgentController {
      * @return a data url of the screenshot (i.e. base64-encoded string for the png file's bytes)
      */
     captureAndStoreScreenshot = async (screenshotType: string, promptingIndexForAction: number): Promise<string | undefined> => {
-        let screenshotDataUrl: string | undefined;
         if (this.taskId === undefined) {
             const termReason = `task id is undefined when capturing screenshot of type ${screenshotType}`;
             this.logger.error(`${termReason}; terminating task`);
@@ -860,36 +859,26 @@ export class AgentController {
         // are created by things that can't (i.e. the service worker and content script));
         // It's better for all timestamps in the indexeddb to follow the same convention
         const screenshotTs = new Date().toISOString().slice(0, -1);
-        try {
-            screenshotDataUrl = await this.chromeWrapper.fetchVisibleTabScreenshot();
-        } catch (error: any) {
-            const termReason = `error while trying to get screenshot of current tab; error: ${renderUnknownValue(error)}`;
-            this.logger.error(`${termReason}; terminating task`);
-            this.terminateTask(termReason);
-            return;
+
+        const screenshotResult = await this.swHelper.captureScreenshot(screenshotType);
+        if (screenshotResult.error) {
+            this.terminateTask(screenshotResult.error);
+            return undefined;
         }
-        this.logger.debug(`${screenshotType} screenshot data url (truncated): ${screenshotDataUrl.slice(0, 100)}...`);
         if (dbConnHolder.dbConn) {
             const screenshotIdStr = [this.taskId, this.actionsSoFar.length,
                 promptingIndexForAction, screenshotType].join(",");
-            const startIndexForBase64Data = screenshotDataUrl.indexOf(';base64,') + 8;
-            if (startIndexForBase64Data <= 0) {
-                const termReason = "error while trying to add screenshot to indexeddb: screenshot data url does not contain expected prefix";
-                this.logger.error(termReason);
-                this.terminateTask(termReason);
-                return;
-            }
-            const screenshotBase64Content = screenshotDataUrl.substring(startIndexForBase64Data);
+
             dbConnHolder.dbConn.add(SCREENSHOTS_OBJECT_STORE, {
                 timestamp: screenshotTs, taskId: this.taskId, numPriorActions: this.actionsSoFar.length,
                 numPriorScreenshotsForPrompts: promptingIndexForAction,
-                screenshotType: screenshotType, screenshotId: screenshotIdStr, screenshot64: screenshotBase64Content
+                screenshotType: screenshotType, screenshotId: screenshotIdStr, screenshot64: screenshotResult.screenshotBase64
             }).catch((error) => console.error("error adding screenshot to indexeddb:", renderUnknownValue(error)));
         } else {
             this.logger.warn("no db connection available, cannot save screenshot");
         }
         if (screenshotType === "initial") { this.numPriorScreenshotsTakenForPromptingCurrentAction++; }
-        return screenshotDataUrl;
+        return screenshotResult.screenshotDataUrl;
     }
 
     /**
