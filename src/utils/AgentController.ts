@@ -16,7 +16,7 @@ import {
 import {
     Action,
     Background2PagePortMsgType,
-    Background2PanelPortMsgType,
+    AgentController2PanelPortMsgType,
     base64ToByteArray,
     buildGenericActionDesc,
     defaultIsMonitorMode,
@@ -27,7 +27,7 @@ import {
     elementHighlightRenderDelay,
     expectedMsgForPortDisconnection,
     Page2BackgroundPortMsgType,
-    Panel2BackgroundPortMsgType,
+    Panel2AgentControllerPortMsgType,
     renderUnknownValue,
     setupModeCache,
     sleep,
@@ -49,6 +49,7 @@ import {IDBPDatabase} from "idb";
 import {AiEngine} from "./AiEngine";
 import {AiProviderId, AiProviders} from "./ai_misc";
 import Port = chrome.runtime.Port;
+import {ServiceWorkerHelper} from "./ServiceWorkerHelper";
 
 /**
  * states for the agent controller Finite State Machine
@@ -112,18 +113,6 @@ type PredictionRecord = {
     value?: string
     explanation: string
 };
-
-/**
- * these alarms are turned on when the side panel makes contact with the service worker and turned off when that
- * connection is lost. They serve to keep the service worker responsive to user input in the side panel
- *
- * with just 1 keepalive alarm, sometimes it would serve its purpose (if Chrome fired that event a fraction of a second early)
- *  but it would fail to do its job if there was a 30 second period with no keepalive pings from the side panel (side
- *  panel pings to service worker are bafflingly unreliable) and that time the alarm fired even a tiny fraction of a
- * second more than 30 seconds after the previous firing
- */
-export const serviceWorkerKeepaliveAlarmName = "serviceWorkerKeepaliveAlarm";
-export const serviceWorker2ndaryKeepaliveAlarmName = "serviceWorker2ndaryKeepaliveAlarm";
 
 
 //todo explore whether it might be possible to break this into multiple classes, or at least if there are
@@ -193,29 +182,33 @@ export class AgentController {
 
     numPriorScreenshotsTakenForPromptingCurrentAction: number = 0;
 
-
     state: AgentControllerState = AgentControllerState.IDLE;
 
     portToContentScript: Port | undefined;
     portToSidePanel: Port | undefined;
 
     private aiEngine: AiEngine;
+    readonly swHelper: ServiceWorkerHelper;
     private chromeWrapper: ChromeWrapper;
     readonly logger: Logger;
 
     /**
      * @description Constructor for the AgentController
      * @param aiEngine The OpenAiEngine instance to use for analyzing the situation and generating actions
+     * @param serviceWorkerHelper provides utility methods for the various components in the service worker; can be used
+     *                              in unit tests to inject mock implementations of sensitive methods
      * @param chromeWrapper a wrapper to allow mocking of Chrome extension API calls
      */
-    constructor(aiEngine: AiEngine, chromeWrapper?: ChromeWrapper) {
+    constructor(aiEngine: AiEngine, serviceWorkerHelper?: ServiceWorkerHelper, chromeWrapper?: ChromeWrapper) {
         this.aiEngine = aiEngine;
+        this.swHelper = serviceWorkerHelper ?? new ServiceWorkerHelper();
         this.chromeWrapper = chromeWrapper ?? new ChromeWrapper();
 
         this.logger = createNamedLogger('agent-controller', true);
         this.logger.debug(`max ops limit: ${this.maxOpsLimit}, max noop limit: ${this.maxNoopLimit}, max failure limit: ${this.maxFailureLimit}, max failure-or-noop streak limit: ${this.maxFailureOrNoopStreakLimit}`);
 
         setupModeCache((newMonitorModeVal: boolean) => this.cachedMonitorMode = newMonitorModeVal, "monitor mode", storageKeyForMonitorMode, this.logger);
+
         if (chrome?.storage?.local) {
             chrome.storage.local.get([storageKeyForMaxOps, storageKeyForMaxNoops, storageKeyForMaxFailures,
                 storageKeyForMaxFailureOrNoopStreak, storageKeyForEulaAcceptance], async (items) => {
@@ -224,9 +217,8 @@ export class AgentController {
                     items[storageKeyForMaxFailureOrNoopStreak], undefined,
                     items[storageKeyForEulaAcceptance]);
             });
-            chrome.storage.local.onChanged.addListener(async (changes: {
-                [p: string]: chrome.storage.StorageChange
-            }) => {
+            chrome.storage.local.onChanged.addListener(async (
+                changes: { [p: string]: chrome.storage.StorageChange }) => {
                 this.logger.debug(`firing local-storage's change-listener for AgentController, based on changes object: ${JSON.stringify(changes)}`)
                 await this.validateAndApplyAgentOptions(false, changes[storageKeyForMaxOps]?.newValue,
                     changes[storageKeyForMaxNoops]?.newValue, changes[storageKeyForMaxFailures]?.newValue,
@@ -285,6 +277,8 @@ export class AgentController {
         } else if (typeof eulaAcceptance !== "undefined") { this.logger.error(`invalid EULA acceptance value ${renderUnknownValue(eulaAcceptance)} in chrome.storage detected ${contextStr}; ignoring it`); }
     }
 
+
+    //todo rework injection method so it can move to ServiceWorkerHelper and be used by both this and ActionAnnotationCoordinator
     /**
      * @description Injects the agent's page-interaction/data-gathering script into the current tab
      * @param isStartOfTask Whether this injection is to start a new task or to continue an existing one (e.g. after
@@ -297,7 +291,7 @@ export class AgentController {
         let tab: chrome.tabs.Tab | undefined = newTab;
         if (!tab) {
             try {
-                tab = await this.getActiveTab();
+                tab = await this.swHelper.getActiveTab();
             } catch (error) {
                 const termReason = `error getting active tab id, cannot inject content script; error: ${renderUnknownValue(error)}`;
                 this.logger.error(termReason);
@@ -352,7 +346,7 @@ export class AgentController {
             this.logger.warn(taskRejectMsg);
             this.state = AgentControllerState.IDLE;
             try {
-                port.postMessage({type: Background2PanelPortMsgType.ERROR, msg: taskRejectMsg});
+                port.postMessage({type: AgentController2PanelPortMsgType.ERROR, msg: taskRejectMsg});
             } catch (error: any) {
                 this.logger.error(`error while trying to send error message to side panel about task-start request being received when EULA has not yet been accepted; error: ${renderUnknownValue(error)}`);
             }
@@ -360,7 +354,7 @@ export class AgentController {
             const taskRejectMsg = `Task ${this.taskId} already in progress; not starting new task`;
             this.logger.warn(taskRejectMsg);
             try {
-                port.postMessage({type: Background2PanelPortMsgType.ERROR, msg: taskRejectMsg});
+                port.postMessage({type: AgentController2PanelPortMsgType.ERROR, msg: taskRejectMsg});
             } catch (error: any) {
                 this.logger.error(`error while trying to send error message to side panel about task-start request being received when task is already running; error: ${renderUnknownValue(error)}`);
             }
@@ -368,7 +362,7 @@ export class AgentController {
             this.logger.error(`received bad task specification from side panel: ${renderUnknownValue(message.taskSpecification)}`);
             this.state = AgentControllerState.IDLE;
             try {
-                port.postMessage({type: Background2PanelPortMsgType.ERROR, msg: "bad task specification"});
+                port.postMessage({type: AgentController2PanelPortMsgType.ERROR, msg: "bad task specification"});
             } catch (error: any) {
                 this.logger.error(`error while trying to send error message to side panel about task start request with bad task specification; error: ${renderUnknownValue(error)}`);
             }
@@ -421,21 +415,13 @@ export class AgentController {
             this.logger.trace("side panel connected to agent controller in service worker");
             this.portToSidePanel = port;
             this.portToSidePanel.onMessage.addListener(this.handlePanelMsgToController);
-            this.portToSidePanel.onDisconnect.addListener(this.handlePanelDisconnectFromController);
             this.logger.trace("about to notify side panel that agent controller is ready");
             try {
-                this.portToSidePanel.postMessage({type: Background2PanelPortMsgType.AGENT_CONTROLLER_READY});
+                this.portToSidePanel.postMessage({type: AgentController2PanelPortMsgType.AGENT_CONTROLLER_READY});
             } catch (error: any) {
                 this.logger.error(`error while trying to inform side panel about agent controller's readiness for start of new task; error: ${renderUnknownValue(error)}`);
             }
             this.logger.trace("sent notification to side panel that agent controller is ready");
-            chrome.alarms.create(serviceWorkerKeepaliveAlarmName, {periodInMinutes: 0.5}).catch((error) =>
-                this.logger.error(`error while trying to set up service worker keepalive alarm; error: ${renderUnknownValue(error)}`));
-            setTimeout(() => {
-                this.logger.debug("setting up secondary keepalive alarm in service worker");
-                chrome.alarms.create(serviceWorker2ndaryKeepaliveAlarmName, {periodInMinutes: 0.5}).catch((error) =>
-                    this.logger.error(`error while trying to set up secondary service worker keepalive alarm; error: ${renderUnknownValue(error)}`));
-            }, 15_000);
         });
     }
 
@@ -476,7 +462,7 @@ export class AgentController {
             } else {
                 try {
                     this.portToSidePanel.postMessage({
-                        type: Background2PanelPortMsgType.TASK_STARTED, taskId: this.taskId,
+                        type: AgentController2PanelPortMsgType.TASK_STARTED, taskId: this.taskId,
                         success: successfulStart, taskSpec: this.taskSpecification
                     });
                 } catch (error: any) {
@@ -580,7 +566,7 @@ export class AgentController {
             if (this.portToSidePanel) {
                 try {
                     this.portToSidePanel.postMessage(
-                        {type: Background2PanelPortMsgType.ACTION_CANDIDATE, actionInfo: this.pendingActionInfo});
+                        {type: AgentController2PanelPortMsgType.ACTION_CANDIDATE, actionInfo: this.pendingActionInfo});
                 } catch (error: any) {
                     const termReason = `error while trying to inform side panel about pending action; error: ${renderUnknownValue(error)}`;
                     this.logger.error(`${termReason}; terminating task`);
@@ -711,7 +697,7 @@ export class AgentController {
             this.logger.info("planning output: " + planningOutput);
             try {
                 this.portToSidePanel.postMessage({
-                    type: Background2PanelPortMsgType.NOTIFICATION, details: planningOutput,
+                    type: AgentController2PanelPortMsgType.NOTIFICATION, details: planningOutput,
                     msg: "AI planning complete, now asking model to specify what exactly it should do next to advance that plan"
                 });
             } catch (error: any) {
@@ -767,7 +753,7 @@ export class AgentController {
             });
             try {
                 this.portToSidePanel.postMessage({
-                    type: Background2PanelPortMsgType.NOTIFICATION, details: groundingOutput,
+                    type: AgentController2PanelPortMsgType.NOTIFICATION, details: groundingOutput,
                     msg: "AI refused to specify a next action; reprompting"
                 });
             } catch (error: any) {
@@ -794,7 +780,7 @@ export class AgentController {
             });
             try {
                 this.portToSidePanel.postMessage({
-                    type: Background2PanelPortMsgType.NOTIFICATION, details: groundingOutput,
+                    type: AgentController2PanelPortMsgType.NOTIFICATION, details: groundingOutput,
                     msg: "AI gave invalid specification of element to act on; reprompting"
                 });
             } catch (error: any) {
@@ -815,7 +801,7 @@ export class AgentController {
             });
             try {
                 this.portToSidePanel.postMessage({
-                    type: Background2PanelPortMsgType.NOTIFICATION, details: groundingOutput,
+                    type: AgentController2PanelPortMsgType.NOTIFICATION, details: groundingOutput,
                     msg: "AI specified a next action that requires a target element but didn't provide a valid target element identifier; reprompting"
                 });
             } catch (error: any) {
@@ -935,7 +921,7 @@ export class AgentController {
         if (this.mightNextActionCausePageNav) {
             await sleep(500);//make sure that, if the browser is opening a new tab, there's time for browser to
             // make the new tab the active tab before we check for active tab change
-            tab = await this.getActiveTab();
+            tab = await this.swHelper.getActiveTab();
             const tabId = tab.id;
             if (tabId !== this.currTaskTabId) {
                 wasPageNav = true;
@@ -999,7 +985,7 @@ export class AgentController {
         try {
             this.portToSidePanel.postMessage({
                 actionDesc: actionDesc, success: wasSuccessful, explanation: explanation,
-                actionInfo: this.pendingActionInfo, type: Background2PanelPortMsgType.TASK_HISTORY_ENTRY
+                actionInfo: this.pendingActionInfo, type: AgentController2PanelPortMsgType.TASK_HISTORY_ENTRY
             });
         } catch (error: any) {
             const termReason = "error when sending action history entry to side panel";
@@ -1111,20 +1097,20 @@ export class AgentController {
     }
 
     handlePanelMsgToController = async (message: any, port: chrome.runtime.Port): Promise<void> => {
-        if (message.type === Panel2BackgroundPortMsgType.START_TASK) {
+        if (message.type === Panel2AgentControllerPortMsgType.START_TASK) {
             await this.mutex.runExclusive(() => {
                 this.startTask(message, port).catch((error) => {
                     this.logger.error("error while trying to start task; error: ", renderUnknownValue(error));
                 });
             });
-        } else if (message.type === Panel2BackgroundPortMsgType.KILL_TASK) {
+        } else if (message.type === Panel2AgentControllerPortMsgType.KILL_TASK) {
             this.terminationSignal = true;
             await this.mutex.runExclusive(() => {
                 if (this.taskId === undefined) {
                     this.logger.error("received termination signal from side panel while no task was running; ignoring");
                     try {
                         port.postMessage(
-                            {type: Background2PanelPortMsgType.ERROR, msg: "No task was running to terminate"});
+                            {type: AgentController2PanelPortMsgType.ERROR, msg: "No task was running to terminate"});
                     } catch (error: any) {
                         this.logger.error(`error while trying to send error message to side panel about task termination request when no task was running; error: ${renderUnknownValue(error)}`);
                     }
@@ -1133,16 +1119,16 @@ export class AgentController {
                     this.terminateTask("user request");
                 }
             });
-        } else if (message.type === Panel2BackgroundPortMsgType.MONITOR_APPROVED) {
+        } else if (message.type === Panel2AgentControllerPortMsgType.MONITOR_APPROVED) {
             await this.mutex.runExclusive(() => this.processMonitorApproval());
-        } else if (message.type === Panel2BackgroundPortMsgType.MONITOR_REJECTED) {
+        } else if (message.type === Panel2AgentControllerPortMsgType.MONITOR_REJECTED) {
             await this.mutex.runExclusive(() => this.processMonitorRejection(message));
-        } else if (message.type === Panel2BackgroundPortMsgType.KEEP_ALIVE) {
+        } else if (message.type === Panel2AgentControllerPortMsgType.KEEP_ALIVE) {
             this.logger.trace("received keep-alive message from side panel");
             //ignore this message; just receiving it serves the purpose of keeping Chrome from killing the service
             // worker for another 30sec; as an added layer of redundancy on top of the keep-alive alarms
             // Just the alarms on their own still lead to service worker disconnects every few hours
-        } else if (message.type === Panel2BackgroundPortMsgType.EXPORT_UNAFFILIATED_LOGS) {
+        } else if (message.type === Panel2AgentControllerPortMsgType.EXPORT_UNAFFILIATED_LOGS) {
             if (this.isDisabledUntilEulaAcceptance) {
                 this.logger.warn("cannot export logs until user accepts EULA");
             } else if (dbConnHolder.dbConn) {
@@ -1201,7 +1187,7 @@ export class AgentController {
                 "but the action was not expected to cause page navigation; this is unexpected");
         }
 
-        const tab = await this.getActiveTab();
+        const tab = await this.swHelper.getActiveTab();
         if (tab.id !== this.currTaskTabId) {
             this.logger.warn("tab changed after action and yet the connection to the old tab's " +
                 "content script was lost (before the controller could terminate it); this is unexpected")
@@ -1241,7 +1227,7 @@ export class AgentController {
                 this.logger.info("service worker's connection to content script was lost partway through the controller's processing of some step; reestablishing connection")
                 try {
                     this.portToSidePanel.postMessage({
-                        type: Background2PanelPortMsgType.NOTIFICATION,
+                        type: AgentController2PanelPortMsgType.NOTIFICATION,
                         msg: "Reestablishing connection to content script after it broke unexpectedly"
                     });
                 } catch (error: any) {
@@ -1275,11 +1261,6 @@ export class AgentController {
                 this.logger.error(termReason);
                 this.terminateTask(termReason);
             }
-            this.logger.debug("clearing keep-alive alarms so that service worker will be shut down");
-            chrome.alarms.clear(serviceWorkerKeepaliveAlarmName).catch((error) =>
-                this.logger.warn("error while trying to clear keep-alive alarm; error: ", renderUnknownValue(error)));
-            chrome.alarms.clear(serviceWorker2ndaryKeepaliveAlarmName).catch((error) =>
-                this.logger.warn("error while trying to clear secondary keep-alive alarm; error: ", renderUnknownValue(error)));
         });
     }
 
@@ -1387,7 +1368,7 @@ export class AgentController {
         if (this.portToSidePanel !== undefined) {
             try {
                 this.portToSidePanel.postMessage({
-                    type: Background2PanelPortMsgType.TASK_ENDED, taskId: taskIdBeingTerminated,
+                    type: AgentController2PanelPortMsgType.TASK_ENDED, taskId: taskIdBeingTerminated,
                     details: terminationReason
                 });
             } catch (error: any) {
@@ -1508,7 +1489,7 @@ export class AgentController {
             this.logger.debug(`array made from that buffer has length: ${arrForTraceZip.length}`);
             try {
                 this.portToSidePanel.postMessage({
-                    type: Background2PanelPortMsgType.HISTORY_EXPORT, data: arrForTraceZip,
+                    type: AgentController2PanelPortMsgType.HISTORY_EXPORT, data: arrForTraceZip,
                     fileName: overrideZipFilename ?? `task-${givenTaskId}-trace.zip`
                 });
             } catch (error: any) {
@@ -1519,90 +1500,6 @@ export class AgentController {
             this.logger.error(`error while trying to generate zip file for task ${givenTaskId}; error: ${renderUnknownValue(error)}`);
         });
     }
-
-    //todo getActiveTab, sendEnterKeyPress, and hoverOnElem are good candidates for being moved out of AgentController (which is way too big)
-
-    /**
-     * @description Get the active tab in the current window (but with id set to undefined if the active tab is a chrome:// URL)
-     * @returns {Promise<chrome.tabs.Tab>} The active tab, with the id member undefined if the active tab is a chrome:// URL
-     *                                          (which scripts can't be injected into for safety reasons)
-     * @throws {Error} If the active tab is not found or doesn't have an id
-     */
-    getActiveTab = async (): Promise<chrome.tabs.Tab> => {
-        let tabs;
-        try {
-            tabs = await this.chromeWrapper.fetchTabs({active: true, currentWindow: true});
-        } catch (error) {
-            const errMsg = `error querying active tab; error: ${renderUnknownValue(error)}`;
-            this.logger.error(errMsg);
-            throw new Error(errMsg);
-        }
-        const tab: chrome.tabs.Tab | undefined = tabs[0];
-        if (!tab) throw new Error('Active tab not found');
-        const id = tab.id;
-        if (!id) throw new Error('Active tab id not found');
-        if (tab.url?.startsWith('chrome://')) {
-            this.logger.warn('Active tab is a chrome:// URL: ' + tab.url);
-            tab.id = undefined;
-        }
-        return tab;
-    }
-
-    /**
-     * @description Sends an Enter key press to the tab with the given id
-     * @param tabId the id of the tab to send the Enter key press to
-     */
-    sendEnterKeyPress = async (tabId: number): Promise<void> => {
-        //todo if/when adding support for press_sequentially for TYPE action, will want this helper method to flexibly
-        // handle strings of other characters; in that case, want to do testing to see if windowsVirtualKeyCode is needed or
-        // if text (and?/or? unmodifiedText) is enough (or something else)
-        await this.chromeWrapper.attachDebugger({tabId: tabId}, "1.3");
-        this.logger.debug(`chrome.debugger attached to the tab ${tabId} to send an Enter key press`);
-        //thanks to @activeliang https://github.com/ChromeDevTools/devtools-protocol/issues/45#issuecomment-850953391
-        await this.chromeWrapper.sendCommand({tabId: tabId}, "Input.dispatchKeyEvent",
-            {"type": "rawKeyDown", "windowsVirtualKeyCode": 13, "unmodifiedText": "\r", "text": "\r"});
-        this.logger.debug(`chrome.debugger sent key-down keyevent for Enter/CR key to tab ${tabId}`);
-        await this.chromeWrapper.sendCommand({tabId: tabId}, "Input.dispatchKeyEvent",
-            {"type": "char", "windowsVirtualKeyCode": 13, "unmodifiedText": "\r", "text": "\r"});
-        this.logger.debug(`chrome.debugger sent char keyevent for Enter/CR key to tab ${tabId}`);
-        await this.chromeWrapper.sendCommand({tabId: tabId}, "Input.dispatchKeyEvent",
-            {"type": "keyUp", "windowsVirtualKeyCode": 13, "unmodifiedText": "\r", "text": "\r"});
-        this.logger.debug(`chrome.debugger sent keyup keyevent for Enter/CR key to tab ${tabId}`);
-        await this.chromeWrapper.detachDebugger({tabId: tabId});
-        this.logger.debug(`chrome.debugger detached from the tab ${tabId} after sending an Enter key press`);
-    }
-
-    /**
-     * @description simulate the user hovering over an element (so that something will pop up or be displayed)
-     * current impl: Sends a mouse 'moved' event to the tab with the given id to say that the mouse pointer is now at
-     * the given coordinates.
-     * @param tabId the id of the tab to hover over the element in
-     * @param x the number of css pixels from the left edge of the viewport to the position on the element which
-     *           the mouse pointer should be hovering over
-     * @param y the number of css pixels from the top edge of the viewport to the position on the element which
-     *           the mouse pointer should be hovering over
-     */
-    hoverOnElem = async (tabId: number, x: number, y: number): Promise<void> => {
-        this.logger.debug(`chrome.debugger about to attach to the tab ${tabId} to hover over an element at ${x}, ${y}`);
-        await this.chromeWrapper.attachDebugger({tabId: tabId}, "1.3");
-        this.logger.debug(`chrome.debugger attached to the tab ${tabId} to hover over an element at ${x}, ${y}`);
-
-        await this.chromeWrapper.sendCommand({tabId: tabId}, "Input.dispatchMouseEvent",
-            {"type": "mouseMoved", "x": x, "y": y});
-
-        await this.chromeWrapper.detachDebugger({tabId: tabId});
-        this.logger.debug(`chrome.debugger detached from the tab ${tabId} after hovering over an element at ${x}, ${y}`);
-    }
-
-
-    /*
-     * the below is sufficient for nearly-real clicking on an element via debugger (as opposed to js click)
-     * await this.chromeWrapper.sendCommand({tabId: tabId}, "Input.dispatchMouseEvent",
-            {"type": "mousePressed", "x": x, "y": y, "button": "left", "clickCount": 1});
-        await sleep(2000);
-        await this.chromeWrapper.sendCommand({tabId: tabId}, "Input.dispatchMouseEvent",
-            {"type": "mouseReleased", "x": x, "y": y, "button": "left", "clickCount": 1});
-     */
 
 
 }

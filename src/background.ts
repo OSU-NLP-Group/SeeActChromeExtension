@@ -13,13 +13,11 @@ import {
 import log from "loglevel";
 import {
     AgentController,
-    AgentControllerState,
-    serviceWorker2ndaryKeepaliveAlarmName,
-    serviceWorkerKeepaliveAlarmName
+    AgentControllerState
 } from "./utils/AgentController";
 import {
     PageRequestType,
-    pageToControllerPort,
+    pageToControllerPort, panelToAnnotationCoordinatorPort,
     panelToControllerPort,
     renderUnknownValue,
     sleep,
@@ -30,7 +28,24 @@ import Port = chrome.runtime.Port;
 import MessageSender = chrome.runtime.MessageSender;
 import {AiEngine} from "./utils/AiEngine";
 import {createSelectedAiEngine} from "./utils/ai_misc";
+import {ActionAnnotationCoordinator} from "./utils/ActionAnnotationCoordinator";
+import { Mutex } from "async-mutex";
+import {ServiceWorkerHelper} from "./utils/ServiceWorkerHelper";
 
+
+/**
+ * these alarms are turned on when the side panel makes contact with the service worker and turned off when that
+ * connection is lost. They serve to keep the service worker responsive to user input in the side panel
+ *
+ * with just 1 keepalive alarm, sometimes it would serve its purpose (if Chrome fired that event a fraction of a second early)
+ *  but it would fail to do its job if there was a 30 second period with no keepalive pings from the side panel (side
+ *  panel pings to service worker are bafflingly unreliable) and that time the alarm fired even a tiny fraction of a
+ * second more than 30 seconds after the previous firing
+ */
+export const serviceWorkerKeepaliveAlarmName = "serviceWorkerKeepaliveAlarm";
+export const serviceWorker2ndaryKeepaliveAlarmName = "serviceWorker2ndaryKeepaliveAlarm";
+
+const serviceWorkerStateMutex = new Mutex();
 
 console.log("successfully loaded background script in browser");
 
@@ -181,7 +196,8 @@ async function initializeAgentController(): Promise<AgentController> {
 }
 
 let agentController: AgentController | undefined;
-
+const serviceWorkerHelper = new ServiceWorkerHelper()
+const actionAnnotationCoordinator: ActionAnnotationCoordinator = new ActionAnnotationCoordinator();
 
 /**
  * @description Handle messages sent from the content script or popup script
@@ -221,7 +237,7 @@ function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (r
         } else if (agentController.currTaskTabId === undefined) {
             sendResponse({success: false, message: "No active tab to press Enter for"});
         } else {
-            agentController.sendEnterKeyPress(agentController.currTaskTabId).then(() => {
+            serviceWorkerHelper.sendEnterKeyPress(agentController.currTaskTabId).then(() => {
                 sendResponse({success: true, message: "Sent Enter key press"});
             }, (error) => {
                 const errMsg = `error sending Enter key press; error: ${renderUnknownValue(error)}`;
@@ -235,7 +251,7 @@ function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (r
         } else if (agentController.currTaskTabId === undefined) {
             sendResponse({success: false, message: "No active tab to hover in"});
         } else {
-            agentController.hoverOnElem(agentController.currTaskTabId, request.x, request.y).then(() => {
+            serviceWorkerHelper.hoverOnElem(agentController.currTaskTabId, request.x, request.y).then(() => {
                 sendResponse({success: true, message: `Hovered over element at ${request.x}, ${request.y}`});
             }, (error) => {
                 const errMsg = `error performing mouse hover; error: ${renderUnknownValue(error)}`;
@@ -283,6 +299,41 @@ function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (r
 chrome.runtime.onMessage.addListener(handleMsgFromPage);
 
 
+let numSidePanelPortsOpen = 0;
+
+async function updateServiceWorkerOnNewSidePanelConnection(newPort: Port, disconnectHandler: (port: Port) => Promise<void>): Promise<void> {
+    await serviceWorkerStateMutex.acquire()
+    numSidePanelPortsOpen++;
+    centralLogger.info(`service worker now has ${numSidePanelPortsOpen} side panel ports open`);
+    if (numSidePanelPortsOpen === 1) {
+        serviceWorkerStateMutex.release();
+        chrome.alarms.create(serviceWorkerKeepaliveAlarmName, {periodInMinutes: 0.5}).catch((error) =>
+            centralLogger.error(`error while trying to set up service worker keepalive alarm; error: ${renderUnknownValue(error)}`));
+        setTimeout(() => {
+            centralLogger.debug("setting up secondary keepalive alarm in service worker");
+            chrome.alarms.create(serviceWorker2ndaryKeepaliveAlarmName, {periodInMinutes: 0.5}).catch((error) =>
+                centralLogger.error(`error while trying to set up secondary service worker keepalive alarm; error: ${renderUnknownValue(error)}`));
+        }, 15_000);
+    } else { serviceWorkerStateMutex.release() }
+    newPort.onDisconnect.addListener((port: Port) => {
+        serviceWorkerStateMutex.acquire();
+        numSidePanelPortsOpen--;
+        if (numSidePanelPortsOpen === 0) {
+            serviceWorkerStateMutex.release();
+            centralLogger.debug("clearing keep-alive alarms so that service worker will be shut down");
+            chrome.alarms.clear(serviceWorkerKeepaliveAlarmName).catch((error) =>
+                centralLogger.warn("error while trying to clear keep-alive alarm; error: ", renderUnknownValue(error)));
+            chrome.alarms.clear(serviceWorker2ndaryKeepaliveAlarmName).catch((error) =>
+                centralLogger.warn("error while trying to clear secondary keep-alive alarm; error: ", renderUnknownValue(error)));
+        }  else { serviceWorkerStateMutex.release() }
+
+        disconnectHandler(port).catch((error) => {
+            centralLogger.error(`error handling side panel disconnection in service worker: ${renderUnknownValue(error)}`);
+        });
+    });
+}
+
+
 /**
  * @description Handle a connection being opened from a content script (page actor) to the agent controller in the
  * service worker
@@ -301,14 +352,21 @@ async function handleConnectionFromPage(port: Port): Promise<void> {
         agentController.addPageConnection(port).then(
             () => centralLogger.trace("page actor connected to agent controller in service worker"));
     } else if (port.name === panelToControllerPort) {
-        centralLogger.trace("side panel opened new connection to service worker");
+        centralLogger.trace("side panel opened new connection to service worker for agent controller");
         if (!agentController) {
             centralLogger.debug("have to initialize agent controller to handle connection from side panel");
             agentController = await initializeAgentController();
             centralLogger.trace("finished initializing agent controller to handle connection from side panel");
         }
-        agentController.addSidePanelConnection(port).then(
-            () => centralLogger.trace("side panel connected to agent controller in service worker"));
+        await updateServiceWorkerOnNewSidePanelConnection(port, agentController.handlePanelDisconnectFromController);
+
+        agentController.addSidePanelConnection(port).catch((error) =>
+            centralLogger.error(`error adding side panel connection to agent controller: ${renderUnknownValue(error)}`));
+    } else if (port.name === panelToAnnotationCoordinatorPort) {
+        centralLogger.trace("side panel opened new connection to service worker for annotation coordinator");
+        await updateServiceWorkerOnNewSidePanelConnection(port, actionAnnotationCoordinator.handlePanelDisconnectFromCoordinator);
+        actionAnnotationCoordinator.addSidePanelConnection(port).catch((error) =>
+            centralLogger.error(`error adding side panel connection to annotation coordinator: ${renderUnknownValue(error)}`));
     } else {
         centralLogger.warn("unrecognized port name:", port.name);
     }
@@ -339,7 +397,7 @@ function handleKeyCommand(command: string, tab: chrome.tabs.Tab): void {
         });
     }
         //todo add annotator-capture key command
-        // relatedly, idea- separate class from AgentController for this, maybe ActionAnnotationCoordinator
+    // relatedly, idea- separate class from AgentController for this, maybe ActionAnnotationCoordinator
 
     else {
         centralLogger.error(`unrecognized key command: ${command} from tab: ${JSON.stringify(tab)}`);

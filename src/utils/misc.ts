@@ -6,6 +6,7 @@ import {SerializableElementData} from "./BrowserHelper";
 export const expectedMsgForPortDisconnection = "Attempting to use a disconnected port object";
 export const pageToControllerPort = `page-actor-2-agent-controller`;
 export const panelToControllerPort = "side-panel-2-agent-controller";
+export const panelToAnnotationCoordinatorPort = "side-panel-2-annotation-coordinator";
 export const expectedMsgForSendingRuntimeRequestFromDisconnectedContentScript = "Extension context invalidated.";
 
 //ms, how long to sleep (after editing an element for highlighting) before telling the service worker to take a
@@ -72,7 +73,7 @@ export enum PageRequestType {
  * types of messages that the service worker might send to the side panel (for adding entries to history list, but
  * also for things like monitor mode)
  */
-export enum Background2PanelPortMsgType {
+export enum AgentController2PanelPortMsgType {
     AGENT_CONTROLLER_READY = "agentControllerReady",
     TASK_STARTED = "taskStarted",
     ACTION_CANDIDATE = "actionCandidate",
@@ -86,11 +87,13 @@ export enum Background2PanelPortMsgType {
 /**
  * types of messages that the side panel might send to the service worker
  */
-export enum Panel2BackgroundPortMsgType {
+export enum Panel2AgentControllerPortMsgType {
+    //specific to agent controller
     START_TASK = "mustStartTask",
     KILL_TASK = "mustKillTask",
     MONITOR_APPROVED = "monitorApproved",
     MONITOR_REJECTED = "monitorRejected",
+    //doesn't have to be specific to controller? handling these might be split off from AgentController later
     KEEP_ALIVE = "keepAlive",
     EXPORT_UNAFFILIATED_LOGS = "exportUnaffiliatedLogs"//i.e. logs not affiliated with any task (and so not included in any task's history export zip file)
 }
@@ -104,6 +107,15 @@ export enum Page2BackgroundPortMsgType {
     TERMINAL = "terminalPageSideError",
     PAGE_STATE = "sendingPageState",
     ACTION_DONE = "actionPerformed"
+}
+
+export enum PanelToAnnotationCoordinatorPortMsgType {
+    ANNOTATION_DETAILS = "annotationDetails",
+}
+
+export enum AnnotationCoordinator2PanelPortMsgType {
+    ANNOTATION_DETAILS_REQ = "annotationDetailsRequest",
+    ANNOTATED_ACTION_EXPORT = "annotatedActionExport",
 }
 
 /**
@@ -129,6 +141,12 @@ export enum Action {
     HOVER = "HOVER",
     TERMINATE = "TERMINATE",
     NONE = "NONE"
+}
+
+export enum ActionStateChangeSeverity {
+    LOW = "LOW",
+    MEDIUM = "MEDIUM",
+    HIGH = "HIGH"
 }
 
 
