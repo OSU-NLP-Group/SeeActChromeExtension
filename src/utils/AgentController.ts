@@ -15,8 +15,8 @@ import {
 } from "./shared_logging_setup";
 import {
     Action,
-    Background2PagePortMsgType,
     AgentController2PanelPortMsgType,
+    Background2PagePortMsgType,
     base64ToByteArray,
     buildGenericActionDesc,
     defaultIsMonitorMode,
@@ -48,8 +48,8 @@ import JSZip from "jszip";
 import {IDBPDatabase} from "idb";
 import {AiEngine} from "./AiEngine";
 import {AiProviderId, AiProviders} from "./ai_misc";
-import Port = chrome.runtime.Port;
 import {ServiceWorkerHelper} from "./ServiceWorkerHelper";
+import Port = chrome.runtime.Port;
 
 /**
  * states for the agent controller Finite State Machine
@@ -1131,15 +1131,25 @@ export class AgentController {
         } else if (message.type === Panel2AgentControllerPortMsgType.EXPORT_UNAFFILIATED_LOGS) {
             if (this.isDisabledUntilEulaAcceptance) {
                 this.logger.warn("cannot export logs until user accepts EULA");
-            } else if (dbConnHolder.dbConn) {
+            } else if (dbConnHolder.dbConn && this.portToSidePanel) {
                 const zip = new JSZip();
                 const logFileContents = await this.retrieveLogsForTaskId(dbConnHolder.dbConn, taskIdPlaceholderVal);
                 if (logFileContents != undefined) {
                     const fileSafeTimestampStr = new Date().toISOString().split(":").join("-").split(".").join("_");
                     zip.file(`non_task_specific_${fileSafeTimestampStr}.log`, logFileContents);
-                    this.sendZipToSidePanelForDownload(taskIdPlaceholderVal, zip, `misc_logs_${fileSafeTimestampStr}.zip`);
+                    this.swHelper.sendZipToSidePanelForDownload("non-task-affiliated logs download", zip, this.portToSidePanel, `misc_logs_${fileSafeTimestampStr}.zip`, AgentController2PanelPortMsgType.HISTORY_EXPORT);
                 } //error message already logged in retrieveLogsForTaskId()
-            } else { this.logger.error("no db connection available to export non-task-specific logs"); }
+            } else {
+                let errMsg = "";
+                if (!dbConnHolder.dbConn) { errMsg += "database connection "; }
+                if (!this.portToSidePanel) {
+                    if (!dbConnHolder.dbConn) { errMsg += "and "; }
+                    errMsg += "side panel connection ";
+                }
+                errMsg += (!dbConnHolder.dbConn && !this.portToSidePanel) ? "are " : "is ";
+                errMsg += "not available; cannot export non-task-specific logs";
+                this.logger.error(errMsg);
+            }
         } else {
             this.logger.error("unknown message from side panel:", JSON.stringify(message));
         }
@@ -1392,6 +1402,10 @@ export class AgentController {
             this.logger.error("no db connection available to export task history");
             return;
         }
+        if (!this.portToSidePanel) {
+            this.logger.error("no side panel connection available to send task history to for export as downloaded file");
+            return;
+        }
         const zip = new JSZip();
 
         const logFileContents = await this.retrieveLogsForTaskId(dbConnHolder.dbConn, givenTaskId);
@@ -1401,7 +1415,7 @@ export class AgentController {
             return;//error message already logged in retrieveLogsForTaskId()
         }
 
-        const taskResult = {
+        const resultStr = JSON.stringify({
             task: taskSpec,
             website: startingWebUrl,
             num_operations: numOps,
@@ -1410,8 +1424,7 @@ export class AgentController {
             fail_or_noop_streak: failOrNoopStreakAtEnd,
             termination_reason: terminationReason,
             action_history: actionsHistory
-        };
-        const resultStr = JSON.stringify(taskResult, null, 4);
+        }, null, 4);
         this.logger.debug(`task history for task ${givenTaskId} has length: ${resultStr.length}`);
         zip.file("result.json", resultStr);
 
@@ -1444,7 +1457,7 @@ export class AgentController {
         const predictionsStr = JSON.stringify(predictions, replaceUndefinedWithNull, 4);
         zip.file("all_predictions.json", predictionsStr);
 
-        this.sendZipToSidePanelForDownload(givenTaskId, zip);
+        this.swHelper.sendZipToSidePanelForDownload(`logs and screenshots of agent task ${givenTaskId}`, zip, this.portToSidePanel, `task-${givenTaskId}-trace.zip`, AgentController2PanelPortMsgType.HISTORY_EXPORT);
     }
 
     retrieveLogsForTaskId = async (dbConnection: IDBPDatabase<AgentDb>, taskId: string): Promise<string | undefined> => {
@@ -1473,33 +1486,7 @@ export class AgentController {
     }
 
 
-    private sendZipToSidePanelForDownload(givenTaskId: string, zip: JSZip, overrideZipFilename?: string) {
-        this.logger.info(`about to compress task info into virtual zip file for task ${givenTaskId}`);
-        zip.generateAsync(
-            {type: "blob", compression: "DEFLATE", compressionOptions: {level: 5}}).then(async (content) => {
-            this.logger.debug(`successfully generated virtual zip file for task ${givenTaskId}; about to send it to side panel so that it can be saved as a download`);
-            if (!this.portToSidePanel) {
-                this.logger.error(`no side panel connection available to send zip file to for download (for history of task ${givenTaskId})`);
-                return;
-            }
-            this.logger.debug(`blob for virtual zip file for task ${givenTaskId} has byte length: ${content.size}`);
-            const arrBuffForTraceZip = await content.arrayBuffer();
-            this.logger.debug(`array buffer made from that blob has length: ${arrBuffForTraceZip.byteLength}`);
-            const arrForTraceZip = Array.from(new Uint8Array(arrBuffForTraceZip));
-            this.logger.debug(`array made from that buffer has length: ${arrForTraceZip.length}`);
-            try {
-                this.portToSidePanel.postMessage({
-                    type: AgentController2PanelPortMsgType.HISTORY_EXPORT, data: arrForTraceZip,
-                    fileName: overrideZipFilename ?? `task-${givenTaskId}-trace.zip`
-                });
-            } catch (error: any) {
-                this.logger.error(`error while trying to send zip file for task ${givenTaskId} to side panel for download; error: ${renderUnknownValue(error)}`);
-            }
-            this.logger.debug(`sent zip file for task ${givenTaskId}'s history to side panel for download`);
-        }, (error) => {
-            this.logger.error(`error while trying to generate zip file for task ${givenTaskId}; error: ${renderUnknownValue(error)}`);
-        });
-    }
+
 
 
 }

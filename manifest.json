@@ -47,6 +47,12 @@
                 "default": "Alt+Shift+U"
             },
             "description": "Reject the pending action (in monitor mode)"
+        },
+        "capture_annotation": {
+            "suggested_key": {
+                "default": "Alt+Shift+G"
+            },
+            "description": "Capture an annotation of the current pending action (requires annotator mode to be enabled)"
         }
     },
     "cross_origin_embedder_policy": {

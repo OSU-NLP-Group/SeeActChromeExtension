@@ -2,6 +2,7 @@ import {createNamedLogger} from "./shared_logging_setup";
 import {ChromeWrapper} from "./ChromeWrapper";
 import log from "loglevel";
 import {renderUnknownValue} from "./misc";
+import JSZip from "jszip";
 
 export class ServiceWorkerHelper {
     //for dependency injection in unit tests
@@ -12,6 +13,29 @@ export class ServiceWorkerHelper {
         this.chromeWrapper = chromeWrapper ?? new ChromeWrapper();
         this.logger = loggerToUse ?? createNamedLogger('service-worker-helper', true);
     }
+
+    sendZipToSidePanelForDownload(zipDescription: string, zip: JSZip, sidePanelPort: chrome.runtime.Port, zipFilename: string, sidePanelMsgType: string) {
+        this.logger.info(`about to compress info into virtual zip file for ${zipDescription}`);
+        zip.generateAsync({type: "blob", compression: "DEFLATE", compressionOptions: {level: 5}}
+        ).then(async (content) => {
+            this.logger.debug(`successfully generated virtual zip file for ${zipDescription}; about to send it to side panel so that it can be saved as a download`);
+
+            this.logger.debug(`blob for virtual zip file for ${zipDescription} has byte length: ${content.size}`);
+            const arrBuffForTraceZip = await content.arrayBuffer();
+            this.logger.debug(`array buffer made from that blob has length: ${arrBuffForTraceZip.byteLength}`);
+            const arrForTraceZip = Array.from(new Uint8Array(arrBuffForTraceZip));
+            this.logger.debug(`array made from that buffer has length: ${arrForTraceZip.length}`);
+            try {
+                sidePanelPort.postMessage({type: sidePanelMsgType, data: arrForTraceZip, fileName: zipFilename});
+            } catch (error: any) {
+                this.logger.error(`error while trying to send zip file for ${zipDescription} to side panel for download; error: ${renderUnknownValue(error)}`);
+            }
+            this.logger.debug(`sent zip file for ${zipDescription} to side panel for download`);
+        }, (error) => {
+            this.logger.error(`error while trying to generate zip file for ${zipDescription}; error: ${renderUnknownValue(error)}`);
+        });
+    }
+
 
     /**
      * @description Get the active tab in the current window (but with id set to undefined if the active tab is a chrome:// URL)
@@ -84,7 +108,6 @@ export class ServiceWorkerHelper {
         await this.chromeWrapper.detachDebugger({tabId: tabId});
         this.logger.debug(`chrome.debugger detached from the tab ${tabId} after hovering over an element at ${x}, ${y}`);
     }
-
 
 
     /*

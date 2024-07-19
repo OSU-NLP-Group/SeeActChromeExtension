@@ -1,17 +1,22 @@
 import {Logger} from "loglevel";
 import {ChromeWrapper} from "./ChromeWrapper";
+import {v4 as uuidV4} from 'uuid';
 import {createNamedLogger} from "./shared_logging_setup";
 import {
-    Action, ActionStateChangeSeverity,
-    defaultIsAnnotatorMode, PanelToAnnotationCoordinatorPortMsgType,
+    Action,
+    ActionStateChangeSeverity,
+    AnnotationCoordinator2PanelPortMsgType,
+    defaultIsAnnotatorMode,
+    PanelToAnnotationCoordinatorPortMsgType,
     renderUnknownValue,
     setupModeCache,
     storageKeyForAnnotatorMode,
     storageKeyForEulaAcceptance
 } from "./misc";
-import Port = chrome.runtime.Port;
-import { Mutex } from "async-mutex";
+import {Mutex} from "async-mutex";
 import {ServiceWorkerHelper} from "./ServiceWorkerHelper";
+import JSZip from "jszip";
+import Port = chrome.runtime.Port;
 
 //todo make util files to break out pieces from AgentController that will be needed by both it
 // and this; e.g. injecting a content script and managing its
@@ -81,17 +86,18 @@ export class ActionAnnotationCoordinator {
         } else if (typeof eulaAcceptance !== "undefined") { this.logger.error(`invalid EULA acceptance value ${renderUnknownValue(eulaAcceptance)} in chrome.storage detected ${contextStr}; ignoring it`); }
     }
 
-
     addSidePanelConnection = async (port: Port): Promise<void> => {
         await this.mutex.runExclusive(() => {
             if (this.state != AnnotationCoordinatorState.IDLE) {
-                this.logger.warn(`side panel connected while in state ${this.state}`);
-                //todo maybe call reset method once available
+                const errMsg = `side panel connected while in state ${this.state}`;
+                this.logger.warn(`${errMsg}; resetting coordinator before accepting connection`);
+                this.terminateAnnotationCapture(errMsg);
             }
             if (this.portToSidePanel) {
-                this.logger.warn(`side panel connected while a side panel port was already open`);
+                const errMsg = `side panel connected while a side panel port was already open`;
+                this.logger.warn(`${errMsg}; disconnecting old port and resetting coordinator before accepting connection`);
                 this.portToSidePanel.disconnect();
-                //todo maybe call reset method once available
+                this.terminateAnnotationCapture(errMsg);
             }
 
             this.portToSidePanel = port;
@@ -105,6 +111,11 @@ export class ActionAnnotationCoordinator {
         await this.mutex.runExclusive(() => {
             //any needed stuff?
             this.portToSidePanel = undefined;
+            if (this.state !== AnnotationCoordinatorState.IDLE) {
+                const errMsg = `panel disconnected while in state ${this.state}`;
+                this.logger.warn(errMsg);
+                this.terminateAnnotationCapture(errMsg);
+            }
         });
 
     }
@@ -113,13 +124,21 @@ export class ActionAnnotationCoordinator {
         if (message.type === PanelToAnnotationCoordinatorPortMsgType.ANNOTATION_DETAILS) {
             await this.mutex.runExclusive(() => {
                 if (this.state !== AnnotationCoordinatorState.WAITING_FOR_ANNOTATION_DETAILS) {
-                    //todo
+                    const errMsg = `received annotation details message while in state ${this.state}`;
+                    this.logger.warn(errMsg);
+                    this.terminateAnnotationCapture(errMsg);
                     return;
                 }
                 this.currAnnotationAction = message.actionType;//todo validate
                 this.currAnnotationStateChangeSeverity = message.actionStateChangeSeverity;//todo validate
                 this.currAnnotationActionDesc = message.explanation;
                 //todo next step!
+
+                //temp, todo move next 3 lines to appropriate new place once more complex flow is implemented
+                this.exportActionAnnotation().then(() => {
+                    this.terminateAnnotationCapture("action annotation successfully exported").catch((error) => this.logger.error(`error while terminating annotation capture after exporting action annotation: ${renderUnknownValue(error)}`));
+                });
+
 
                 //todo change state to appropriate value for next step
             });
@@ -128,16 +147,56 @@ export class ActionAnnotationCoordinator {
         }
     }
 
-    //todo method to bundle assembled info in a zip blob for sending to side panel for download
-    // heavily inspired by (reusing code from?) related AgentController method
+    exportActionAnnotation = async (): Promise<void> => {
+        const zip = new JSZip();
 
+        const annotationDetailsStr = JSON.stringify({
+            annotationId: this.currAnnotationId,
+            actionType: this.currAnnotationAction,
+            actionStateChangeSeverity: this.currAnnotationStateChangeSeverity,
+            explanation: this.currAnnotationActionDesc
+        }, null, 4);
+        zip.file("annotation_details.json", annotationDetailsStr);
 
-    //todo method to be called by background script listener when keyboard shortcut is invoked
-    // remember that it should first check this.eulaAcceptance and this.annotatorMode to see if it should proceed
-    // it should also check if side panel is connected and otherwise abort
+        if (!this.portToSidePanel) {
+            const errMsg = `no side panel port to send action annotation zip to for download`;
+            this.logger.error(errMsg);
+            await this.terminateAnnotationCapture(errMsg);
+            return;
+        }
 
-    //todo initially implement flow where it requests annotation details from side panel, then gets them, then assembles
-    // them in a json (which is stuffed in a jszip object), then sends a blob made from that jszip object to the side panel for download
+        this.swHelper.sendZipToSidePanelForDownload(`details for annotated action ${this.currAnnotationId}`,
+            zip, this.portToSidePanel, `action_annotation_${this.currAnnotationId}.zip`,
+            AnnotationCoordinator2PanelPortMsgType.ANNOTATED_ACTION_EXPORT);
+    }
+
+    initiateActionAnnotationCapture = async (): Promise<void> => {
+        await this.mutex.runExclusive(() => {
+            if (this.isDisabledUntilEulaAcceptance) {
+                this.logger.warn(`asked to initiate annotation capture while EULA acceptance is still pending; ignoring`);
+                return;
+            }
+            if (!this.cachedAnnotatorMode) {
+                this.logger.warn(`asked to initiate annotation capture while annotator mode is off; ignoring`);
+                return;
+            }
+
+            if (!this.portToSidePanel) {
+                const errMsg = `asked to initiate annotation capture without a side panel port`;
+                this.logger.warn(errMsg);
+                this.terminateAnnotationCapture(errMsg);
+                return;
+            }
+            if (this.state !== AnnotationCoordinatorState.IDLE) {
+                this.logger.info(`asked to initiate annotation capture while in state ${this.state}; ignoring`);
+                return;
+            }
+
+            this.currAnnotationId = uuidV4();
+            this.state = AnnotationCoordinatorState.WAITING_FOR_ANNOTATION_DETAILS;
+            this.portToSidePanel.postMessage({type: AnnotationCoordinator2PanelPortMsgType.ANNOTATION_DETAILS_REQ});
+        });
+    }
 
     //todo implement the part of the flow that includes capturing 1 screenshot
 
@@ -147,5 +206,13 @@ export class ActionAnnotationCoordinator {
 
     //todo highlight the hovered element visually and capture another screenshot
 
-    //todo need reset method for end of an annotation process, and for when something goes wrong
+    terminateAnnotationCapture = async (reason: string): Promise<void> => {
+        this.logger.info(`terminating the capture of action annotation ${this.currAnnotationId} for reason: ${reason}`);
+
+        this.state = AnnotationCoordinatorState.IDLE;
+        this.currAnnotationId = undefined;
+        this.currAnnotationAction = undefined;
+        this.currAnnotationStateChangeSeverity = undefined;
+        this.currAnnotationActionDesc = undefined;
+    }
 }
