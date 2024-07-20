@@ -469,4 +469,30 @@ export class BrowserHelper {
             return 0;
         } else { return parseInt(zIndexStr); }
     }
+
+    /**
+     * this tries to tunnel through shadow roots and iframes to find the actual active/focused element
+     */
+    findRealActiveElement = (): HTMLElement | null => {
+        return this.getRealActiveElementInContext(this.domHelper.dom);
+    }
+
+    private getRealActiveElementInContext(root: Document | ShadowRoot): HTMLElement | null {
+        let actualActiveElement: HTMLElement|null = null;
+        const currContextActiveElement = root.activeElement as HTMLElement;
+        if (currContextActiveElement) {
+            if (currContextActiveElement.shadowRoot) {
+                actualActiveElement = this.getRealActiveElementInContext(currContextActiveElement.shadowRoot);
+            } else if (currContextActiveElement instanceof HTMLIFrameElement) {
+                const iframeContent = this.getIframeContent(currContextActiveElement);
+                if (iframeContent) {
+                    actualActiveElement = this.getRealActiveElementInContext(iframeContent);
+                }
+            } else {
+                actualActiveElement = currContextActiveElement;
+            }
+        }
+        return actualActiveElement;
+    }
+
 }

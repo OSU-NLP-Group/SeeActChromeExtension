@@ -42,7 +42,7 @@ document.addEventListener('mouseover', (e) => {
 
 
 (async () => {
-    await sleep(50);//try to let mouse position be determined from movement
+    await sleep(100);//try to let mouse position be determined from movement
 
 /*
     if (dataCollector.mouseClientX === -1 && dataCollector.mouseClientY === -1) {

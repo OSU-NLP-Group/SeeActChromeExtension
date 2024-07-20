@@ -55,7 +55,7 @@ export class PageDataCollector {
                 await this.browserHelper.highlightElement(candidateTargetElementsData[0].element.style);
                 targetElementData = makeElementDataSerializable(candidateTargetElementsData[0]);
             } else {
-                const activeElem = this.domWrapper.dom.activeElement;
+                const activeElem = this.browserHelper.findRealActiveElement();
                 if (activeElem && activeElem.tagName.toLowerCase() !== "body") {
                     const activeHtmlElement = activeElem as HTMLElement;
                     const activeElementHtmlSample = activeHtmlElement.outerHTML.slice(0, 100);
@@ -64,8 +64,7 @@ export class PageDataCollector {
                     if (relevantInteractiveElementsEntry) {
                         this.logger.info(`no active element found at mouse coordinates ${currMouseX}, ${currMouseY}, but found active element: ${activeElementHtmlSample}`);
                         userMessage = "Target element chosen based on focus rather than mouse coordinates";
-                        //what we send as hovertext gets treated as markdown and then converted into html by the side panel manager
-                        userMessageDetails = `Active element: \`\`\`${activeElementHtmlSample}\`\`\`;  \nmouse coordinates: (${currMouseX}, ${currMouseY})`;
+                        userMessageDetails = `Active element: ${activeElementHtmlSample}; \nmouse coordinates: (${currMouseX}, ${currMouseY})`;
                         //todo this highlighting doesn't show up in some sites where the focused element already has a pronounced border, maybe add additional logic?
                         await this.browserHelper.highlightElement(activeHtmlElement.style);
                         targetElementData = makeElementDataSerializable(relevantInteractiveElementsEntry);
@@ -77,7 +76,7 @@ export class PageDataCollector {
             if (!targetElementData) {
                 this.logger.warn(`no interactive elements found at mouse coordinates ${currMouseX}, ${currMouseY}`);
                 userMessage = "Warning- No interactive elements found at mouse coordinates";
-                userMessageDetails = `Mouse coordinates: (${currMouseX}, ${currMouseY}) relative to viewport: \`\`\`${JSON.stringify(this.domWrapper.getViewportInfo())}\`\`\``;
+                userMessageDetails = `Mouse coordinates: (${currMouseX}, ${currMouseY}) relative to viewport: ${JSON.stringify(this.domWrapper.getViewportInfo())}`;
             }
 
             try {

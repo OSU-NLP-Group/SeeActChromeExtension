@@ -43,6 +43,10 @@
     </div>
     <span class="text-sm font-medium"
           title="After ensuring the state-changing action's details are appropriately filled out here, put your cursor over the element which it would be state-changing to interact with, then press Alt-Shift-G. If you want the focused/active element (e.g. a text field you just interacted with) to be the target element, make sure the mouse cursor is not hovering over any interactive elements, or just keep it perfectly still when pressing the keyboard shortcut. Otherwise, make sure you keep moving the mouse cursor around very slightly (without leaving the target element) just before and just after pressing Alt-Shift-G (otherwise browser limitations will prevent the extension from seeing the mouse position and figuring out the target element)">Action Capture Reminder</span>
+    <div id="annotator-status-update-container" class="flex items-center h-12 overflow-y-auto mb-1">
+        <img src="../images/status_update_icon.webp" alt="status icon" class="w-auto h-8 mr-2">
+        <div id="annotator-status" class="text-sm">No status update available at the moment.</div>
+    </div>
 </div>
 
 <div class="border bg-emerald-100/50 rounded-lg p-1">
@@ -66,18 +70,11 @@
             Terminate Task
         </button>
         <!--    todo why doesn't this button, when disabled, look as much greyer than normal as start task button does when disabled?-->
-
     </div>
 </div>
 
 <hr class="border-gray-300">
 
-<div class="space-y-1 border bg-cyan-100/50 rounded-lg p-1">
-    <div id="status-update-container" class="flex items-center h-12 overflow-y-auto">
-        <img src="../images/status_update_icon.webp" alt="status icon" class="w-auto h-8 mr-2">
-        <div id="status" class="text-sm">No status update available at the moment.</div>
-    </div>
-</div>
 
 <div id="history-container" class="space-y-1 border bg-indigo-100/50 rounded-lg p-1">
     <label id="history-label" class="block text-lg font-semibold text-center">Actions
@@ -88,6 +85,10 @@
 </div>
 
 <div class="space-y-1 border bg-cyan-100/50 rounded-lg p-1">
+    <div id="agent-status-update-container" class="flex items-center h-12 overflow-y-auto mb-1">
+        <img src="../images/status_update_icon.webp" alt="status icon" class="w-auto h-8 mr-2">
+        <div id="agent-status" class="text-sm">No status update available at the moment.</div>
+    </div>
     <div class="flex items-center">
         <img src="../images/proposed_action_icon.webp" alt="hopeful robot face with lightbulb" class="w-auto h-6 mr-2">
         <label class="text-lg font-semibold px-2 py-1 rounded">Pending Action</label>
