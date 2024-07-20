@@ -1,5 +1,4 @@
 import {Mutex} from "async-mutex";
-import {SerializableElementData} from "./BrowserHelper";
 import {v4 as uuidV4} from 'uuid';
 import {Logger} from "loglevel";
 import {
@@ -15,8 +14,8 @@ import {
 } from "./shared_logging_setup";
 import {
     Action,
-    Background2PagePortMsgType,
-    Background2PanelPortMsgType,
+    AgentController2PanelPortMsgType,
+    AgentController2PagePortMsgType,
     base64ToByteArray,
     buildGenericActionDesc,
     defaultIsMonitorMode,
@@ -26,27 +25,30 @@ import {
     defaultMaxOps,
     elementHighlightRenderDelay,
     expectedMsgForPortDisconnection,
-    Page2BackgroundPortMsgType,
-    Panel2BackgroundPortMsgType,
+    Page2AgentControllerPortMsgType,
+    Panel2AgentControllerPortMsgType,
     renderUnknownValue,
-    setupMonitorModeCache,
+    setupModeCache,
     sleep,
-    storageKeyForAiProviderType, storageKeyForEulaAcceptance,
+    storageKeyForAiProviderType,
+    storageKeyForEulaAcceptance,
     storageKeyForMaxFailureOrNoopStreak,
     storageKeyForMaxFailures,
     storageKeyForMaxNoops,
     storageKeyForMaxOps,
+    storageKeyForMonitorMode,
     validateIntegerLimitUpdate,
-    ViewportDetails
+    ViewportDetails, SerializableElementData
 } from "./misc";
 import {formatChoices, generatePrompt, LmmPrompts, postProcessActionLlm} from "./format_prompts";
 import {getIndexFromOptionName} from "./format_prompt_utils";
 import {ChromeWrapper} from "./ChromeWrapper";
 import JSZip from "jszip";
 import {IDBPDatabase} from "idb";
-import Port = chrome.runtime.Port;
 import {AiEngine} from "./AiEngine";
 import {AiProviderId, AiProviders} from "./ai_misc";
+import {ServiceWorkerHelper} from "./ServiceWorkerHelper";
+import Port = chrome.runtime.Port;
 
 /**
  * states for the agent controller Finite State Machine
@@ -91,7 +93,13 @@ export type ActionInfo = {
  * used to store information about an action that was performed, so that the controller can give the AI a clear history
  * of what actions have been tried and what the results were
  */
-type ActionRecord = { actionDesc: string, success: boolean, noopType?: NoopType, explanation: string };
+type ActionRecord = {
+    priorUrl: string,
+    actionDesc: string,
+    success: boolean,
+    noopType?: NoopType,
+    explanation: string
+};
 
 /**
  * stores all relevant info about a round of LMM output for later export at end of task
@@ -104,18 +112,6 @@ type PredictionRecord = {
     value?: string
     explanation: string
 };
-
-/**
- * these alarms are turned on when the side panel makes contact with the service worker and turned off when that
- * connection is lost. They serve to keep the service worker responsive to user input in the side panel
- *
- * with just 1 keepalive alarm, sometimes it would serve its purpose (if Chrome fired that event a fraction of a second early)
- *  but it would fail to do its job if there was a 30 second period with no keepalive pings from the side panel (side
- *  panel pings to service worker are bafflingly unreliable) and that time the alarm fired even a tiny fraction of a
- * second more than 30 seconds after the previous firing
- */
-export const serviceWorkerKeepaliveAlarmName = "serviceWorkerKeepaliveAlarm";
-export const serviceWorker2ndaryKeepaliveAlarmName = "serviceWorker2ndaryKeepaliveAlarm";
 
 
 //todo explore whether it might be possible to break this into multiple classes, or at least if there are
@@ -135,12 +131,12 @@ export class AgentController {
 
     initWebsiteForTask: string | undefined;
 
+    currUrlBeforeAction: string | undefined
 
     private pendingActionInfo: ActionInfo | undefined;
     private mightNextActionCausePageNav: boolean = false;
 
     private actionsSoFar: ActionRecord[] = [];
-    //todo per Zeyuan, it would be useful if current URL was captured after every action
     private predictionsInTask: PredictionRecord[] = [];
 
     /**
@@ -185,29 +181,33 @@ export class AgentController {
 
     numPriorScreenshotsTakenForPromptingCurrentAction: number = 0;
 
-
     state: AgentControllerState = AgentControllerState.IDLE;
 
     portToContentScript: Port | undefined;
     portToSidePanel: Port | undefined;
 
     private aiEngine: AiEngine;
+    readonly swHelper: ServiceWorkerHelper;
     private chromeWrapper: ChromeWrapper;
     readonly logger: Logger;
 
     /**
      * @description Constructor for the AgentController
      * @param aiEngine The OpenAiEngine instance to use for analyzing the situation and generating actions
+     * @param serviceWorkerHelper provides utility methods for the various components in the service worker; can be used
+     *                              in unit tests to inject mock implementations of sensitive methods
      * @param chromeWrapper a wrapper to allow mocking of Chrome extension API calls
      */
-    constructor(aiEngine: AiEngine, chromeWrapper?: ChromeWrapper) {
+    constructor(aiEngine: AiEngine, serviceWorkerHelper?: ServiceWorkerHelper, chromeWrapper?: ChromeWrapper) {
         this.aiEngine = aiEngine;
+        this.swHelper = serviceWorkerHelper ?? new ServiceWorkerHelper();
         this.chromeWrapper = chromeWrapper ?? new ChromeWrapper();
 
         this.logger = createNamedLogger('agent-controller', true);
         this.logger.debug(`max ops limit: ${this.maxOpsLimit}, max noop limit: ${this.maxNoopLimit}, max failure limit: ${this.maxFailureLimit}, max failure-or-noop streak limit: ${this.maxFailureOrNoopStreakLimit}`);
 
-        setupMonitorModeCache((newMonitorModeVal: boolean) => this.cachedMonitorMode = newMonitorModeVal, this.logger);
+        setupModeCache((newMonitorModeVal: boolean) => this.cachedMonitorMode = newMonitorModeVal, "monitor mode", storageKeyForMonitorMode, this.logger);
+
         if (chrome?.storage?.local) {
             chrome.storage.local.get([storageKeyForMaxOps, storageKeyForMaxNoops, storageKeyForMaxFailures,
                 storageKeyForMaxFailureOrNoopStreak, storageKeyForEulaAcceptance], async (items) => {
@@ -216,9 +216,8 @@ export class AgentController {
                     items[storageKeyForMaxFailureOrNoopStreak], undefined,
                     items[storageKeyForEulaAcceptance]);
             });
-            chrome.storage.local.onChanged.addListener(async (changes: {
-                [p: string]: chrome.storage.StorageChange
-            }) => {
+            chrome.storage.local.onChanged.addListener(async (
+                changes: { [p: string]: chrome.storage.StorageChange }) => {
                 this.logger.debug(`firing local-storage's change-listener for AgentController, based on changes object: ${JSON.stringify(changes)}`)
                 await this.validateAndApplyAgentOptions(false, changes[storageKeyForMaxOps]?.newValue,
                     changes[storageKeyForMaxNoops]?.newValue, changes[storageKeyForMaxFailures]?.newValue,
@@ -277,6 +276,7 @@ export class AgentController {
         } else if (typeof eulaAcceptance !== "undefined") { this.logger.error(`invalid EULA acceptance value ${renderUnknownValue(eulaAcceptance)} in chrome.storage detected ${contextStr}; ignoring it`); }
     }
 
+
     /**
      * @description Injects the agent's page-interaction/data-gathering script into the current tab
      * @param isStartOfTask Whether this injection is to start a new task or to continue an existing one (e.g. after
@@ -285,53 +285,30 @@ export class AgentController {
      *                identified the active tab
      */
     injectPageActorScript = async (isStartOfTask: boolean, newTab?: chrome.tabs.Tab): Promise<void> => {
-        let tabId: number | undefined = undefined;
-        let tab: chrome.tabs.Tab | undefined = newTab;
-        if (!tab) {
-            try {
-                tab = await this.getActiveTab();
-            } catch (error) {
-                const termReason = `error getting active tab id, cannot inject content script; error: ${renderUnknownValue(error)}`;
-                this.logger.error(termReason);
-                this.terminateTask(termReason);
-                return;
-            }
-        }
-        tabId = tab.id;
-        if (!tabId) {
-            const termReason = `Can't inject agent script into chrome:// URLs for security reasons; ${isStartOfTask ? "please only try to start the agent on a regular web page." : "please don't switch to a chrome:// URL while the agent is running"}`;
-            this.logger.warn(termReason);
-            this.terminateTask(termReason);
-        } else {
-            const toStartTaskStr = isStartOfTask ? " to start a task" : "";
-
+        const preInjectChecksAndUpdates = (tabId: number, url?: string, title?: string) => {
             if (isStartOfTask) {
                 this.currTaskTabId = tabId;
-                this.initWebsiteForTask = tab.url;
+                this.initWebsiteForTask = url;
             } else if (this.currTaskTabId !== tabId) {
                 if (this.mightNextActionCausePageNav) {
                     this.currTaskTabId = tabId;
                 } else {
-                    const errMsg = `The active tab changed unexpectedly to ${tab.title}`;
-                    this.logger.error(errMsg + "; terminating task");
-                    this.terminateTask(errMsg);
-                    return;
+                    return `The active tab changed unexpectedly to ${title}`;//tells utility method to abort b4 injection
                 }
             }
-            this.logger.trace("injecting agent script into page" + toStartTaskStr + "; in tab " + tabId);
-
             this.state = AgentControllerState.WAITING_FOR_CONTENT_SCRIPT_INIT;
-            try {
-                await this.chromeWrapper.runScript({files: ['./src/page_interaction.js'], target: {tabId: tabId}});
-                this.logger.trace('agent script injected into page' + toStartTaskStr);
-            } catch (error) {
-                const termReason = `error injecting agent script into page${toStartTaskStr}; error: ${renderUnknownValue(error)}`;
-                this.logger.error(termReason);
-                this.terminateTask(termReason);
+            return undefined;//tells utility method that content script injection can proceed
+        }
+        const injectionErrMsg = await this.swHelper.injectContentScript("agent",
+            './src/page_interaction.js', preInjectChecksAndUpdates, newTab);
+        if (injectionErrMsg) {
+            this.logger.warn(`error injecting content script for a task: ${injectionErrMsg}`);
+            if (injectionErrMsg.indexOf("chrome://") !== -1) {
+                this.logger.warn(isStartOfTask ? "please only try to start the agent on a regular web page." : "please don't switch to a chrome:// URL while the agent is running");
             }
+            this.terminateTask(injectionErrMsg);
         }
     }
-
 
     /**
      * @description Starts a new task for the agent to complete
@@ -344,7 +321,7 @@ export class AgentController {
             this.logger.warn(taskRejectMsg);
             this.state = AgentControllerState.IDLE;
             try {
-                port.postMessage({type: Background2PanelPortMsgType.ERROR, msg: taskRejectMsg});
+                port.postMessage({type: AgentController2PanelPortMsgType.ERROR, msg: taskRejectMsg});
             } catch (error: any) {
                 this.logger.error(`error while trying to send error message to side panel about task-start request being received when EULA has not yet been accepted; error: ${renderUnknownValue(error)}`);
             }
@@ -352,7 +329,7 @@ export class AgentController {
             const taskRejectMsg = `Task ${this.taskId} already in progress; not starting new task`;
             this.logger.warn(taskRejectMsg);
             try {
-                port.postMessage({type: Background2PanelPortMsgType.ERROR, msg: taskRejectMsg});
+                port.postMessage({type: AgentController2PanelPortMsgType.ERROR, msg: taskRejectMsg});
             } catch (error: any) {
                 this.logger.error(`error while trying to send error message to side panel about task-start request being received when task is already running; error: ${renderUnknownValue(error)}`);
             }
@@ -360,7 +337,7 @@ export class AgentController {
             this.logger.error(`received bad task specification from side panel: ${renderUnknownValue(message.taskSpecification)}`);
             this.state = AgentControllerState.IDLE;
             try {
-                port.postMessage({type: Background2PanelPortMsgType.ERROR, msg: "bad task specification"});
+                port.postMessage({type: AgentController2PanelPortMsgType.ERROR, msg: "bad task specification"});
             } catch (error: any) {
                 this.logger.error(`error while trying to send error message to side panel about task start request with bad task specification; error: ${renderUnknownValue(error)}`);
             }
@@ -413,21 +390,13 @@ export class AgentController {
             this.logger.trace("side panel connected to agent controller in service worker");
             this.portToSidePanel = port;
             this.portToSidePanel.onMessage.addListener(this.handlePanelMsgToController);
-            this.portToSidePanel.onDisconnect.addListener(this.handlePanelDisconnectFromController);
             this.logger.trace("about to notify side panel that agent controller is ready");
             try {
-                this.portToSidePanel.postMessage({type: Background2PanelPortMsgType.AGENT_CONTROLLER_READY});
+                this.portToSidePanel.postMessage({type: AgentController2PanelPortMsgType.AGENT_CONTROLLER_READY});
             } catch (error: any) {
                 this.logger.error(`error while trying to inform side panel about agent controller's readiness for start of new task; error: ${renderUnknownValue(error)}`);
             }
             this.logger.trace("sent notification to side panel that agent controller is ready");
-            chrome.alarms.create(serviceWorkerKeepaliveAlarmName, {periodInMinutes: 0.5}).catch((error) =>
-                this.logger.error(`error while trying to set up service worker keepalive alarm; error: ${renderUnknownValue(error)}`));
-            setTimeout(() => {
-                this.logger.debug("setting up secondary keepalive alarm in service worker");
-                chrome.alarms.create(serviceWorker2ndaryKeepaliveAlarmName, {periodInMinutes: 0.5}).catch((error) =>
-                    this.logger.error(`error while trying to set up secondary service worker keepalive alarm; error: ${renderUnknownValue(error)}`));
-            }, 15_000);
         });
     }
 
@@ -448,7 +417,7 @@ export class AgentController {
         this.state = AgentControllerState.WAITING_FOR_PAGE_STATE
         let successfulStart = false;
         try {
-            port.postMessage({type: Background2PagePortMsgType.REQ_PAGE_STATE});
+            port.postMessage({type: AgentController2PagePortMsgType.REQ_PAGE_STATE});
             successfulStart = true;
         } catch (error: any) {
             if ('message' in error && error.message === expectedMsgForPortDisconnection) {
@@ -468,7 +437,7 @@ export class AgentController {
             } else {
                 try {
                     this.portToSidePanel.postMessage({
-                        type: Background2PanelPortMsgType.TASK_STARTED, taskId: this.taskId,
+                        type: AgentController2PanelPortMsgType.TASK_STARTED, taskId: this.taskId,
                         success: successfulStart, taskSpec: this.taskSpecification
                     });
                 } catch (error: any) {
@@ -503,6 +472,7 @@ export class AgentController {
         this.state = AgentControllerState.ACTIVE;
         const interactiveElements = message.interactiveElements as SerializableElementData[];
         const viewportInfo = message.viewportInfo as ViewportDetails;
+        this.currUrlBeforeAction = message.url as string;
         //todo consider removing the candidateIds complication since BrowserHelper.getInteractiveElements is already
         // filtering out all of the elements that are not really visible&interactive, and candidateIds adds annoying complexity throughout the planning code in this class
         const candidateIds = interactiveElements.map((element, index) => {
@@ -571,7 +541,7 @@ export class AgentController {
             if (this.portToSidePanel) {
                 try {
                     this.portToSidePanel.postMessage(
-                        {type: Background2PanelPortMsgType.ACTION_CANDIDATE, actionInfo: this.pendingActionInfo});
+                        {type: AgentController2PanelPortMsgType.ACTION_CANDIDATE, actionInfo: this.pendingActionInfo});
                 } catch (error: any) {
                     const termReason = `error while trying to inform side panel about pending action; error: ${renderUnknownValue(error)}`;
                     this.logger.error(`${termReason}; terminating task`);
@@ -588,7 +558,7 @@ export class AgentController {
                 this.logger.info("about to instruct page actor to highlight the target element");
                 try {
                     pageActorPort.postMessage({
-                        type: Background2PagePortMsgType.HIGHLIGHT_CANDIDATE_ELEM,
+                        type: AgentController2PagePortMsgType.HIGHLIGHT_CANDIDATE_ELEM,
                         elementIndex: this.pendingActionInfo.elementIndex,
                         promptingIndexForAction: numPromptingScreenshotsTakenForCurrentActionBeforeThisRound
                     });
@@ -623,7 +593,7 @@ export class AgentController {
                 this.state = AgentControllerState.WAITING_FOR_ACTION;
                 try {
                     pageActorPort.postMessage({
-                        type: Background2PagePortMsgType.REQ_ACTION, action: this.pendingActionInfo.action,
+                        type: AgentController2PagePortMsgType.REQ_ACTION, action: this.pendingActionInfo.action,
                         elementIndex: this.pendingActionInfo.elementIndex, value: this.pendingActionInfo.value
                     });
                 } catch (error: any) {
@@ -702,7 +672,7 @@ export class AgentController {
             this.logger.info("planning output: " + planningOutput);
             try {
                 this.portToSidePanel.postMessage({
-                    type: Background2PanelPortMsgType.NOTIFICATION, details: planningOutput,
+                    type: AgentController2PanelPortMsgType.NOTIFICATION, details: planningOutput,
                     msg: "AI planning complete, now asking model to specify what exactly it should do next to advance that plan"
                 });
             } catch (error: any) {
@@ -739,8 +709,10 @@ export class AgentController {
 
         if (action === Action.TERMINATE) {
             this.logger.info("Task completed!");
-            this.actionsSoFar.push(
-                {actionDesc: "Terminate task as completed", success: true, explanation: explanation});
+            this.actionsSoFar.push({
+                priorUrl: this.currUrlBeforeAction ?? "no_URL", actionDesc: "Terminate task as completed",
+                success: true, explanation: explanation
+            });
             this.terminateTask("Task completed: " + explanation);
             return LmmOutputReaction.ABORT_TASK;
         } else if (action === Action.NONE) {
@@ -751,12 +723,12 @@ export class AgentController {
             this.noopCount++;
             this.failureOrNoopStreak++;
             this.actionsSoFar.push({
-                actionDesc: `NOOP: ai selected NONE action type`, explanation: explanation,
-                success: false, noopType: NoopType.AI_SELECTED_NONE_ACTION
+                priorUrl: this.currUrlBeforeAction ?? "no_URL", actionDesc: `NOOP: ai selected NONE action type`,
+                explanation: explanation, success: false, noopType: NoopType.AI_SELECTED_NONE_ACTION
             });
             try {
                 this.portToSidePanel.postMessage({
-                    type: Background2PanelPortMsgType.NOTIFICATION, details: groundingOutput,
+                    type: AgentController2PanelPortMsgType.NOTIFICATION, details: groundingOutput,
                     msg: "AI refused to specify a next action; reprompting"
                 });
             } catch (error: any) {
@@ -778,12 +750,12 @@ export class AgentController {
             this.noopCount++;
             this.failureOrNoopStreak++;
             this.actionsSoFar.push({
-                actionDesc: `NOOP: ai selected invalid option ${element}`,
-                success: false, noopType: NoopType.INVALID_ELEMENT, explanation: explanation
+                priorUrl: this.currUrlBeforeAction ?? "no_URL", success: false, noopType: NoopType.INVALID_ELEMENT,
+                actionDesc: `NOOP: ai selected invalid option ${element}`, explanation: explanation
             });
             try {
                 this.portToSidePanel.postMessage({
-                    type: Background2PanelPortMsgType.NOTIFICATION, details: groundingOutput,
+                    type: AgentController2PanelPortMsgType.NOTIFICATION, details: groundingOutput,
                     msg: "AI gave invalid specification of element to act on; reprompting"
                 });
             } catch (error: any) {
@@ -798,13 +770,13 @@ export class AgentController {
             this.noopCount++;
             this.failureOrNoopStreak++;
             this.actionsSoFar.push({
+                priorUrl: this.currUrlBeforeAction ?? "no_URL", success: false, explanation: explanation,
                 actionDesc: `NOOP: ai selected 'none of the above' option for element selection when action ${action} targets specific element`,
-                success: false, noopType: NoopType.ACTION_INCOMPATIBLE_WITH_NONE_OF_ABOVE_ELEMENT,
-                explanation: explanation
+                noopType: NoopType.ACTION_INCOMPATIBLE_WITH_NONE_OF_ABOVE_ELEMENT
             });
             try {
                 this.portToSidePanel.postMessage({
-                    type: Background2PanelPortMsgType.NOTIFICATION, details: groundingOutput,
+                    type: AgentController2PanelPortMsgType.NOTIFICATION, details: groundingOutput,
                     msg: "AI specified a next action that requires a target element but didn't provide a valid target element identifier; reprompting"
                 });
             } catch (error: any) {
@@ -847,7 +819,6 @@ export class AgentController {
      * @return a data url of the screenshot (i.e. base64-encoded string for the png file's bytes)
      */
     captureAndStoreScreenshot = async (screenshotType: string, promptingIndexForAction: number): Promise<string | undefined> => {
-        let screenshotDataUrl: string | undefined;
         if (this.taskId === undefined) {
             const termReason = `task id is undefined when capturing screenshot of type ${screenshotType}`;
             this.logger.error(`${termReason}; terminating task`);
@@ -863,36 +834,27 @@ export class AgentController {
         // are created by things that can't (i.e. the service worker and content script));
         // It's better for all timestamps in the indexeddb to follow the same convention
         const screenshotTs = new Date().toISOString().slice(0, -1);
-        try {
-            screenshotDataUrl = await this.chromeWrapper.fetchVisibleTabScreenshot();
-        } catch (error: any) {
-            const termReason = `error while trying to get screenshot of current tab; error: ${renderUnknownValue(error)}`;
-            this.logger.error(`${termReason}; terminating task`);
-            this.terminateTask(termReason);
-            return;
+
+        const screenshotResult = await this.swHelper.captureScreenshot(screenshotType);
+        if (screenshotResult.error) {
+            this.logger.warn(`error capturing screenshot of type ${screenshotType}: ${screenshotResult.error}`);
+            this.terminateTask(screenshotResult.error);
+            return undefined;
         }
-        this.logger.debug(`${screenshotType} screenshot data url (truncated): ${screenshotDataUrl.slice(0, 100)}...`);
         if (dbConnHolder.dbConn) {
             const screenshotIdStr = [this.taskId, this.actionsSoFar.length,
                 promptingIndexForAction, screenshotType].join(",");
-            const startIndexForBase64Data = screenshotDataUrl.indexOf(';base64,') + 8;
-            if (startIndexForBase64Data <= 0) {
-                const termReason = "error while trying to add screenshot to indexeddb: screenshot data url does not contain expected prefix";
-                this.logger.error(termReason);
-                this.terminateTask(termReason);
-                return;
-            }
-            const screenshotBase64Content = screenshotDataUrl.substring(startIndexForBase64Data);
+
             dbConnHolder.dbConn.add(SCREENSHOTS_OBJECT_STORE, {
                 timestamp: screenshotTs, taskId: this.taskId, numPriorActions: this.actionsSoFar.length,
-                numPriorScreenshotsForPrompts: promptingIndexForAction,
-                screenshotType: screenshotType, screenshotId: screenshotIdStr, screenshot64: screenshotBase64Content
+                numPriorScreenshotsForPrompts: promptingIndexForAction, screenshotType: screenshotType,
+                screenshotId: screenshotIdStr, screenshot64: screenshotResult.screenshotBase64
             }).catch((error) => console.error("error adding screenshot to indexeddb:", renderUnknownValue(error)));
         } else {
             this.logger.warn("no db connection available, cannot save screenshot");
         }
         if (screenshotType === "initial") { this.numPriorScreenshotsTakenForPromptingCurrentAction++; }
-        return screenshotDataUrl;
+        return screenshotResult.screenshotDataUrl;
     }
 
     /**
@@ -924,7 +886,7 @@ export class AgentController {
         if (this.mightNextActionCausePageNav) {
             await sleep(500);//make sure that, if the browser is opening a new tab, there's time for browser to
             // make the new tab the active tab before we check for active tab change
-            tab = await this.getActiveTab();
+            tab = await this.swHelper.getActiveTab();
             const tabId = tab.id;
             if (tabId !== this.currTaskTabId) {
                 wasPageNav = true;
@@ -947,7 +909,7 @@ export class AgentController {
             this.mightNextActionCausePageNav = false;
             this.state = AgentControllerState.WAITING_FOR_PAGE_STATE
             try {
-                port.postMessage({type: Background2PagePortMsgType.REQ_PAGE_STATE});
+                port.postMessage({type: AgentController2PagePortMsgType.REQ_PAGE_STATE});
             } catch (error: any) {
                 if ('message' in error && error.message === expectedMsgForPortDisconnection) {
                     this.logger.info("content script disconnected from service worker while processing completed action and before trying to request more interactive elements; task will resume after new content script connection is established");
@@ -974,7 +936,10 @@ export class AgentController {
      */ //todo write at least skeleton of unit test suite for this
     updateActionHistory(actionDesc: string, wasSuccessful: boolean, explanation: string = "explanation unavailable") {
         let shouldAbort: boolean = false;
-        this.actionsSoFar.push({actionDesc: actionDesc, success: wasSuccessful, explanation: explanation});
+        this.actionsSoFar.push({
+            priorUrl: this.currUrlBeforeAction ?? "no_URL", actionDesc: actionDesc, success: wasSuccessful,
+            explanation: explanation
+        });
 
         if (!this.portToSidePanel) {
             const termReason = "no side panel connection to send action history to";
@@ -985,7 +950,7 @@ export class AgentController {
         try {
             this.portToSidePanel.postMessage({
                 actionDesc: actionDesc, success: wasSuccessful, explanation: explanation,
-                actionInfo: this.pendingActionInfo, type: Background2PanelPortMsgType.TASK_HISTORY_ENTRY
+                actionInfo: this.pendingActionInfo, type: AgentController2PanelPortMsgType.TASK_HISTORY_ENTRY
             });
         } catch (error: any) {
             const termReason = "error when sending action history entry to side panel";
@@ -1045,7 +1010,7 @@ export class AgentController {
         this.state = AgentControllerState.WAITING_FOR_ACTION;
         try {
             this.portToContentScript.postMessage({
-                type: Background2PagePortMsgType.REQ_ACTION, elementIndex: this.pendingActionInfo.elementIndex,
+                type: AgentController2PagePortMsgType.REQ_ACTION, elementIndex: this.pendingActionInfo.elementIndex,
                 action: this.pendingActionInfo.action, value: this.pendingActionInfo.value
             });
         } catch (error: any) {
@@ -1083,7 +1048,7 @@ export class AgentController {
         this.state = AgentControllerState.WAITING_FOR_PAGE_STATE
         try {
             this.portToContentScript.postMessage(
-                {type: Background2PagePortMsgType.REQ_PAGE_STATE, isMonitorRetry: true});
+                {type: AgentController2PagePortMsgType.REQ_PAGE_STATE, isMonitorRetry: true});
         } catch (error: any) {
             if ('message' in error && error.message === expectedMsgForPortDisconnection) {
                 this.logger.info("content script disconnected from agent controller while the latter was waiting for a response from the monitor; task will resume after new content script connection is established");
@@ -1097,20 +1062,20 @@ export class AgentController {
     }
 
     handlePanelMsgToController = async (message: any, port: chrome.runtime.Port): Promise<void> => {
-        if (message.type === Panel2BackgroundPortMsgType.START_TASK) {
+        if (message.type === Panel2AgentControllerPortMsgType.START_TASK) {
             await this.mutex.runExclusive(() => {
                 this.startTask(message, port).catch((error) => {
                     this.logger.error("error while trying to start task; error: ", renderUnknownValue(error));
                 });
             });
-        } else if (message.type === Panel2BackgroundPortMsgType.KILL_TASK) {
+        } else if (message.type === Panel2AgentControllerPortMsgType.KILL_TASK) {
             this.terminationSignal = true;
             await this.mutex.runExclusive(() => {
                 if (this.taskId === undefined) {
                     this.logger.error("received termination signal from side panel while no task was running; ignoring");
                     try {
                         port.postMessage(
-                            {type: Background2PanelPortMsgType.ERROR, msg: "No task was running to terminate"});
+                            {type: AgentController2PanelPortMsgType.ERROR, msg: "No task was running to terminate"});
                     } catch (error: any) {
                         this.logger.error(`error while trying to send error message to side panel about task termination request when no task was running; error: ${renderUnknownValue(error)}`);
                     }
@@ -1119,29 +1084,39 @@ export class AgentController {
                     this.terminateTask("user request");
                 }
             });
-        } else if (message.type === Panel2BackgroundPortMsgType.MONITOR_APPROVED) {
+        } else if (message.type === Panel2AgentControllerPortMsgType.MONITOR_APPROVED) {
             await this.mutex.runExclusive(() => this.processMonitorApproval());
-        } else if (message.type === Panel2BackgroundPortMsgType.MONITOR_REJECTED) {
+        } else if (message.type === Panel2AgentControllerPortMsgType.MONITOR_REJECTED) {
             await this.mutex.runExclusive(() => this.processMonitorRejection(message));
-        } else if (message.type === Panel2BackgroundPortMsgType.KEEP_ALIVE) {
+        } else if (message.type === Panel2AgentControllerPortMsgType.KEEP_ALIVE) {
             this.logger.trace("received keep-alive message from side panel");
             //ignore this message; just receiving it serves the purpose of keeping Chrome from killing the service
             // worker for another 30sec; as an added layer of redundancy on top of the keep-alive alarms
             // Just the alarms on their own still lead to service worker disconnects every few hours
-        } else if (message.type === Panel2BackgroundPortMsgType.EXPORT_UNAFFILIATED_LOGS) {
+        } else if (message.type === Panel2AgentControllerPortMsgType.EXPORT_UNAFFILIATED_LOGS) {
             if (this.isDisabledUntilEulaAcceptance) {
                 this.logger.warn("cannot export logs until user accepts EULA");
-            } else if (dbConnHolder.dbConn) {
+            } else if (dbConnHolder.dbConn && this.portToSidePanel) {
                 const zip = new JSZip();
                 const logFileContents = await this.retrieveLogsForTaskId(dbConnHolder.dbConn, taskIdPlaceholderVal);
                 if (logFileContents != undefined) {
                     const fileSafeTimestampStr = new Date().toISOString().split(":").join("-").split(".").join("_");
                     zip.file(`non_task_specific_${fileSafeTimestampStr}.log`, logFileContents);
-                    this.sendZipToSidePanelForDownload(taskIdPlaceholderVal, zip, `misc_logs_${fileSafeTimestampStr}.zip`);
+                    this.swHelper.sendZipToSidePanelForDownload("non-task-affiliated logs download", zip, this.portToSidePanel, `misc_logs_${fileSafeTimestampStr}.zip`, AgentController2PanelPortMsgType.HISTORY_EXPORT);
                 } //error message already logged in retrieveLogsForTaskId()
-            } else { this.logger.error("no db connection available to export non-task-specific logs"); }
+            } else {
+                let errMsg = "";
+                if (!dbConnHolder.dbConn) { errMsg += "database connection "; }
+                if (!this.portToSidePanel) {
+                    if (!dbConnHolder.dbConn) { errMsg += "and "; }
+                    errMsg += "side panel connection ";
+                }
+                errMsg += (!dbConnHolder.dbConn && !this.portToSidePanel) ? "are " : "is ";
+                errMsg += "not available; cannot export non-task-specific logs";
+                this.logger.error(errMsg);
+            }
         } else {
-            this.logger.error("unknown message from side panel:", JSON.stringify(message));
+            this.logger.error(`unknown message from side panel:${JSON.stringify(message)}`);
         }
     }
 
@@ -1151,20 +1126,16 @@ export class AgentController {
      * @param port the port object representing the connection between the service worker and the content script
      */
     handlePageMsgToAgentController = async (message: any, port: Port): Promise<void> => {
-        if (message.type === Page2BackgroundPortMsgType.READY) {
+        if (message.type === Page2AgentControllerPortMsgType.READY) {
             await this.mutex.runExclusive(() => {this.processPageActorInitialized(port);});
-        } else if (message.type === Page2BackgroundPortMsgType.PAGE_STATE) {
+        } else if (message.type === Page2AgentControllerPortMsgType.PAGE_STATE) {
             await this.mutex.runExclusive(async () => {await this.processPageStateFromActor(message, port);});
-        } else if (message.type === Page2BackgroundPortMsgType.ACTION_DONE) {
+        } else if (message.type === Page2AgentControllerPortMsgType.ACTION_DONE) {
             await this.mutex.runExclusive(async () => {await this.processActionPerformedConfirmation(message, port);});
-        } else if (message.type === Page2BackgroundPortMsgType.TERMINAL) {
-            await this.mutex.runExclusive(() => {
-                const termReason = `something went horribly wrong in the content script; details: ${message.error}`;
-                this.logger.error(`${termReason}; terminating task`);
-                this.terminateTask(termReason);
-            });
+        } else if (message.type === Page2AgentControllerPortMsgType.TERMINAL) {
+            await this.mutex.runExclusive(() => { this.terminateTask(`something went horribly wrong in the content script; details: ${message.error}`);});
         } else {
-            this.logger.warn("unknown message from content script:", message);
+            this.logger.error("unknown message from content script:", renderUnknownValue(message));
         }
     }
 
@@ -1191,7 +1162,7 @@ export class AgentController {
                 "but the action was not expected to cause page navigation; this is unexpected");
         }
 
-        const tab = await this.getActiveTab();
+        const tab = await this.swHelper.getActiveTab();
         if (tab.id !== this.currTaskTabId) {
             this.logger.warn("tab changed after action and yet the connection to the old tab's " +
                 "content script was lost (before the controller could terminate it); this is unexpected")
@@ -1231,7 +1202,7 @@ export class AgentController {
                 this.logger.info("service worker's connection to content script was lost partway through the controller's processing of some step; reestablishing connection")
                 try {
                     this.portToSidePanel.postMessage({
-                        type: Background2PanelPortMsgType.NOTIFICATION,
+                        type: AgentController2PanelPortMsgType.NOTIFICATION,
                         msg: "Reestablishing connection to content script after it broke unexpectedly"
                     });
                 } catch (error: any) {
@@ -1265,11 +1236,6 @@ export class AgentController {
                 this.logger.error(termReason);
                 this.terminateTask(termReason);
             }
-            this.logger.debug("clearing keep-alive alarms so that service worker will be shut down");
-            chrome.alarms.clear(serviceWorkerKeepaliveAlarmName).catch((error) =>
-                this.logger.warn("error while trying to clear keep-alive alarm; error: ", renderUnknownValue(error)));
-            chrome.alarms.clear(serviceWorker2ndaryKeepaliveAlarmName).catch((error) =>
-                this.logger.warn("error while trying to clear secondary keep-alive alarm; error: ", renderUnknownValue(error)));
         });
     }
 
@@ -1377,7 +1343,7 @@ export class AgentController {
         if (this.portToSidePanel !== undefined) {
             try {
                 this.portToSidePanel.postMessage({
-                    type: Background2PanelPortMsgType.TASK_ENDED, taskId: taskIdBeingTerminated,
+                    type: AgentController2PanelPortMsgType.TASK_ENDED, taskId: taskIdBeingTerminated,
                     details: terminationReason
                 });
             } catch (error: any) {
@@ -1401,6 +1367,10 @@ export class AgentController {
             this.logger.error("no db connection available to export task history");
             return;
         }
+        if (!this.portToSidePanel) {
+            this.logger.error("no side panel connection available to send task history to for export as downloaded file");
+            return;
+        }
         const zip = new JSZip();
 
         const logFileContents = await this.retrieveLogsForTaskId(dbConnHolder.dbConn, givenTaskId);
@@ -1410,7 +1380,7 @@ export class AgentController {
             return;//error message already logged in retrieveLogsForTaskId()
         }
 
-        const taskResult = {
+        const resultStr = JSON.stringify({
             task: taskSpec,
             website: startingWebUrl,
             num_operations: numOps,
@@ -1419,8 +1389,7 @@ export class AgentController {
             fail_or_noop_streak: failOrNoopStreakAtEnd,
             termination_reason: terminationReason,
             action_history: actionsHistory
-        };
-        const resultStr = JSON.stringify(taskResult, null, 4);
+        }, null, 4);
         this.logger.debug(`task history for task ${givenTaskId} has length: ${resultStr.length}`);
         zip.file("result.json", resultStr);
 
@@ -1453,7 +1422,7 @@ export class AgentController {
         const predictionsStr = JSON.stringify(predictions, replaceUndefinedWithNull, 4);
         zip.file("all_predictions.json", predictionsStr);
 
-        this.sendZipToSidePanelForDownload(givenTaskId, zip);
+        this.swHelper.sendZipToSidePanelForDownload(`logs and screenshots of agent task ${givenTaskId}`, zip, this.portToSidePanel, `task-${givenTaskId}-trace.zip`, AgentController2PanelPortMsgType.HISTORY_EXPORT);
     }
 
     retrieveLogsForTaskId = async (dbConnection: IDBPDatabase<AgentDb>, taskId: string): Promise<string | undefined> => {
@@ -1480,121 +1449,6 @@ export class AgentController {
         this.logger.debug(`log file contents has length ${logFileContents.length}`);
         return logFileContents;
     }
-
-
-    private sendZipToSidePanelForDownload(givenTaskId: string, zip: JSZip, overrideZipFilename?: string) {
-        this.logger.info(`about to compress task info into virtual zip file for task ${givenTaskId}`);
-        zip.generateAsync(
-            {type: "blob", compression: "DEFLATE", compressionOptions: {level: 5}}).then(async (content) => {
-            this.logger.debug(`successfully generated virtual zip file for task ${givenTaskId}; about to send it to side panel so that it can be saved as a download`);
-            if (!this.portToSidePanel) {
-                this.logger.error(`no side panel connection available to send zip file to for download (for history of task ${givenTaskId})`);
-                return;
-            }
-            this.logger.debug(`blob for virtual zip file for task ${givenTaskId} has byte length: ${content.size}`);
-            const arrBuffForTraceZip = await content.arrayBuffer();
-            this.logger.debug(`array buffer made from that blob has length: ${arrBuffForTraceZip.byteLength}`);
-            const arrForTraceZip = Array.from(new Uint8Array(arrBuffForTraceZip));
-            this.logger.debug(`array made from that buffer has length: ${arrForTraceZip.length}`);
-            try {
-                this.portToSidePanel.postMessage({
-                    type: Background2PanelPortMsgType.HISTORY_EXPORT, data: arrForTraceZip,
-                    fileName: overrideZipFilename ?? `task-${givenTaskId}-trace.zip`
-                });
-            } catch (error: any) {
-                this.logger.error(`error while trying to send zip file for task ${givenTaskId} to side panel for download; error: ${renderUnknownValue(error)}`);
-            }
-            this.logger.debug(`sent zip file for task ${givenTaskId}'s history to side panel for download`);
-        }, (error) => {
-            this.logger.error(`error while trying to generate zip file for task ${givenTaskId}; error: ${renderUnknownValue(error)}`);
-        });
-    }
-
-    //todo getActiveTab, sendEnterKeyPress, and hoverOnElem are good candidates for being moved out of AgentController (which is way too big)
-
-    /**
-     * @description Get the active tab in the current window (but with id set to undefined if the active tab is a chrome:// URL)
-     * @returns {Promise<chrome.tabs.Tab>} The active tab, with the id member undefined if the active tab is a chrome:// URL
-     *                                          (which scripts can't be injected into for safety reasons)
-     * @throws {Error} If the active tab is not found or doesn't have an id
-     */
-    getActiveTab = async (): Promise<chrome.tabs.Tab> => {
-        let tabs;
-        try {
-            tabs = await this.chromeWrapper.fetchTabs({active: true, currentWindow: true});
-        } catch (error) {
-            const errMsg = `error querying active tab; error: ${renderUnknownValue(error)}`;
-            this.logger.error(errMsg);
-            throw new Error(errMsg);
-        }
-        const tab: chrome.tabs.Tab | undefined = tabs[0];
-        if (!tab) throw new Error('Active tab not found');
-        const id = tab.id;
-        if (!id) throw new Error('Active tab id not found');
-        if (tab.url?.startsWith('chrome://')) {
-            this.logger.warn('Active tab is a chrome:// URL: ' + tab.url);
-            tab.id = undefined;
-        }
-        return tab;
-    }
-
-    /**
-     * @description Sends an Enter key press to the tab with the given id
-     * @param tabId the id of the tab to send the Enter key press to
-     */
-    sendEnterKeyPress = async (tabId: number): Promise<void> => {
-        //todo if/when adding support for press_sequentially for TYPE action, will want this helper method to flexibly
-        // handle strings of other characters; in that case, want to do testing to see if windowsVirtualKeyCode is needed or
-        // if text (and?/or? unmodifiedText) is enough (or something else)
-        await this.chromeWrapper.attachDebugger({tabId: tabId}, "1.3");
-        this.logger.debug(`chrome.debugger attached to the tab ${tabId} to send an Enter key press`);
-        //thanks to @activeliang https://github.com/ChromeDevTools/devtools-protocol/issues/45#issuecomment-850953391
-        await this.chromeWrapper.sendCommand({tabId: tabId}, "Input.dispatchKeyEvent",
-            {"type": "rawKeyDown", "windowsVirtualKeyCode": 13, "unmodifiedText": "\r", "text": "\r"});
-        this.logger.debug(`chrome.debugger sent key-down keyevent for Enter/CR key to tab ${tabId}`);
-        await this.chromeWrapper.sendCommand({tabId: tabId}, "Input.dispatchKeyEvent",
-            {"type": "char", "windowsVirtualKeyCode": 13, "unmodifiedText": "\r", "text": "\r"});
-        this.logger.debug(`chrome.debugger sent char keyevent for Enter/CR key to tab ${tabId}`);
-        await this.chromeWrapper.sendCommand({tabId: tabId}, "Input.dispatchKeyEvent",
-            {"type": "keyUp", "windowsVirtualKeyCode": 13, "unmodifiedText": "\r", "text": "\r"});
-        this.logger.debug(`chrome.debugger sent keyup keyevent for Enter/CR key to tab ${tabId}`);
-        await this.chromeWrapper.detachDebugger({tabId: tabId});
-        this.logger.debug(`chrome.debugger detached from the tab ${tabId} after sending an Enter key press`);
-    }
-
-    /**
-     * @description simulate the user hovering over an element (so that something will pop up or be displayed)
-     * current impl: Sends a mouse 'moved' event to the tab with the given id to say that the mouse pointer is now at
-     * the given coordinates.
-     * @param tabId the id of the tab to hover over the element in
-     * @param x the number of css pixels from the left edge of the viewport to the position on the element which
-     *           the mouse pointer should be hovering over
-     * @param y the number of css pixels from the top edge of the viewport to the position on the element which
-     *           the mouse pointer should be hovering over
-     */
-    hoverOnElem = async (tabId: number, x: number, y: number): Promise<void> => {
-        this.logger.debug(`chrome.debugger about to attach to the tab ${tabId} to hover over an element at ${x}, ${y}`);
-        await this.chromeWrapper.attachDebugger({tabId: tabId}, "1.3");
-        this.logger.debug(`chrome.debugger attached to the tab ${tabId} to hover over an element at ${x}, ${y}`);
-
-        await this.chromeWrapper.sendCommand({tabId: tabId}, "Input.dispatchMouseEvent",
-            {"type": "mouseMoved", "x": x, "y": y});
-
-        await this.chromeWrapper.detachDebugger({tabId: tabId});
-        this.logger.debug(`chrome.debugger detached from the tab ${tabId} after hovering over an element at ${x}, ${y}`);
-    }
-
-
-    /*
-     * the below is sufficient for nearly-real clicking on an element via debugger (as opposed to js click)
-     * await this.chromeWrapper.sendCommand({tabId: tabId}, "Input.dispatchMouseEvent",
-            {"type": "mousePressed", "x": x, "y": y, "button": "left", "clickCount": 1});
-        await sleep(2000);
-        await this.chromeWrapper.sendCommand({tabId: tabId}, "Input.dispatchMouseEvent",
-            {"type": "mouseReleased", "x": x, "y": y, "button": "left", "clickCount": 1});
-     */
-
-
 }
 
 

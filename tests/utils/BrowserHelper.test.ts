@@ -583,7 +583,7 @@ describe('BrowserHelper.getInteractiveElements', () => {
         const button = testDom.createElement('button');
         button.setAttribute("name", "someButton");
         bodyElem.appendChild(button);
-        domWrapper.fetchElementsByCss = jest.fn().mockImplementation((selector: string) => {
+        browserHelper.enhancedQuerySelectorAll = jest.fn().mockImplementation((selector: string) => {
             switch (selector) {
                 case 'button':
                     return [button];
@@ -603,7 +603,7 @@ describe('BrowserHelper.getInteractiveElements', () => {
         input.setAttribute("placeholder", "some placeholder value");
         bodyElem.appendChild(button);
         bodyElem.appendChild(input);
-        domWrapper.fetchElementsByCss = jest.fn().mockImplementation((selector: string) => {
+        browserHelper.enhancedQuerySelectorAll = jest.fn().mockImplementation((selector: string) => {
             switch (selector) {
                 case 'button':
                     return [button];
@@ -626,7 +626,7 @@ describe('BrowserHelper.getInteractiveElements', () => {
         input.setAttribute("placeholder", "some placeholder value");
         bodyElem.appendChild(button);
         bodyElem.appendChild(input);
-        domWrapper.fetchElementsByCss = jest.fn().mockImplementation((selector: string) => {
+        browserHelper.enhancedQuerySelectorAll = jest.fn().mockImplementation((selector: string) => {
             switch (selector) {
                 case 'button':
                     return [button];
@@ -646,7 +646,7 @@ describe('BrowserHelper.getInteractiveElements', () => {
         button.setAttribute("name", "someButton");
         button.disabled = true;
         bodyElem.appendChild(button);
-        domWrapper.fetchElementsByCss = jest.fn().mockImplementation((selector: string) => {
+        browserHelper.enhancedQuerySelectorAll = jest.fn().mockImplementation((selector: string) => {
             switch (selector) {
                 case 'button':
                     return [button];
@@ -662,7 +662,7 @@ describe('BrowserHelper.getInteractiveElements', () => {
         div.setAttribute('role', 'button');
         div.setAttribute("name", "some Button-Like Div");
         bodyElem.appendChild(div);
-        domWrapper.fetchElementsByCss = jest.fn().mockImplementation((selector: string) => {
+        browserHelper.enhancedQuerySelectorAll = jest.fn().mockImplementation((selector: string) => {
             switch (selector) {
                 case '[role="button"]':
                     return [div];
@@ -688,7 +688,7 @@ describe('BrowserHelper.getInteractiveElements', () => {
         bodyElem.appendChild(button);
         bodyElem.appendChild(input);
         bodyElem.appendChild(div);
-        domWrapper.fetchElementsByCss = jest.fn().mockImplementation((selector: string) => {
+        browserHelper.enhancedQuerySelectorAll = jest.fn().mockImplementation((selector: string) => {
             switch (selector) {
                 case 'button':
                     return [button];

@@ -25,6 +25,7 @@ module.exports = {
         background: path.resolve(root, "src", "background.ts"),
         side_panel: path.resolve(root, "src", "side_panel.ts"),
         page_interaction: path.resolve(root, "src", "page_interaction.ts"),
+        page_data_collection: path.resolve(root, "src", "page_data_collection.ts"),
         options: path.resolve(root, "src", "options.ts"),
         install_greeting: path.resolve(root, "src", "installation_greeting.ts"),
     },

@@ -10,7 +10,7 @@ export class DomWrapper {
     //to avoid runtime errors during unit tests from jest/jsdom limitations
     static readonly XPATH_RESULT_1ST_ORDERED_NODE_TYPE = XPathResult ? XPathResult.FIRST_ORDERED_NODE_TYPE : 9;
 
-    private readonly dom: Document;
+    readonly dom: Document;
     private readonly window: Window | DOMWindow;
 
     constructor(windowToUse: Window | DOMWindow) {
@@ -20,32 +20,13 @@ export class DomWrapper {
     }
 
     /**
-     * uses querySelectorAll to find elements in the DOM
+     * primitive wrapper around querySelectorAll to find elements in the DOM (doesn't pierce shadow roots or iframes)
      * @param cssSelector The CSS selector to use to find elements
      * @returns array of elements that match the CSS selector;
      *           this is a static view of the elements (not live access that would allow modification)
      */
     fetchElementsByCss = (cssSelector: string): Array<HTMLElement> => {
-        return Array.from(this.querySelectorAllIncludingShadows(cssSelector, this.dom));
-    }
-
-    /**
-     * Based on this https://stackoverflow.com/a/71692555/10808625, find matching elements even inside of shadow DOM's
-     * @param cssSelector The CSS selector to use to find elements
-     * @param root the base element for the current call's search scope
-     * @returns array of elements that match the CSS selector;
-     *          this is a static view of the elements (not live access that would allow modification)
-     */
-    querySelectorAllIncludingShadows = (cssSelector: string, root: ShadowRoot | Document): Array<HTMLElement> => {
-        const shadowRootsOfChildren = Array.from(root.querySelectorAll('*'))
-            .map(elem => elem.shadowRoot).filter(Boolean) as ShadowRoot[];//TS compiler doesn't know that filter(Boolean) removes nulls
-
-        const childShadowsResults = shadowRootsOfChildren.flatMap(childShadowRoot =>
-            this.querySelectorAllIncludingShadows(cssSelector, childShadowRoot));
-
-        const currScopeResults = Array.from(root.querySelectorAll<HTMLElement>(cssSelector));
-
-        return currScopeResults.concat(childShadowsResults);
+        return Array.from(this.dom.querySelectorAll(cssSelector));
     }
 
     /**
@@ -141,4 +122,7 @@ export class DomWrapper {
         return this.dom.activeElement as HTMLElement;
     }
 
+    getUrl = (): string => {
+        return this.dom.URL;
+    }
 }

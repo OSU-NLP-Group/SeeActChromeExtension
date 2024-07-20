@@ -12,6 +12,22 @@ if (!(eulaComplaintElem && eulaComplaintElem instanceof HTMLDivElement)) throw n
 const eulaReviewButton = document.getElementById('eula-review');
 if (!(eulaReviewButton && eulaReviewButton instanceof HTMLButtonElement)) throw new Error('valid eula-review button not found');
 
+const annotatorModeContainer = document.getElementById('annotator-mode-container');
+if (!(annotatorModeContainer && annotatorModeContainer instanceof HTMLDivElement)) throw new Error('valid annotator-mode-container not found');
+
+const annotatorActionType = document.getElementById('action-type');
+if (!(annotatorActionType && annotatorActionType instanceof HTMLSelectElement)) throw new Error('valid action-type not found');
+
+const annotatorActionStateChangeSeverity = document.getElementById('state-change-severity');
+if (!(annotatorActionStateChangeSeverity && annotatorActionStateChangeSeverity instanceof HTMLSelectElement)) throw new Error('valid state-change-severity not found');
+
+const annotatorExplanationField = document.getElementById('annotator-explanation');
+if (!(annotatorExplanationField && annotatorExplanationField instanceof HTMLTextAreaElement)) throw new Error('valid annotator-explanation field not found');
+
+const annotatorStatusDiv = document.getElementById('annotator-status');
+if (!(annotatorStatusDiv && annotatorStatusDiv instanceof HTMLDivElement)) throw new Error('valid annotator status div not found');
+
+
 //button rather than link b/c we want to open in new tab and <a> behaves unintuitively in side panel
 const userGuideButton = document.getElementById('user-guide');
 if (!(userGuideButton && userGuideButton instanceof HTMLButtonElement)) throw new Error('valid user-guide button not found');
@@ -22,8 +38,8 @@ if (!(startButton && startButton instanceof HTMLButtonElement)) throw new Error(
 const taskSpecField = document.getElementById('task-spec');
 if (!(taskSpecField && taskSpecField instanceof HTMLTextAreaElement)) throw new Error('valid task-spec field not found');
 
-const statusDiv = document.getElementById('status');
-if (!(statusDiv && statusDiv instanceof HTMLDivElement)) throw new Error('valid status div not found');
+const agentTaskStatusDiv = document.getElementById('agent-status');
+if (!(agentTaskStatusDiv && agentTaskStatusDiv instanceof HTMLDivElement)) throw new Error('valid agent status div not found');
 
 const statusPopup = document.getElementById('status-details-tooltip');
 if (!(statusPopup && statusPopup instanceof HTMLSpanElement)) throw new Error('valid status-details-tooltip not found');
@@ -57,9 +73,14 @@ if (!(monitorRejectButton && monitorRejectButton instanceof HTMLButtonElement)) 
 
 const manager = new SidePanelManager({
     eulaComplaintContainer: eulaComplaintElem as HTMLDivElement,
+    annotatorContainer: annotatorModeContainer as HTMLDivElement,
+    annotatorActionType: annotatorActionType as HTMLSelectElement,
+    annotatorActionStateChangeSeverity: annotatorActionStateChangeSeverity as HTMLSelectElement,
+    annotatorExplanationField: annotatorExplanationField as HTMLTextAreaElement,
+    annotatorStatusDiv: annotatorStatusDiv as HTMLDivElement,
     startButton: startButton as HTMLButtonElement,
     taskSpecField: taskSpecField as HTMLTextAreaElement,
-    statusDiv: statusDiv as HTMLDivElement,
+    agentStatusDiv: agentTaskStatusDiv as HTMLDivElement,
     statusPopup: statusPopup as HTMLSpanElement,
     killButton: killButton as HTMLButtonElement,
     historyList: historyList as HTMLOListElement,
@@ -93,6 +114,6 @@ monitorApproveButton.addEventListener('click', manager.monitorApproveButtonClick
 monitorRejectButton.addEventListener('click', manager.monitorRejectButtonClickHandler);
 
 
-statusDiv.addEventListener('mouseenter', manager.displayStatusPopup);
-statusDiv.addEventListener('mouseleave', () => manager.handleMouseLeaveStatus(statusDiv));
+agentTaskStatusDiv.addEventListener('mouseenter', manager.displayStatusPopup);
+agentTaskStatusDiv.addEventListener('mouseleave', () => manager.handleMouseLeaveStatus(agentTaskStatusDiv));
 statusPopup.addEventListener('mouseleave', () => manager.handleMouseLeaveStatus(statusPopup));

@@ -1,6 +1,5 @@
 import {_formatOptions, generateNewQueryPrompt} from "./format_prompt_utils";
-import {Action, ViewportDetails} from "./misc";
-import {SerializableElementData} from "./BrowserHelper";
+import {Action, SerializableElementData, ViewportDetails} from "./misc";
 import {AiProviderId, AiProviders} from "./ai_misc";
 
 
