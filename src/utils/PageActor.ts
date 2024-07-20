@@ -1,13 +1,12 @@
 import {Logger} from "loglevel";
-import {BrowserHelper, ElementData, SerializableElementData} from "./BrowserHelper";
+import {BrowserHelper, ElementData, makeElementDataSerializable} from "./BrowserHelper";
 import {createNamedLogger} from "./shared_logging_setup";
 import {
     Action,
-    Background2PagePortMsgType,
+    AgentController2PagePortMsgType,
     buildGenericActionDesc,
-    elementHighlightRenderDelay,
     expectedMsgForPortDisconnection,
-    Page2BackgroundPortMsgType,
+    Page2AgentControllerPortMsgType,
     PageRequestType,
     renderUnknownValue,
     sleep
@@ -69,22 +68,16 @@ export class PageActor {
         if (this.interactiveElements) {
             this.logger.error("interactive elements already exist; background script might've asked for interactive elements twice in a row without in between instructing that an action be performed or without waiting for the action to be finished")
             this.portToBackground.postMessage(
-                {type: Page2BackgroundPortMsgType.TERMINAL, error: "interactive elements already exist"});
+                {type: Page2AgentControllerPortMsgType.TERMINAL, error: "interactive elements already exist"});
             return;
         }
 
         this.interactiveElements = this.browserHelper.getInteractiveElements();
-        const elementsInSerializableForm = this.interactiveElements.map((elementData) => {
-            const serializableElementData: SerializableElementData = {...elementData};
-            if ('element' in serializableElementData) {
-                delete serializableElementData['element'];
-            }//ugly, but avoids forgetting to add another copying here if serializable fields are added to ElementData
-            return serializableElementData;
-        });
+        const elementsInSerializableForm = this.interactiveElements.map(makeElementDataSerializable);
 
         try {
             this.portToBackground.postMessage({
-                type: Page2BackgroundPortMsgType.PAGE_STATE, interactiveElements: elementsInSerializableForm,
+                type: Page2AgentControllerPortMsgType.PAGE_STATE, interactiveElements: elementsInSerializableForm,
                 viewportInfo: this.domWrapper.getViewportInfo(), url: this.domWrapper.getUrl()
             });
         } catch (error: any) {
@@ -311,7 +304,7 @@ export class PageActor {
         if (!this.interactiveElements) {
             this.logger.error("perform-action message received from background script but no interactive elements are currently stored");
             this.portToBackground.postMessage(
-                {type: Page2BackgroundPortMsgType.TERMINAL, error: "no interactive elements stored to be acted on"});
+                {type: Page2AgentControllerPortMsgType.TERMINAL, error: "no interactive elements stored to be acted on"});
             return;
         }
         const actionToPerform: Action = message.action;
@@ -396,7 +389,7 @@ export class PageActor {
 
         try {
             this.portToBackground.postMessage({
-                type: Page2BackgroundPortMsgType.ACTION_DONE, success: actionOutcome.success,
+                type: Page2AgentControllerPortMsgType.ACTION_DONE, success: actionOutcome.success,
                 result: actionOutcome.result
             });
         } catch (error: any) {
@@ -412,36 +405,18 @@ export class PageActor {
         if (!this.interactiveElements) {
             this.logger.error("highlight-candidate-element message received from background script but no interactive elements are currently stored");
             this.portToBackground.postMessage(
-                {type: Page2BackgroundPortMsgType.TERMINAL, error: "no interactive elements stored to be highlighted"});
+                {type: Page2AgentControllerPortMsgType.TERMINAL, error: "no interactive elements stored to be highlighted"});
             return;
         } else if ((typeof message.elementIndex !== "number") || message.elementIndex >= this.interactiveElements.length) {
             this.logger.error("highlight-candidate-element message received from background script but element index is invalid");
             this.portToBackground.postMessage(
-                {type: Page2BackgroundPortMsgType.TERMINAL, error: "invalid element index provided to highlight"});
+                {type: Page2AgentControllerPortMsgType.TERMINAL, error: "invalid element index provided to highlight"});
             return;
         }
         const elementToActOnData = this.interactiveElements[message.elementIndex];
         const elementToActOn = elementToActOnData.element;
-        const elemStyle = elementToActOn.style;
+        await this.browserHelper.highlightElement(elementToActOn.style);
 
-        const initialOutline = elemStyle.outline;
-        //const initialBackgroundColor = elemStyle.backgroundColor;
-
-        elemStyle.outline = "3px solid red";
-        setTimeout(() => {
-            elemStyle.outline = initialOutline;
-        }, 5000);
-
-        //elemStyle.filter = "brightness(1.5)";
-
-        // https://stackoverflow.com/questions/1389609/plain-javascript-code-to-highlight-an-html-element
-        // meddling with element.style properties like backgroundColor, outline, filter, (border?)
-        // https://developer.mozilla.org/en-US/docs/Web/CSS/background-color
-        // https://developer.mozilla.org/en-US/docs/Web/CSS/outline
-        // https://developer.mozilla.org/en-US/docs/Web/CSS/filter
-        // https://developer.mozilla.org/en-US/docs/Web/CSS/border
-
-        await sleep(elementHighlightRenderDelay);
         try {
             const resp = await this.chromeWrapper.sendMessageToServiceWorker({
                 reqType: PageRequestType.SCREENSHOT_WITH_TARGET_HIGHLIGHTED,
@@ -462,17 +437,17 @@ export class PageActor {
      * @param message the message received from the agent controller
      */
     handleRequestFromAgentController = async (message: any): Promise<void> => {
-        this.logger.trace(`message received from background script: ${JSON.stringify(message)} by page ${document.URL}`);
+        this.logger.trace(`message received from agent controller: ${JSON.stringify(message).slice(0,100)} by page ${document.URL}`);
         this.hasControllerEverResponded = true;
-        if (message.type === Background2PagePortMsgType.REQ_PAGE_STATE) {
+        if (message.type === AgentController2PagePortMsgType.REQ_PAGE_STATE) {
             if (message.isMonitorRetry) {this.interactiveElements = undefined;}
             this.getPageInfoForController();
-        } else if (message.type === Background2PagePortMsgType.REQ_ACTION) {
+        } else if (message.type === AgentController2PagePortMsgType.REQ_ACTION) {
             await this.performActionFromController(message);
-        } else if (message.type === Background2PagePortMsgType.HIGHLIGHT_CANDIDATE_ELEM) {
+        } else if (message.type === AgentController2PagePortMsgType.HIGHLIGHT_CANDIDATE_ELEM) {
             await this.highlightCandidateElement(message);
         } else {
-            this.logger.warn("unknown message from background script: " + JSON.stringify(message));
+            this.logger.warn(`unknown message from agent controller: ${JSON.stringify(message)}`);
         }
     }
 

@@ -1,7 +1,7 @@
 import {createNamedLogger} from "./utils/shared_logging_setup";
 import {
     expectedMsgForPortDisconnection,
-    Page2BackgroundPortMsgType,
+    Page2AgentControllerPortMsgType,
     pageToControllerPort,
     renderUnknownValue,
     sleep
@@ -52,7 +52,7 @@ window.addEventListener('load', async () => {
     await sleep(20);//just in case page loaded super-quickly and the service worker was delayed in setting up the port's listeners
     logger.debug(`total length of page load wait: ${(Date.now() - startOfPageLoadWait)}ms`);
     try {
-        portToBackground.postMessage({type: Page2BackgroundPortMsgType.READY});
+        portToBackground.postMessage({type: Page2AgentControllerPortMsgType.READY});
     } catch (error: any) {
         logger.error(`error sending READY message to background: ${renderUnknownValue(error)}`);
     }
@@ -63,7 +63,7 @@ window.addEventListener('load', async () => {
     if (!pageActor.hasControllerEverResponded && !didLoadFire) {
         logger.info("sending backup ready message to background because controller hasn't responded yet and load event hasn't fired (probably it fired before this content script set up a listener for it)");
         try {
-            portToBackground.postMessage({type: Page2BackgroundPortMsgType.READY});
+            portToBackground.postMessage({type: Page2AgentControllerPortMsgType.READY});
         } catch (error: any) {
             if ('message' in error && error.message === expectedMsgForPortDisconnection) {
                 logger.info("background disconnected port before backup READY message could be sent");

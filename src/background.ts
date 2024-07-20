@@ -16,7 +16,7 @@ import {
     AgentControllerState
 } from "./utils/AgentController";
 import {
-    PageRequestType,
+    PageRequestType, pageToAnnotationCoordinatorPort,
     pageToControllerPort, panelToAnnotationCoordinatorPort,
     panelToControllerPort,
     renderUnknownValue,
@@ -333,7 +333,6 @@ async function updateServiceWorkerOnNewSidePanelConnection(newPort: Port, discon
     });
 }
 
-
 /**
  * @description Handle a connection being opened from a content script (page actor) to the agent controller in the
  * service worker
@@ -367,6 +366,9 @@ async function handleConnectionFromPage(port: Port): Promise<void> {
         await updateServiceWorkerOnNewSidePanelConnection(port, actionAnnotationCoordinator.handlePanelDisconnectFromCoordinator);
         actionAnnotationCoordinator.addSidePanelConnection(port).catch((error) =>
             centralLogger.error(`error adding side panel connection to annotation coordinator: ${renderUnknownValue(error)}`));
+    } else if (port.name.startsWith(pageToAnnotationCoordinatorPort)) {
+        actionAnnotationCoordinator.addPageConnection(port).catch((error) =>
+            centralLogger.error(`error adding page connection to annotation coordinator: ${renderUnknownValue(error)}`));
     } else {
         centralLogger.warn("unrecognized port name:", port.name);
     }

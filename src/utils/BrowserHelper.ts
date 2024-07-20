@@ -3,6 +3,7 @@ import {createNamedLogger} from "./shared_logging_setup";
 import {DomWrapper} from "./DomWrapper";
 import log from "loglevel";
 import * as fuzz from "fuzzball";
+import {elementHighlightRenderDelay, renderUnknownValue, sleep} from "./misc";
 
 export type ElementData = {
     centerCoords: readonly [number, number],
@@ -17,7 +18,11 @@ export type ElementData = {
         bRx: number;
         bRy: number
     },
-    //todo add xpath string
+    /**
+     * index/identifier relative to the other interactable elements on the page
+     */
+    interactivesIndex?: number//populated after the full interactive elements list is created
+    xpath: string
     width: number,
     height: number,
     tagName: string,
@@ -25,6 +30,18 @@ export type ElementData = {
 }
 
 export type SerializableElementData = Omit<ElementData, 'element'>;
+export const exampleSerializableElemData: SerializableElementData = {
+    centerCoords: [0, 0], description: "example element", tagHead: "div", boundingBox: {tLx: 0, tLy: 0, bRx: 0, bRy: 0},
+    width: 0, height: 0, tagName: "div", xpath: "example xpath"
+}
+
+export function makeElementDataSerializable(elementData: ElementData): SerializableElementData {
+    const serializableElementData: SerializableElementData = {...elementData};
+    if ('element' in serializableElementData) {
+        delete serializableElementData.element;
+    }//ugly, but avoids forgetting to add another copying here if serializable fields are added to ElementData
+    return serializableElementData;
+}
 
 //todo consider renaming this to HtmlHelper or HtmlElementHelper if I create a ChromeHelper class for accessing
 // browser api's
@@ -46,11 +63,11 @@ export class BrowserHelper {
      * @param elementToActOn the element whose text or value is to be retrieved
      * @return the text content of the element, or the value of an input or textarea element
      */
-    getElementText = (elementToActOn: HTMLElement): string|null => {
+    getElementText = (elementToActOn: HTMLElement): string | null => {
         let priorElementText = elementToActOn.textContent;
         if (elementToActOn instanceof HTMLInputElement || elementToActOn instanceof HTMLTextAreaElement
-            || ('value' in elementToActOn && typeof(elementToActOn.value) === 'string')) {
-            priorElementText = (elementToActOn.value as string|null) ?? elementToActOn.textContent;
+            || ('value' in elementToActOn && typeof (elementToActOn.value) === 'string')) {
+            priorElementText = (elementToActOn.value as string | null) ?? elementToActOn.textContent;
         }
         return priorElementText;
     }
@@ -61,7 +78,7 @@ export class BrowserHelper {
      * @param optionName the name (or an approximation of the name) of the option element to select
      * @return the name/innertext of the option element which was selected
      */
-    selectOption = (selectElement: HTMLElement, optionName: string): string|undefined => {
+    selectOption = (selectElement: HTMLElement, optionName: string): string | undefined => {
         let bestOptIndex = -1;
         let bestOptVal = undefined;//in case it's important, for some <select>, to be able to choose an option whose innertext is the empty string
         let bestOptSimilarity = -1;
@@ -261,8 +278,6 @@ export class BrowserHelper {
      * @return data about the element
      */
     getElementData = (element: HTMLElement): ElementData | null => {
-        if (this.calcIsHidden(element) || this.calcIsDisabled(element)) return null;
-
         const description = this.getElementDescription(element);
         if (!description) return null;
 
@@ -288,7 +303,8 @@ export class BrowserHelper {
             width: boundingRect.width,
             height: boundingRect.height,
             tagName: tagName,
-            element: element
+            element: element,
+            xpath: this.getFullXpath(element)
         };
     }
 
@@ -305,11 +321,12 @@ export class BrowserHelper {
         return elementComputedStyle.display === "none" || elementComputedStyle.visibility === "hidden"
             || element.hidden || isElementHiddenForOverflow || elementComputedStyle.opacity === "0"
             || elementComputedStyle.height === "0px" || elementComputedStyle.width === "0px"
-            || elementComputedStyle.height === "1px" || elementComputedStyle.width === "1px";//1x1 px elements are generally a css hack to make an element temporarily ~invisible
+            //1x1 px elements are generally a css hack to make an element temporarily ~invisible
+            || elementComputedStyle.height === "1px" || elementComputedStyle.width === "1px";
         //maybe eventually update this once content-visibility is supported outside chromium (i.e. in firefox/safari)
         // https://developer.mozilla.org/en-US/docs/Web/CSS/content-visibility
 
-        //todo explore adding logic for other tricks mentioned in this article (e.g. 'clip-path')
+        //if needed, can explore adding logic for other tricks mentioned in this article (e.g. 'clip-path')
         // https://css-tricks.com/comparing-various-ways-to-hide-things-in-css/
     }
 
@@ -325,7 +342,7 @@ export class BrowserHelper {
                     || element instanceof HTMLOptGroupElement || element instanceof HTMLOptionElement
                     || element instanceof HTMLFieldSetElement)
                 && element.disabled)
-            || ( (element instanceof HTMLTextAreaElement || element instanceof HTMLInputElement) && element.readOnly)
+            || ((element instanceof HTMLTextAreaElement || element instanceof HTMLInputElement) && element.readOnly)
             || element.getAttribute("disabled") != null;
     }
 
@@ -344,16 +361,142 @@ export class BrowserHelper {
             '[contenteditable]:not([contenteditable="false"])', '[onclick]', '[onfocus]', '[onkeydown]',
             '[onkeypress]', '[onkeyup]', "[checkbox]", '[aria-disabled="false"]', '[data-link]'];
 
-        const uniqueInteractiveElements = new Set<HTMLElement>();
-        interactiveElementSelectors.forEach(selector => {
-            this.domHelper.fetchElementsByCss(selector).forEach(element => {
-                uniqueInteractiveElements.add(element);
-            });
-        });
+        const elemsFetchStartTs = performance.now();
+        const uniqueInteractiveElements = this.enhancedQuerySelectorAll(interactiveElementSelectors,
+            this.domHelper.dom, elem => !this.calcIsDisabled(elem), true);
+        this.logger.debug(`time to fetch interactive elements: ${performance.now() - elemsFetchStartTs} ms`);
+
+        const interactiveElementsData = Array.from(uniqueInteractiveElements)
+            .map(element => this.getElementData(element))
+            .filter(Boolean) as ElementData[];
+        //only add index after filtering b/c some interactive elements are discarded when not able to generate descriptions for them
+        interactiveElementsData.forEach((elementData, index) => { elementData.interactivesIndex = index; })
+
+        return interactiveElementsData;
+    }
+
+    highlightElement = async (elementStyle: CSSStyleDeclaration) => {
+        const initialOutline = elementStyle.outline;
+        //const initialBackgroundColor = elemStyle.backgroundColor;
+
+        elementStyle.outline = "3px solid red";
+        setTimeout(() => {
+            elementStyle.outline = initialOutline;
+        }, 5000);
+
+        //elemStyle.filter = "brightness(1.5)";
+
+        // https://stackoverflow.com/questions/1389609/plain-javascript-code-to-highlight-an-html-element
+        // meddling with element.style properties like backgroundColor, outline, filter, (border?)
+        // https://developer.mozilla.org/en-US/docs/Web/CSS/background-color
+        // https://developer.mozilla.org/en-US/docs/Web/CSS/outline
+        // https://developer.mozilla.org/en-US/docs/Web/CSS/filter
+        // https://developer.mozilla.org/en-US/docs/Web/CSS/border
+
+        await sleep(elementHighlightRenderDelay);
+    }
+
+    /**
+     * safely access contents of an iframe and record any cases where the iframe content is inaccessible
+     * @param iframe an iframe whose contents should be accessed
+     * @returns the root document of the iframe's contents, or null if the iframe's content is inaccessible
+     */
+    getIframeContent = (iframe: HTMLIFrameElement): Document | null => {
+        try {
+            return iframe.contentDocument || iframe.contentWindow?.document || null;
+        } catch (e) {
+            this.logger.debug(`Cannot access iframe content. Possibly different origin: ${iframe.src}; error: ${renderUnknownValue(e)
+                .slice(0, 100)}`);
+            return null;
+        }
+    }
+
+    /**
+     * find matching elements even inside of shadow DOM's or (some) iframes
+     * Can search for multiple css selectors (to avoid duplicating the effort of finding/traversing the various shadow DOM's and iframes)
+     *
+     * partly based on this https://stackoverflow.com/a/71692555/10808625 (for piercing shadow DOM's), plus additional
+     * logic to handle iframes, multiple selectors, etc.
+     * Avoids duplicates within a given scope (from multiple selectors matching an element), but doesn't currently have
+     * protection against duplicates across different scopes (since intuitively it shouldn't be possible for an element
+     * to be in both a shadow DOM and the main document)
+     * @param cssSelectors The CSS selectors to use to find elements
+     * @param root the base element for the current call's search scope
+     * @param elemFilter predicate to immediately eliminate irrelevant elements before they slow down the
+     *                      array-combining operations
+     * @param shouldIgnoreHidden whether to ignore hidden/not-displayed elements
+     * @returns array of elements that match any of the CSS selectors;
+     *          this is a static view of the elements (not live access that would allow modification)
+     */
+    enhancedQuerySelectorAll = (cssSelectors: string[], root: ShadowRoot | Document,
+                                elemFilter: (elem: HTMLElement) => boolean, shouldIgnoreHidden: boolean = true
+    ): Array<HTMLElement> => {
+        let possibleShadowRootHosts = Array.from(root.querySelectorAll('*')) as HTMLElement[];
+        if (shouldIgnoreHidden) { possibleShadowRootHosts = possibleShadowRootHosts.filter(elem => !this.calcIsHidden(elem)); }
+        const shadowRootsOfChildren = possibleShadowRootHosts.map(elem => elem.shadowRoot)
+            .filter(Boolean) as ShadowRoot[];//TS compiler doesn't know that filter(Boolean) removes nulls
+
+        let iframes = Array.from(root.querySelectorAll('iframe'))
+        if (shouldIgnoreHidden) { iframes = iframes.filter(iframe => !this.calcIsHidden(iframe)); }
+        //+1 is for the current scope results array
+        const resultArrays: HTMLElement[][] = new Array<Array<HTMLElement>>(shadowRootsOfChildren.length + iframes.length + 1);
+
+        (iframes.map(this.getIframeContent).filter(Boolean) as Document[])//filter(Boolean) removes nulls
+            .map(iframeContent => this.enhancedQuerySelectorAll(cssSelectors, iframeContent, elemFilter, shouldIgnoreHidden))
+            .forEach(resultsForIframe => resultArrays.push(resultsForIframe));
+
+        shadowRootsOfChildren.map(childShadowRoot => this.enhancedQuerySelectorAll(cssSelectors, childShadowRoot, elemFilter, shouldIgnoreHidden))
+            .forEach(resultsForShadowRoot => resultArrays.push(resultsForShadowRoot));
+
         //based on https://developer.mozilla.org/en-US/docs/Web/API/Node/isSameNode, I'm pretty confident that simple
         // element === element checks by the Set class will prevent duplicates
+        const currScopeResults: Set<HTMLElement> = new Set();
+        cssSelectors.map(selector => Array.from(root.querySelectorAll<HTMLElement>(selector)).filter(elemFilter))
+            .forEach(resultsForSelector => {
+                resultsForSelector.forEach(elem => currScopeResults.add(elem));
+            })
+        resultArrays.push(Array.from(currScopeResults));
 
-        return Array.from(uniqueInteractiveElements).map(element => this.getElementData(element))
-            .filter(Boolean) as ElementData[];
+        //todo consider implementing custom array merging logic instead of HTML[][].flat() if this method is proving to be a noticeable performance bottleneck even sometimes
+        return resultArrays.flat();
+    }
+
+    enhancedQuerySelector(cssSelector: string, root: ShadowRoot | Document | HTMLIFrameElement,
+                          elemFilter: (elem: HTMLElement) => boolean, shouldIgnoreHidden: boolean = true): HTMLElement | null {
+        const currScopeResult = root.querySelector(cssSelector) as HTMLElement | null;
+        if (currScopeResult && elemFilter(currScopeResult) && !(shouldIgnoreHidden && this.calcIsHidden(currScopeResult))) {
+            return currScopeResult;
+        }
+        let possibleShadowRootHosts = Array.from(root.querySelectorAll('*')) as HTMLElement[];
+        if (shouldIgnoreHidden) {
+            possibleShadowRootHosts = possibleShadowRootHosts.filter(elem => !this.calcIsHidden(elem));
+        }
+        const shadowRootsOfChildren = possibleShadowRootHosts.map(elem => elem.shadowRoot)
+            .filter(Boolean) as ShadowRoot[];//filter(Boolean) removes nulls
+        for (const shadowRoot of shadowRootsOfChildren) {
+            const shadowResult = this.enhancedQuerySelector(cssSelector, shadowRoot, elemFilter, shouldIgnoreHidden);
+            if (shadowResult) {
+                return shadowResult;
+            }
+        }
+        let iframes = Array.from(root.querySelectorAll('iframe'));
+        if (shouldIgnoreHidden) { iframes = iframes.filter(iframe => !this.calcIsHidden(iframe)); }
+        for (const iframe of iframes) {
+            const iframeContent = this.getIframeContent(iframe);
+            if (iframeContent) {
+                const iframeResult = this.enhancedQuerySelector(cssSelector, iframeContent, elemFilter, shouldIgnoreHidden);
+                if (iframeResult) {
+                    return iframeResult;
+                }
+            }
+        }
+        return null;
+    }
+
+    getNumericZIndex = (element: HTMLElement): number => {
+        const zIndexStr = this.domHelper.getComputedStyle(element).zIndex;
+        if (zIndexStr === "auto") {
+            return 0;
+        } else { return parseInt(zIndexStr); }
     }
 }

@@ -16,7 +16,7 @@ import {
 import {
     Action,
     AgentController2PanelPortMsgType,
-    Background2PagePortMsgType,
+    AgentController2PagePortMsgType,
     base64ToByteArray,
     buildGenericActionDesc,
     defaultIsMonitorMode,
@@ -26,7 +26,7 @@ import {
     defaultMaxOps,
     elementHighlightRenderDelay,
     expectedMsgForPortDisconnection,
-    Page2BackgroundPortMsgType,
+    Page2AgentControllerPortMsgType,
     Panel2AgentControllerPortMsgType,
     renderUnknownValue,
     setupModeCache,
@@ -278,7 +278,6 @@ export class AgentController {
     }
 
 
-    //todo rework injection method so it can move to ServiceWorkerHelper and be used by both this and ActionAnnotationCoordinator
     /**
      * @description Injects the agent's page-interaction/data-gathering script into the current tab
      * @param isStartOfTask Whether this injection is to start a new task or to continue an existing one (e.g. after
@@ -287,53 +286,30 @@ export class AgentController {
      *                identified the active tab
      */
     injectPageActorScript = async (isStartOfTask: boolean, newTab?: chrome.tabs.Tab): Promise<void> => {
-        let tabId: number | undefined = undefined;
-        let tab: chrome.tabs.Tab | undefined = newTab;
-        if (!tab) {
-            try {
-                tab = await this.swHelper.getActiveTab();
-            } catch (error) {
-                const termReason = `error getting active tab id, cannot inject content script; error: ${renderUnknownValue(error)}`;
-                this.logger.error(termReason);
-                this.terminateTask(termReason);
-                return;
-            }
-        }
-        tabId = tab.id;
-        if (!tabId) {
-            const termReason = `Can't inject agent script into chrome:// URLs for security reasons; ${isStartOfTask ? "please only try to start the agent on a regular web page." : "please don't switch to a chrome:// URL while the agent is running"}`;
-            this.logger.warn(termReason);
-            this.terminateTask(termReason);
-        } else {
-            const toStartTaskStr = isStartOfTask ? " to start a task" : "";
-
+        const preInjectChecksAndUpdates = (tabId: number, url?: string, title?: string) => {
             if (isStartOfTask) {
                 this.currTaskTabId = tabId;
-                this.initWebsiteForTask = tab.url;
+                this.initWebsiteForTask = url;
             } else if (this.currTaskTabId !== tabId) {
                 if (this.mightNextActionCausePageNav) {
                     this.currTaskTabId = tabId;
                 } else {
-                    const errMsg = `The active tab changed unexpectedly to ${tab.title}`;
-                    this.logger.error(errMsg + "; terminating task");
-                    this.terminateTask(errMsg);
-                    return;
+                    return `The active tab changed unexpectedly to ${title}`;//tells utility method to abort b4 injection
                 }
             }
-            this.logger.trace("injecting agent script into page" + toStartTaskStr + "; in tab " + tabId);
-
             this.state = AgentControllerState.WAITING_FOR_CONTENT_SCRIPT_INIT;
-            try {
-                await this.chromeWrapper.runScript({files: ['./src/page_interaction.js'], target: {tabId: tabId}});
-                this.logger.trace('agent script injected into page' + toStartTaskStr);
-            } catch (error) {
-                const termReason = `error injecting agent script into page${toStartTaskStr}; error: ${renderUnknownValue(error)}`;
-                this.logger.error(termReason);
-                this.terminateTask(termReason);
+            return undefined;//tells utility method that content script injection can proceed
+        }
+        const injectionErrMsg = await this.swHelper.injectContentScript("agent",
+            './src/page_interaction.js', preInjectChecksAndUpdates, newTab);
+        if (injectionErrMsg) {
+            this.logger.warn(`error injecting content script for a task: ${injectionErrMsg}`);
+            if (injectionErrMsg.indexOf("chrome://") !== -1) {
+                this.logger.warn(isStartOfTask ? "please only try to start the agent on a regular web page." : "please don't switch to a chrome:// URL while the agent is running");
             }
+            this.terminateTask(injectionErrMsg);
         }
     }
-
 
     /**
      * @description Starts a new task for the agent to complete
@@ -442,7 +418,7 @@ export class AgentController {
         this.state = AgentControllerState.WAITING_FOR_PAGE_STATE
         let successfulStart = false;
         try {
-            port.postMessage({type: Background2PagePortMsgType.REQ_PAGE_STATE});
+            port.postMessage({type: AgentController2PagePortMsgType.REQ_PAGE_STATE});
             successfulStart = true;
         } catch (error: any) {
             if ('message' in error && error.message === expectedMsgForPortDisconnection) {
@@ -583,7 +559,7 @@ export class AgentController {
                 this.logger.info("about to instruct page actor to highlight the target element");
                 try {
                     pageActorPort.postMessage({
-                        type: Background2PagePortMsgType.HIGHLIGHT_CANDIDATE_ELEM,
+                        type: AgentController2PagePortMsgType.HIGHLIGHT_CANDIDATE_ELEM,
                         elementIndex: this.pendingActionInfo.elementIndex,
                         promptingIndexForAction: numPromptingScreenshotsTakenForCurrentActionBeforeThisRound
                     });
@@ -618,7 +594,7 @@ export class AgentController {
                 this.state = AgentControllerState.WAITING_FOR_ACTION;
                 try {
                     pageActorPort.postMessage({
-                        type: Background2PagePortMsgType.REQ_ACTION, action: this.pendingActionInfo.action,
+                        type: AgentController2PagePortMsgType.REQ_ACTION, action: this.pendingActionInfo.action,
                         elementIndex: this.pendingActionInfo.elementIndex, value: this.pendingActionInfo.value
                     });
                 } catch (error: any) {
@@ -862,6 +838,7 @@ export class AgentController {
 
         const screenshotResult = await this.swHelper.captureScreenshot(screenshotType);
         if (screenshotResult.error) {
+            this.logger.warn(`error capturing screenshot of type ${screenshotType}: ${screenshotResult.error}`);
             this.terminateTask(screenshotResult.error);
             return undefined;
         }
@@ -871,8 +848,8 @@ export class AgentController {
 
             dbConnHolder.dbConn.add(SCREENSHOTS_OBJECT_STORE, {
                 timestamp: screenshotTs, taskId: this.taskId, numPriorActions: this.actionsSoFar.length,
-                numPriorScreenshotsForPrompts: promptingIndexForAction,
-                screenshotType: screenshotType, screenshotId: screenshotIdStr, screenshot64: screenshotResult.screenshotBase64
+                numPriorScreenshotsForPrompts: promptingIndexForAction, screenshotType: screenshotType,
+                screenshotId: screenshotIdStr, screenshot64: screenshotResult.screenshotBase64
             }).catch((error) => console.error("error adding screenshot to indexeddb:", renderUnknownValue(error)));
         } else {
             this.logger.warn("no db connection available, cannot save screenshot");
@@ -933,7 +910,7 @@ export class AgentController {
             this.mightNextActionCausePageNav = false;
             this.state = AgentControllerState.WAITING_FOR_PAGE_STATE
             try {
-                port.postMessage({type: Background2PagePortMsgType.REQ_PAGE_STATE});
+                port.postMessage({type: AgentController2PagePortMsgType.REQ_PAGE_STATE});
             } catch (error: any) {
                 if ('message' in error && error.message === expectedMsgForPortDisconnection) {
                     this.logger.info("content script disconnected from service worker while processing completed action and before trying to request more interactive elements; task will resume after new content script connection is established");
@@ -1034,7 +1011,7 @@ export class AgentController {
         this.state = AgentControllerState.WAITING_FOR_ACTION;
         try {
             this.portToContentScript.postMessage({
-                type: Background2PagePortMsgType.REQ_ACTION, elementIndex: this.pendingActionInfo.elementIndex,
+                type: AgentController2PagePortMsgType.REQ_ACTION, elementIndex: this.pendingActionInfo.elementIndex,
                 action: this.pendingActionInfo.action, value: this.pendingActionInfo.value
             });
         } catch (error: any) {
@@ -1072,7 +1049,7 @@ export class AgentController {
         this.state = AgentControllerState.WAITING_FOR_PAGE_STATE
         try {
             this.portToContentScript.postMessage(
-                {type: Background2PagePortMsgType.REQ_PAGE_STATE, isMonitorRetry: true});
+                {type: AgentController2PagePortMsgType.REQ_PAGE_STATE, isMonitorRetry: true});
         } catch (error: any) {
             if ('message' in error && error.message === expectedMsgForPortDisconnection) {
                 this.logger.info("content script disconnected from agent controller while the latter was waiting for a response from the monitor; task will resume after new content script connection is established");
@@ -1140,7 +1117,7 @@ export class AgentController {
                 this.logger.error(errMsg);
             }
         } else {
-            this.logger.error("unknown message from side panel:", JSON.stringify(message));
+            this.logger.error(`unknown message from side panel:${JSON.stringify(message)}`);
         }
     }
 
@@ -1150,16 +1127,16 @@ export class AgentController {
      * @param port the port object representing the connection between the service worker and the content script
      */
     handlePageMsgToAgentController = async (message: any, port: Port): Promise<void> => {
-        if (message.type === Page2BackgroundPortMsgType.READY) {
+        if (message.type === Page2AgentControllerPortMsgType.READY) {
             await this.mutex.runExclusive(() => {this.processPageActorInitialized(port);});
-        } else if (message.type === Page2BackgroundPortMsgType.PAGE_STATE) {
+        } else if (message.type === Page2AgentControllerPortMsgType.PAGE_STATE) {
             await this.mutex.runExclusive(async () => {await this.processPageStateFromActor(message, port);});
-        } else if (message.type === Page2BackgroundPortMsgType.ACTION_DONE) {
+        } else if (message.type === Page2AgentControllerPortMsgType.ACTION_DONE) {
             await this.mutex.runExclusive(async () => {await this.processActionPerformedConfirmation(message, port);});
-        } else if (message.type === Page2BackgroundPortMsgType.TERMINAL) {
+        } else if (message.type === Page2AgentControllerPortMsgType.TERMINAL) {
             await this.mutex.runExclusive(() => { this.terminateTask(`something went horribly wrong in the content script; details: ${message.error}`);});
         } else {
-            this.logger.warn("unknown message from content script:", message);
+            this.logger.error("unknown message from content script:", renderUnknownValue(message));
         }
     }
 
@@ -1473,11 +1450,6 @@ export class AgentController {
         this.logger.debug(`log file contents has length ${logFileContents.length}`);
         return logFileContents;
     }
-
-
-
-
-
 }
 
 

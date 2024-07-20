@@ -22,20 +22,27 @@
               try to figure out the target element based on which field is focused instead of which
               is hovered-over; would need to explain this in the ui somewhere-->
     </select>
-    <label for="state-change-severity" class="block text-base font-medium" title="How dangerous the action-to-be-collected is, i.e. how impactful and/or hard-to-reverse is the state-change that it would trigger?">State Change Severity</label>
-    <select id="state-change-severity" class="p-2" >
-        <option value="LOW" title="TODO get explanation/labelling-guidance from Boyuan/Maggie/Prof-Su" selected>Low</option>
-        <option value="MEDIUM" title="TODO get explanation/labelling-guidance from Boyuan/Maggie/Prof-Su">Medium</option>
+    <label for="state-change-severity" class="block text-base font-medium"
+           title="How dangerous the action-to-be-collected is, i.e. how impactful and/or hard-to-reverse is the state-change that it would trigger?">State
+        Change Severity</label>
+    <select id="state-change-severity" class="p-2">
+        <option value="LOW" title="TODO get explanation/labelling-guidance from Boyuan/Maggie/Prof-Su" selected>Low
+        </option>
+        <option value="MEDIUM" title="TODO get explanation/labelling-guidance from Boyuan/Maggie/Prof-Su">Medium
+        </option>
         <option value="HIGH" title="TODO get explanation/labelling-guidance from Boyuan/Maggie/Prof-Su">High</option>
     </select>
 
     <div class="space-y-1">
-        <label for="annotator-explanation" class="block text-base font-medium" title="TODO get and insert guidance from Boyuan/Maggie/Prof-Su about what kinds of details from annotators would actually be useful here">
+        <label for="annotator-explanation" class="block text-base font-medium"
+               title="TODO get and insert guidance from Boyuan/Maggie/Prof-Su about what kinds of details from annotators would actually be useful here">
             Description/Explanation (Optional)
         </label>
-        <textarea id="annotator-explanation" class="w-full h-12 text-sm p-2 bg-fuchsia-100/50 border rounded resize-y"></textarea>
+        <textarea id="annotator-explanation"
+                  class="w-full h-12 text-sm p-2 bg-fuchsia-100/50 border rounded resize-y"></textarea>
     </div>
-    <span class="text-sm font-medium" title="After ensuring the state-changing action's details are appropriately filled out here, put your cursor over the element which it would be state-changing to interact with, then press Alt-Shift-G">Action Capture Reminder</span>
+    <span class="text-sm font-medium"
+          title="After ensuring the state-changing action's details are appropriately filled out here, put your cursor over the element which it would be state-changing to interact with, then press Alt-Shift-G. If you want the focused/active element (e.g. a text field you just interacted with) to be the target element, make sure the mouse cursor is not hovering over any interactive elements, or just keep it perfectly still when pressing the keyboard shortcut. Otherwise, make sure you keep moving the mouse cursor around very slightly (without leaving the target element) just before and just after pressing Alt-Shift-G (otherwise browser limitations will prevent the extension from seeing the mouse position and figuring out the target element)">Action Capture Reminder</span>
 </div>
 
 <div class="border bg-emerald-100/50 rounded-lg p-1">
@@ -65,6 +72,13 @@
 
 <hr class="border-gray-300">
 
+<div class="space-y-1 border bg-cyan-100/50 rounded-lg p-1">
+    <div id="status-update-container" class="flex items-center h-12 overflow-y-auto">
+        <img src="../images/status_update_icon.webp" alt="status icon" class="w-auto h-8 mr-2">
+        <div id="status" class="text-sm">No status update available at the moment.</div>
+    </div>
+</div>
+
 <div id="history-container" class="space-y-1 border bg-indigo-100/50 rounded-lg p-1">
     <label id="history-label" class="block text-lg font-semibold text-center">Actions
         History</label>
@@ -74,11 +88,6 @@
 </div>
 
 <div class="space-y-1 border bg-cyan-100/50 rounded-lg p-1">
-    <div id="status-update-container" class="flex items-center h-12 overflow-y-auto mb-1">
-        <img src="../images/status_update_icon.webp" alt="status icon" class="w-auto h-8 mr-2">
-        <div id="status" class="text-sm">No status update available at the moment.</div>
-    </div>
-
     <div class="flex items-center">
         <img src="../images/proposed_action_icon.webp" alt="hopeful robot face with lightbulb" class="w-auto h-6 mr-2">
         <label class="text-lg font-semibold px-2 py-1 rounded">Pending Action</label>

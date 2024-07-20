@@ -5,23 +5,23 @@ import {createNamedLogger} from "./shared_logging_setup";
 import {
     Action,
     ActionStateChangeSeverity,
+    AnnotationCoordinator2PagePortMsgType,
     AnnotationCoordinator2PanelPortMsgType,
     base64ToByteArray,
-    defaultIsAnnotatorMode,
+    defaultIsAnnotatorMode, exampleViewportDetails,
+    Page2AnnotationCoordinatorPortMsgType,
     PanelToAnnotationCoordinatorPortMsgType,
     renderUnknownValue,
     setupModeCache,
     storageKeyForAnnotatorMode,
-    storageKeyForEulaAcceptance
+    storageKeyForEulaAcceptance,
+    ViewportDetails
 } from "./misc";
 import {Mutex} from "async-mutex";
 import {ServiceWorkerHelper} from "./ServiceWorkerHelper";
 import JSZip from "jszip";
+import {exampleSerializableElemData, SerializableElementData} from "./BrowserHelper";
 import Port = chrome.runtime.Port;
-
-//todo make util files to break out pieces from AgentController that will be needed by both it
-// and this; e.g. injecting a content script and managing its
-// port, stuff related to capturing screenshots, sendZipToSidePanelForDownload()
 
 /**
  * states for the action annotation coordinator Finite State Machine
@@ -29,13 +29,9 @@ import Port = chrome.runtime.Port;
 export enum AnnotationCoordinatorState {
     IDLE,//i.e. no in-progress annotation
     WAITING_FOR_ANNOTATION_DETAILS,//waiting for annotation details from the side panel
-    WAITING_FOR_CONTENT_SCRIPT_INIT,//there's an in-progress annotation, but injection of content script hasn't completed yet
-    ACTIVE,//partway through an event handler function
+    WAITING_FOR_CONTENT_SCRIPT_INIT,//injected content script hasn't notified coordinator of readiness yet
     WAITING_FOR_PAGE_INFO,// waiting for content script to retrieve page state (e.g. interactive elements) from page
-
-    //anything else here?
 }
-
 
 export class ActionAnnotationCoordinator {
     readonly mutex = new Mutex();
@@ -53,12 +49,23 @@ export class ActionAnnotationCoordinator {
     readonly logger: Logger;
 
     currAnnotationId: string | undefined;
+    //when adding support for more actions, don't forget to update input validation in handleMessageFromSidePanel()
     currAnnotationAction: Action.CLICK | Action.PRESS_ENTER | undefined;
     currAnnotationStateChangeSeverity: ActionStateChangeSeverity | undefined;
     currAnnotationActionDesc: string | undefined;
 
+    currActionUrl: string | undefined;
+
+    currActionTargetElement: SerializableElementData | undefined;
+    currActionViewportInfo: ViewportDetails | undefined;
+    currActionMouseCoords: { x: number, y: number } | undefined;
+
     currActionContextScreenshotBase64: string | undefined;
 
+    currActionTargetedScreenshotBase64: string | undefined;
+
+    currActionInteractiveElements: SerializableElementData[] | undefined;
+    currActionHtmlDump: string | undefined;
 
     constructor(logger?: Logger, serviceWorkerHelper?: ServiceWorkerHelper, chromeWrapper?: ChromeWrapper) {
         this.swHelper = serviceWorkerHelper ?? new ServiceWorkerHelper();
@@ -97,7 +104,7 @@ export class ActionAnnotationCoordinator {
             }
             if (this.portToSidePanel) {
                 const errMsg = `side panel connected while a side panel port was already open`;
-                this.logger.warn(`${errMsg}; disconnecting old port and resetting coordinator before accepting connection`);
+                this.logger.error(`${errMsg}; disconnecting old port and resetting coordinator before accepting connection`);
                 this.portToSidePanel.disconnect();
                 this.terminateAnnotationCapture(errMsg);
             }
@@ -124,28 +131,178 @@ export class ActionAnnotationCoordinator {
 
     handleMessageFromSidePanel = async (message: any, port: Port): Promise<void> => {
         if (message.type === PanelToAnnotationCoordinatorPortMsgType.ANNOTATION_DETAILS) {
-            await this.mutex.runExclusive(() => {
+            await this.mutex.runExclusive(async () => {
                 if (this.state !== AnnotationCoordinatorState.WAITING_FOR_ANNOTATION_DETAILS) {
                     const errMsg = `received annotation details message while in state ${this.state}`;
-                    this.logger.warn(errMsg);
+                    this.logger.error(errMsg);
                     this.terminateAnnotationCapture(errMsg);
                     return;
                 }
-                this.currAnnotationAction = message.actionType;//todo validate
-                this.currAnnotationStateChangeSeverity = message.actionStateChangeSeverity;//todo validate
-                this.currAnnotationActionDesc = message.explanation;
-                //todo next step!
 
-                //temp, todo move next 2 lines to appropriate new place once more complex flow is implemented
-                this.exportActionAnnotation().then(() =>
-                    this.terminateAnnotationCapture("action annotation successfully exported"));
+                const validationErrMsg = this.validateAndStoreAnnotationDetails(message);
+                if (validationErrMsg) {
+                    this.logger.error(validationErrMsg);
+                    this.terminateAnnotationCapture(validationErrMsg);
+                    return;
+                }
 
-
-                //todo change state to appropriate value for next step
+                const preInjectStateUpdates = (tabId: number, url?: string): string | undefined => {
+                    this.currActionUrl = url;
+                    this.state = AnnotationCoordinatorState.WAITING_FOR_CONTENT_SCRIPT_INIT;
+                    return undefined;//tells the injector that there's no error that would necessitate abort of inject
+                }
+                const injectionErrMsg = await this.swHelper.injectContentScript("annotation content script", './src/page_data_collection.js', preInjectStateUpdates);
+                if (injectionErrMsg) {
+                    this.logger.warn(`error injecting content script for annotation capture: ${injectionErrMsg}`);
+                    this.terminateAnnotationCapture(injectionErrMsg);
+                    return;
+                }
             });
         } else {
-            this.logger.warn(`unrecognized message type from side panel: ${message.type} on port ${port.name}`);
+            this.logger.warn(`unrecognized message type from side panel: ${message.type} on port ${port.name}: ${JSON.stringify(message).slice(0, 100)}`);
         }
+    }
+
+    validateAndStoreAnnotationDetails = (message: any): string | undefined => {
+        const actionTypeVal = message.actionType;
+        if (actionTypeVal !== Action.CLICK && actionTypeVal !== Action.PRESS_ENTER) {
+            return `invalid action type value ${renderUnknownValue(actionTypeVal)} in annotation details message from side panel`;
+        } else { this.currAnnotationAction = actionTypeVal; }
+
+        const actionStateChangeSeverityVal = message.actionStateChangeSeverity;
+        if (!Object.values(ActionStateChangeSeverity).includes(actionStateChangeSeverityVal)) {
+            return`invalid action state change severity value ${renderUnknownValue(actionStateChangeSeverityVal)} in annotation details message from side panel`;
+        } else { this.currAnnotationStateChangeSeverity = actionStateChangeSeverityVal; }
+
+        const actionDescriptionVal = message.explanation;
+        if (typeof actionDescriptionVal !== "string") {
+            return `invalid action description value ${renderUnknownValue(actionDescriptionVal)} in annotation details message from side panel`;
+        } else { this.currAnnotationActionDesc = actionDescriptionVal; }
+
+        return undefined;
+    }
+
+    addPageConnection = async (port: Port): Promise<void> => {
+        await this.mutex.runExclusive(() => {
+            if (this.state !== AnnotationCoordinatorState.WAITING_FOR_CONTENT_SCRIPT_INIT) {
+                const termReason = `received connection from content script while not waiting for content script initialization, but rather in state ${AnnotationCoordinatorState[this.state]}`;
+                this.logger.error(termReason);
+                this.terminateAnnotationCapture(termReason);
+                return;
+            }
+            this.logger.trace("content script connected to annotation coordinator in service worker");
+            port.onMessage.addListener(this.handlePageMsgToAnnotationCoordinator);
+            port.onDisconnect.addListener(this.handlePageDisconnectFromAnnotationCoordinator);
+            this.portToContentScript = port;
+        });
+    }
+
+    handlePageMsgToAnnotationCoordinator = async (message: any, pagePort: Port): Promise<void> => {
+        if (message.type === Page2AnnotationCoordinatorPortMsgType.READY) {
+            this.logger.info("content script sent READY message to annotation coordinator in service worker");
+            await this.mutex.runExclusive(() => this.respondToContentScriptInitialized(pagePort));
+        } else if (message.type === Page2AnnotationCoordinatorPortMsgType.PAGE_INFO) {
+            await this.mutex.runExclusive(() => this.processActionContextAndDetails(message));
+        } else if (message.type === Page2AnnotationCoordinatorPortMsgType.TERMINAL) {
+            await this.mutex.runExclusive(() => this.terminateAnnotationCapture(`content script encountered fatal error: ${message.error}`));
+        } else {
+            this.logger.warn(`unknown message from content script:${renderUnknownValue(message).slice(0, 100)}`);
+        }
+    }
+
+    private respondToContentScriptInitialized(pagePort: Port) {
+        if (this.state !== AnnotationCoordinatorState.WAITING_FOR_CONTENT_SCRIPT_INIT) {
+            const errMsg = `content script sent READY message while annotation coordinator is in state ${AnnotationCoordinatorState[this.state]}`;
+            this.logger.error(errMsg);
+            this.terminateAnnotationCapture(errMsg);
+            return;
+        }
+        this.state = AnnotationCoordinatorState.WAITING_FOR_PAGE_INFO;
+        pagePort.postMessage({type: AnnotationCoordinator2PagePortMsgType.REQ_ACTION_DETAILS_AND_CONTEXT});
+    }
+
+    private async processActionContextAndDetails(message: any) {
+        let preconditionErrMsg: string | undefined;
+        if (this.state !== AnnotationCoordinatorState.WAITING_FOR_PAGE_INFO) {
+            preconditionErrMsg = `content script sent PAGE_INFO message while coordinator was in state ${AnnotationCoordinatorState[this.state]}`;
+        }
+        if (!this.portToSidePanel) {
+            preconditionErrMsg = `content script sent PAGE_INFO message when annotation coordinator didn't have a side panel port`;
+        }
+        if (preconditionErrMsg) {
+            this.logger.error(preconditionErrMsg);
+            this.terminateAnnotationCapture(preconditionErrMsg);
+            return;
+        }
+
+        if (message.userMessage) {
+            this.logger.info(`content script sent user message: ${message.userMessage}`);
+            this.portToSidePanel!.postMessage({//null check performed at top of function
+                type: AnnotationCoordinator2PanelPortMsgType.NOTIFICATION, msg: message.userMessage,
+                details: message.userMessageDetails
+            });
+        }
+
+        const validationErrMsg = this.validateAndStoreActionContextAndDetails(message);
+        if (validationErrMsg) {
+            this.logger.error(validationErrMsg);
+            this.terminateAnnotationCapture(validationErrMsg);
+            return;
+        }
+
+        if (this.currActionTargetElement) {
+            //data collector in content script highlighted the target element before sending info back
+            const screenshotCapture = await this.swHelper.captureScreenshot("annotation_action_targeted");
+            if (screenshotCapture.error) {
+                this.logger.warn(`error capturing screenshot of target element for action annotation: ${screenshotCapture.error}`);
+                this.terminateAnnotationCapture(screenshotCapture.error);
+                return;
+            }
+            this.currActionTargetedScreenshotBase64 = screenshotCapture.screenshotBase64;
+        }
+
+        await this.exportActionAnnotation();
+        this.terminateAnnotationCapture("action annotation successfully exported");
+    }
+
+    validateAndStoreActionContextAndDetails = (message: any): string|undefined => {
+        const targetElemDataVal = message.targetElementData;
+        if (typeof targetElemDataVal !== "object" ||
+            Object.keys(targetElemDataVal) !== Object.keys(exampleSerializableElemData)) {
+            return `invalid target element data ${renderUnknownValue(targetElemDataVal)} in PAGE_INFO message from content script`;
+        } else { this.currActionTargetElement = targetElemDataVal; }
+
+        const interactiveElementsVal: unknown = message.interactiveElements;
+        if (!Array.isArray(interactiveElementsVal) || interactiveElementsVal.some((entry) =>
+            typeof entry !== "object" || Object.keys(entry) !== Object.keys(exampleSerializableElemData))) {
+            return `invalid interactive elements data ${renderUnknownValue(interactiveElementsVal)} in PAGE_INFO message from content script`;
+        } else { this.currActionInteractiveElements = interactiveElementsVal; }
+
+        const viewportDtlsVal = message.viewportInfo
+        if (typeof viewportDtlsVal !== "object" || Object.keys(viewportDtlsVal) !== Object.keys(exampleViewportDetails)) {
+            return `invalid viewport details ${renderUnknownValue(viewportDtlsVal)} in PAGE_INFO message from content script`;
+        } else { this.currActionViewportInfo = viewportDtlsVal; }
+
+        const mouseXVal: unknown = message.mouseX;
+        const mouseYVal: unknown = message.mouseY;
+        if (typeof mouseXVal !== "number" || typeof mouseYVal !== "number") {
+            return `invalid mouse coordinates ${renderUnknownValue(mouseXVal)}, ${renderUnknownValue(mouseYVal)} in PAGE_INFO message from content script`;
+        } else { this.currActionMouseCoords = {x: mouseXVal, y: mouseYVal}; }
+
+        const htmlDumpVal: unknown = message.htmlDump;
+        if (typeof htmlDumpVal !== "string") {
+            return `invalid HTML dump value ${renderUnknownValue(htmlDumpVal)} in PAGE_INFO message from content script`;
+        } else { this.currActionHtmlDump = htmlDumpVal; }
+
+        return undefined;//i.e. no validation errors, all data stored successfully
+    }
+
+    handlePageDisconnectFromAnnotationCoordinator = async (port: Port): Promise<void> => {
+        await this.mutex.runExclusive(() => {
+            this.portToContentScript = undefined;
+            this.logger.info(`content script port ${port.name} disconnected from annotation coordinator in service worker`);
+            this.terminateAnnotationCapture(`content script ${port.name} disconnected`);
+        });
     }
 
     exportActionAnnotation = async (): Promise<void> => {
@@ -157,15 +314,37 @@ export class ActionAnnotationCoordinator {
             annotationId: this.currAnnotationId,
             actionType: this.currAnnotationAction,
             actionStateChangeSeverity: this.currAnnotationStateChangeSeverity,
-            description: this.currAnnotationActionDesc
+            description: this.currAnnotationActionDesc,
+            url: this.currActionUrl,
+            targetElementData: this.currActionTargetElement,
+            mousePosition: this.currActionMouseCoords,
+            viewportInfo: this.currActionViewportInfo
         }, replaceBlankWithNull, 4);
         zip.file("annotation_details.json", annotationDetailsStr);
 
-        if (!this.currActionContextScreenshotBase64) {
-            this.logger.error(`no screenshot found for action annotation ${this.currAnnotationId}`);
+        if (this.currActionContextScreenshotBase64) {
+            zip.file("action_context_screenshot.png", base64ToByteArray(this.currActionContextScreenshotBase64))
         } else {
-            const contextScreenshotBytes = base64ToByteArray(this.currActionContextScreenshotBase64);
-            zip.file("action_context_screenshot.png", contextScreenshotBytes)
+            this.logger.error(`no context screenshot found for action annotation ${this.currAnnotationId}`);
+        }
+
+        if (this.currActionTargetedScreenshotBase64) {
+            zip.file("action_targeted_screenshot.png", base64ToByteArray(this.currActionTargetedScreenshotBase64))
+        } else {
+            this.logger.warn(`no targeted screenshot found for action annotation ${this.currAnnotationId}`);
+        }
+
+
+        if (this.currActionInteractiveElements != undefined) {
+            zip.file("interactive_elements.json", JSON.stringify(this.currActionInteractiveElements, null, 4));
+        } else {
+            this.logger.error(`no interactive elements found for action annotation ${this.currAnnotationId}`);
+        }
+
+        if (this.currActionHtmlDump) {
+            zip.file("page_html_dump.html", this.currActionHtmlDump);
+        } else {
+            this.logger.error(`no HTML dump found for action annotation ${this.currAnnotationId}`);
         }
 
         if (!this.portToSidePanel) {
@@ -183,11 +362,15 @@ export class ActionAnnotationCoordinator {
     initiateActionAnnotationCapture = async (): Promise<void> => {
         await this.mutex.runExclusive(async () => {
             if (this.isDisabledUntilEulaAcceptance) {
-                this.logger.warn(`asked to initiate annotation capture while EULA acceptance is still pending; ignoring`);
+                this.logger.info(`asked to initiate annotation capture while EULA acceptance is still pending; ignoring`);
                 return;
             }
             if (!this.cachedAnnotatorMode) {
-                this.logger.warn(`asked to initiate annotation capture while annotator mode is off; ignoring`);
+                this.logger.info(`asked to initiate annotation capture while annotator mode is off; ignoring`);
+                return;
+            }
+            if (this.state !== AnnotationCoordinatorState.IDLE) {
+                this.logger.info(`asked to initiate annotation capture while in state ${this.state}; ignoring`);
                 return;
             }
 
@@ -197,31 +380,20 @@ export class ActionAnnotationCoordinator {
                 this.terminateAnnotationCapture(errMsg);
                 return;
             }
-            if (this.state !== AnnotationCoordinatorState.IDLE) {
-                this.logger.info(`asked to initiate annotation capture while in state ${this.state}; ignoring`);
-                return;
-            }
 
             this.currAnnotationId = uuidV4();
             const screenshotCapture = await this.swHelper.captureScreenshot("annotation_action_context");
             if (screenshotCapture.error) {
+                this.logger.warn(`error capturing context screenshot for action annotation: ${screenshotCapture.error}`);
                 this.terminateAnnotationCapture(screenshotCapture.error);
                 return;
             }
             this.currActionContextScreenshotBase64 = screenshotCapture.screenshotBase64;
 
             this.state = AnnotationCoordinatorState.WAITING_FOR_ANNOTATION_DETAILS;
-            this.portToSidePanel.postMessage({type: AnnotationCoordinator2PanelPortMsgType.ANNOTATION_DETAILS_REQ});
+            this.portToSidePanel.postMessage({type: AnnotationCoordinator2PanelPortMsgType.REQ_ANNOTATION_DETAILS});
         });
     }
-
-    //todo implement the part of the flow that includes capturing 1 screenshot
-
-    //todo implement the part of the flow that includes injecting content script and grabbing
-    // full dom snapshot, interactive elements, mouse cursor position, and other page state
-    // todo capture what is the hovered-element, if any: filter interactive elements for mouse pos being in their bounding box, then pick the one with highest z position (if multiple even here, break ties based on cursor closeness to center of bounding box)
-
-    //todo highlight the hovered element visually and capture another screenshot
 
     terminateAnnotationCapture = (reason: string): void => {
         this.logger.info(`terminating the capture of action annotation ${this.currAnnotationId} for reason: ${reason}`);
@@ -231,6 +403,13 @@ export class ActionAnnotationCoordinator {
         this.currAnnotationAction = undefined;
         this.currAnnotationStateChangeSeverity = undefined;
         this.currAnnotationActionDesc = undefined;
+        this.currActionUrl = undefined;
+        this.currActionTargetElement = undefined;
+        this.currActionViewportInfo = undefined;
+        this.currActionMouseCoords = undefined;
         this.currActionContextScreenshotBase64 = undefined;
+        this.currActionTargetedScreenshotBase64 = undefined;
+        this.currActionInteractiveElements = undefined;
+        this.currActionHtmlDump = undefined;
     }
 }

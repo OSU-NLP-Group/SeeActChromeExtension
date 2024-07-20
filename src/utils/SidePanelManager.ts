@@ -403,7 +403,7 @@ export class SidePanelManager {
         } else if (message.type === AgentController2PanelPortMsgType.NOTIFICATION) {
             this.setStatusWithDelayedClear(message.msg, 30, message.details);//give user plenty of time to read details
         } else {
-            this.logger.warn("unknown type of message from agent controller: " + JSON.stringify(message));
+            this.logger.warn(`unknown type of message from agent controller: ${JSON.stringify(message)}`);
         }
     }
 
@@ -670,7 +670,7 @@ export class SidePanelManager {
     handleAnnotationCoordinatorMsg = async (message: any, port: chrome.runtime.Port): Promise<void> => {
         this.logger.trace(`message received from annotation coordinator by side panel: ${JSON.stringify(message)
             .slice(0, 100)}...`);
-        if (message.type === AnnotationCoordinator2PanelPortMsgType.ANNOTATION_DETAILS_REQ) {
+        if (message.type === AnnotationCoordinator2PanelPortMsgType.REQ_ANNOTATION_DETAILS) {
             //just reads data from ui and doesn't modify state, no need for mutex
             port.postMessage({
                 type: PanelToAnnotationCoordinatorPortMsgType.ANNOTATION_DETAILS,
@@ -682,8 +682,10 @@ export class SidePanelManager {
             await this.mutex.runExclusive(() => {
                 this.reset()
             });
+        } else if (message.type === AnnotationCoordinator2PanelPortMsgType.NOTIFICATION) {
+            this.setStatusWithDelayedClear(message.msg, 10, message.details);
         } else {
-            this.logger.warn("unknown type of message from annotation coordinator: " + JSON.stringify(message));
+            this.logger.warn(`unknown type of message from annotation coordinator: ${JSON.stringify(message)}`);
         }
     }
 

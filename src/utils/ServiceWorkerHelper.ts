@@ -30,18 +30,15 @@ export class ServiceWorkerHelper {
             screenshotDataUrl = await this.chromeWrapper.fetchVisibleTabScreenshot();
         } catch (error: any) {
             const termReason = `error while trying to get screenshot of current tab; error: ${renderUnknownValue(error)}`;
-            this.logger.error(termReason);
             return { ...dummyResult, error: termReason };
         }
         this.logger.debug(`${screenshotType} screenshot data url (truncated): ${screenshotDataUrl.slice(0, 100)}...`);
         const startIndexForBase64Data = screenshotDataUrl.indexOf(';base64,') + 8;
         if (startIndexForBase64Data <= 7) {//if indexOf returns -1
             const termReason = "error while trying to extract base64-encoded data from screenshot data url: screenshot data url does not contain expected prefix";
-            this.logger.error(termReason);
             return { ...dummyResult, error: termReason };
         } else if (startIndexForBase64Data >= screenshotDataUrl.length) {
             const termReason = "error while trying to extract base64-encoded data from screenshot data url: screenshot data url does not contain any data after the prefix";
-            this.logger.error(termReason);
             return { ...dummyResult, error: termReason };
         }
         return { screenshotBase64: screenshotDataUrl.substring(startIndexForBase64Data), screenshotDataUrl: screenshotDataUrl };
@@ -94,6 +91,38 @@ export class ServiceWorkerHelper {
             tab.id = undefined;
         }
         return tab;
+    }
+
+    injectContentScript = async (
+        contentScriptDesc: string, contentScriptPath: string,
+        preInjectChecksAndStateUpdates: (tabId: number, url?: string, title?: string) => string | undefined,
+        newTab?: chrome.tabs.Tab): Promise<string|undefined> => {
+        let tabId: number | undefined = undefined;
+        let tab: chrome.tabs.Tab | undefined = newTab;
+        if (!tab) {
+            try {
+                tab = await this.getActiveTab();
+            } catch (error) {
+                return `error getting active tab id, cannot inject content script; error: ${renderUnknownValue(error)}`;
+            }
+        }
+        tabId = tab.id;
+        if (!tabId) {
+            return `Can't inject content script into chrome:// URLs for security reasons`;
+        } else {
+
+            this.logger.trace(`injecting ${contentScriptDesc} script into page; in tab ${tabId}`);
+
+            const errMsg = preInjectChecksAndStateUpdates(tabId, tab.url, tab.title);
+            if (errMsg) { return errMsg; }
+            try {
+                await this.chromeWrapper.runScript({files: [contentScriptPath], target: {tabId: tabId}});
+                this.logger.trace(`${contentScriptDesc} script injected into page`);
+            } catch (error) {
+                return `error injecting ${contentScriptDesc} script into page; error: ${renderUnknownValue(error)}`;
+            }
+        }
+        return undefined;
     }
 
     /**

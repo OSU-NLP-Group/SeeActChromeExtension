@@ -5,6 +5,7 @@ import {SerializableElementData} from "./BrowserHelper";
 
 export const expectedMsgForPortDisconnection = "Attempting to use a disconnected port object";
 export const pageToControllerPort = `page-actor-2-agent-controller`;
+export const pageToAnnotationCoordinatorPort = `page-data-collector-2-annotation-coordinator`;
 export const panelToControllerPort = "side-panel-2-agent-controller";
 export const panelToAnnotationCoordinatorPort = "side-panel-2-annotation-coordinator";
 export const expectedMsgForSendingRuntimeRequestFromDisconnectedContentScript = "Extension context invalidated.";
@@ -58,6 +59,9 @@ export interface ViewportDetails {
     pageScrollHeight: number;
 }
 
+export const exampleViewportDetails: ViewportDetails =
+    {scrollX: 0, scrollY: 0, width: 0, height: 0, pageScrollWidth: 0, pageScrollHeight: 0}
+
 /**
  * types of one-off messages that might be sent to the service worker, either from the content script or the popup
  */
@@ -102,9 +106,9 @@ export enum Panel2AgentControllerPortMsgType {
  * types of messages that the content script (mostly the page actor in the content script) might send to the agent
  * controller in the service worker (in the 'background') over their persistent connection
  */
-export enum Page2BackgroundPortMsgType {
-    READY = "contentScriptInitializedAndReady",
-    TERMINAL = "terminalPageSideError",
+export enum Page2AgentControllerPortMsgType {
+    READY = "pageActorContentScriptInitializedAndReady",
+    TERMINAL = "pageActorTerminalPageSideError",
     PAGE_STATE = "sendingPageState",
     ACTION_DONE = "actionPerformed"
 }
@@ -114,15 +118,26 @@ export enum PanelToAnnotationCoordinatorPortMsgType {
 }
 
 export enum AnnotationCoordinator2PanelPortMsgType {
-    ANNOTATION_DETAILS_REQ = "annotationDetailsRequest",
+    REQ_ANNOTATION_DETAILS = "annotationDetailsRequest",
     ANNOTATED_ACTION_EXPORT = "annotatedActionExport",
+    NOTIFICATION = "annotationNotification",
+}
+
+export enum Page2AnnotationCoordinatorPortMsgType {
+    READY = "dataCollectorContentScriptInitializedAndReady",
+    TERMINAL = "dataCollectorTerminalPageSideError",
+    PAGE_INFO = "sendingActionInfoAndContext",
+}
+
+export enum AnnotationCoordinator2PagePortMsgType {
+    REQ_ACTION_DETAILS_AND_CONTEXT = "requestActionDetailsAndContext",
 }
 
 /**
  * types of messages that the agent controller in the service worker (in the 'background') might send to the content
  * script over their persistent connection
  */
-export enum Background2PagePortMsgType {
+export enum AgentController2PagePortMsgType {
     REQ_PAGE_STATE = "requestPageState",
     REQ_ACTION = "requestAction",
     HIGHLIGHT_CANDIDATE_ELEM = "highlightCandidateElement",
@@ -221,4 +236,10 @@ export function base64ToByteArray(base64Data: string): Uint8Array {
     }
     return bytes;
 }
+
+//todo idea- a number of methods implicitly assume/rely-on the enclosing context's mutex being acquired before they're
+// called; this assumption could be made explicit and enforced by a helper method that took method name and mutex, then
+// logged an error and returned true if the mutex wasn't acquired, or returned false if it was;
+// then such sensitive methods would have a 1 line guard at the very start:
+// if (guardMethod("someMethodName", this.mutex)) { return; }
 
