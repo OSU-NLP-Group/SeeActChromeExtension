@@ -1,10 +1,10 @@
 import {Logger} from "loglevel";
-import {BrowserHelper, ElementData, makeElementDataSerializable} from "./BrowserHelper";
+import {BrowserHelper, makeElementDataSerializable} from "./BrowserHelper";
 import {createNamedLogger} from "./shared_logging_setup";
 import {
     Action,
     AgentController2PagePortMsgType,
-    buildGenericActionDesc,
+    buildGenericActionDesc, ElementData,
     expectedMsgForPortDisconnection,
     Page2AgentControllerPortMsgType,
     PageRequestType,

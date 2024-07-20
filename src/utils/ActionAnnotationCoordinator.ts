@@ -8,10 +8,10 @@ import {
     AnnotationCoordinator2PagePortMsgType,
     AnnotationCoordinator2PanelPortMsgType,
     base64ToByteArray,
-    defaultIsAnnotatorMode, exampleViewportDetails,
+    defaultIsAnnotatorMode, exampleSerializableElemData, exampleViewportDetails,
     Page2AnnotationCoordinatorPortMsgType,
     PanelToAnnotationCoordinatorPortMsgType,
-    renderUnknownValue,
+    renderUnknownValue, SerializableElementData,
     setupModeCache,
     storageKeyForAnnotatorMode,
     storageKeyForEulaAcceptance,
@@ -20,7 +20,6 @@ import {
 import {Mutex} from "async-mutex";
 import {ServiceWorkerHelper} from "./ServiceWorkerHelper";
 import JSZip from "jszip";
-import {exampleSerializableElemData, SerializableElementData} from "./BrowserHelper";
 import Port = chrome.runtime.Port;
 
 /**

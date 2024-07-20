@@ -1,5 +1,4 @@
 import {Logger} from "loglevel";
-import {SerializableElementData} from "./BrowserHelper";
 
 //todo consider breaking large parts of this off into 2 separate files, for inter-component communications and for options management in storage
 
@@ -164,6 +163,35 @@ export enum ActionStateChangeSeverity {
     HIGH = "HIGH"
 }
 
+
+export type ElementData = {
+    centerCoords: readonly [number, number],
+    description: string,
+    tagHead: string,
+    /**
+     * tL: top-left corner and bR: bottom-right corner
+     */
+    boundingBox: {
+        tLx: number;
+        tLy: number;
+        bRx: number;
+        bRy: number
+    },
+    /**
+     * index/identifier relative to the other interactable elements on the page
+     */
+    interactivesIndex?: number//populated after the full interactive elements list is created
+    xpath: string
+    width: number,
+    height: number,
+    tagName: string,
+    element: HTMLElement
+}
+export type SerializableElementData = Omit<ElementData, 'element'>;
+export const exampleSerializableElemData: SerializableElementData = {
+    centerCoords: [0, 0], description: "example element", tagHead: "div", boundingBox: {tLx: 0, tLy: 0, bRx: 0, bRy: 0},
+    width: 0, height: 0, tagName: "div", xpath: "example xpath"
+}
 
 /**
  * @description Builds a description of an action (which may have been performed on an element)

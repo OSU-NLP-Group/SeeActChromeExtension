@@ -3,37 +3,7 @@ import {createNamedLogger} from "./shared_logging_setup";
 import {DomWrapper} from "./DomWrapper";
 import log from "loglevel";
 import * as fuzz from "fuzzball";
-import {elementHighlightRenderDelay, renderUnknownValue, sleep} from "./misc";
-
-export type ElementData = {
-    centerCoords: readonly [number, number],
-    description: string,
-    tagHead: string,
-    /**
-     * tL: top-left corner and bR: bottom-right corner
-     */
-    boundingBox: {
-        tLx: number;
-        tLy: number;
-        bRx: number;
-        bRy: number
-    },
-    /**
-     * index/identifier relative to the other interactable elements on the page
-     */
-    interactivesIndex?: number//populated after the full interactive elements list is created
-    xpath: string
-    width: number,
-    height: number,
-    tagName: string,
-    element: HTMLElement
-}
-
-export type SerializableElementData = Omit<ElementData, 'element'>;
-export const exampleSerializableElemData: SerializableElementData = {
-    centerCoords: [0, 0], description: "example element", tagHead: "div", boundingBox: {tLx: 0, tLy: 0, bRx: 0, bRy: 0},
-    width: 0, height: 0, tagName: "div", xpath: "example xpath"
-}
+import {ElementData, elementHighlightRenderDelay, renderUnknownValue, SerializableElementData, sleep} from "./misc";
 
 export function makeElementDataSerializable(elementData: ElementData): SerializableElementData {
     const serializableElementData: SerializableElementData = {...elementData};

@@ -1,5 +1,4 @@
 import {Mutex} from "async-mutex";
-import {SerializableElementData} from "./BrowserHelper";
 import {v4 as uuidV4} from 'uuid';
 import {Logger} from "loglevel";
 import {
@@ -39,7 +38,7 @@ import {
     storageKeyForMaxOps,
     storageKeyForMonitorMode,
     validateIntegerLimitUpdate,
-    ViewportDetails
+    ViewportDetails, SerializableElementData
 } from "./misc";
 import {formatChoices, generatePrompt, LmmPrompts, postProcessActionLlm} from "./format_prompts";
 import {getIndexFromOptionName} from "./format_prompt_utils";

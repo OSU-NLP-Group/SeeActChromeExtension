@@ -1,7 +1,7 @@
 import log from "loglevel";
 import {origLoggerFactory} from "../../src/utils/shared_logging_setup";
 import {DomWrapper} from "../../src/utils/DomWrapper";
-import {BrowserHelper, ElementData, SerializableElementData} from "../../src/utils/BrowserHelper";
+import {BrowserHelper} from "../../src/utils/BrowserHelper";
 import {DOMWindow, JSDOM} from "jsdom";
 import {ActionOutcome, PageActor} from "../../src/utils/PageActor";
 import {createMockPort, fixHtmlElementContentEditable} from "../test_utils";
@@ -9,10 +9,10 @@ import {ChromeWrapper} from "../../src/utils/ChromeWrapper";
 import {
     Action,
     AgentController2PagePortMsgType,
-    buildGenericActionDesc,
+    buildGenericActionDesc, ElementData,
     expectedMsgForPortDisconnection,
     Page2AgentControllerPortMsgType,
-    PageRequestType
+    PageRequestType, SerializableElementData
 } from "../../src/utils/misc";
 
 

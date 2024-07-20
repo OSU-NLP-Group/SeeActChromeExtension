@@ -1,9 +1,14 @@
-import {BrowserHelper, ElementData, makeElementDataSerializable, SerializableElementData} from "./BrowserHelper";
+import {BrowserHelper, makeElementDataSerializable} from "./BrowserHelper";
 import {DomWrapper} from "./DomWrapper";
 import {ChromeWrapper} from "./ChromeWrapper";
 import {Logger} from "loglevel";
 import {createNamedLogger} from "./shared_logging_setup";
-import {AnnotationCoordinator2PagePortMsgType, Page2AnnotationCoordinatorPortMsgType, renderUnknownValue} from "./misc";
+import {
+    AnnotationCoordinator2PagePortMsgType, ElementData,
+    Page2AnnotationCoordinatorPortMsgType,
+    renderUnknownValue,
+    SerializableElementData
+} from "./misc";
 
 
 export class PageDataCollector {
