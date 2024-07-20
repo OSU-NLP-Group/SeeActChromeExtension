@@ -8,7 +8,7 @@ import {
     AnnotationCoordinator2PagePortMsgType,
     AnnotationCoordinator2PanelPortMsgType,
     base64ToByteArray,
-    defaultIsAnnotatorMode, exampleSerializableElemData, exampleViewportDetails,
+    defaultIsAnnotatorMode, exampleSerializableElemData, exampleViewportDetails, notSameKeys,
     Page2AnnotationCoordinatorPortMsgType,
     PanelToAnnotationCoordinatorPortMsgType,
     renderUnknownValue, SerializableElementData,
@@ -266,19 +266,20 @@ export class ActionAnnotationCoordinator {
 
     validateAndStoreActionContextAndDetails = (message: any): string|undefined => {
         const targetElemDataVal = message.targetElementData;
-        if (typeof targetElemDataVal !== "object" ||
-            Object.keys(targetElemDataVal) !== Object.keys(exampleSerializableElemData)) {
+        if (targetElemDataVal === undefined) {
+            this.logger.info("no target element data in PAGE_INFO message from content script");
+        } else if (typeof targetElemDataVal !== "object" || notSameKeys(targetElemDataVal, exampleSerializableElemData)) {
             return `invalid target element data ${renderUnknownValue(targetElemDataVal)} in PAGE_INFO message from content script`;
         } else { this.currActionTargetElement = targetElemDataVal; }
 
         const interactiveElementsVal: unknown = message.interactiveElements;
         if (!Array.isArray(interactiveElementsVal) || interactiveElementsVal.some((entry) =>
-            typeof entry !== "object" || Object.keys(entry) !== Object.keys(exampleSerializableElemData))) {
+            typeof entry !== "object" || notSameKeys(entry, exampleSerializableElemData))) {
             return `invalid interactive elements data ${renderUnknownValue(interactiveElementsVal)} in PAGE_INFO message from content script`;
         } else { this.currActionInteractiveElements = interactiveElementsVal; }
 
         const viewportDtlsVal = message.viewportInfo
-        if (typeof viewportDtlsVal !== "object" || Object.keys(viewportDtlsVal) !== Object.keys(exampleViewportDetails)) {
+        if (typeof viewportDtlsVal !== "object" || notSameKeys(viewportDtlsVal, exampleViewportDetails)) {
             return `invalid viewport details ${renderUnknownValue(viewportDtlsVal)} in PAGE_INFO message from content script`;
         } else { this.currActionViewportInfo = viewportDtlsVal; }
 

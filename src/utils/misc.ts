@@ -190,7 +190,7 @@ export type ElementData = {
 export type SerializableElementData = Omit<ElementData, 'element'>;
 export const exampleSerializableElemData: SerializableElementData = {
     centerCoords: [0, 0], description: "example element", tagHead: "div", boundingBox: {tLx: 0, tLy: 0, bRx: 0, bRy: 0},
-    width: 0, height: 0, tagName: "div", xpath: "example xpath"
+    width: 0, height: 0, tagName: "div", xpath: "example xpath", interactivesIndex: -1
 }
 
 /**
@@ -263,6 +263,15 @@ export function base64ToByteArray(base64Data: string): Uint8Array {
         bytes[i] = binaryString.charCodeAt(i);
     }
     return bytes;
+}
+
+export function notSameKeys<T extends object, U extends object>(obj1: T, obj2: U): boolean {
+    const keys1 = Object.keys(obj1);
+    const keys2 = Object.keys(obj2);
+    if (keys1.length !== keys2.length) {
+        return true;
+    }
+    return !keys1.every(key => keys2.includes(key)) || !keys2.every(key => keys1.includes(key));
 }
 
 //todo idea- a number of methods implicitly assume/rely-on the enclosing context's mutex being acquired before they're
