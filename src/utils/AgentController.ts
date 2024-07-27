@@ -716,6 +716,10 @@ export class AgentController {
             this.terminateTask("Task completed: " + explanation);
             return LmmOutputReaction.ABORT_TASK;
         } else if (action === Action.NONE) {
+            //todo add logic to check explanation string for ["still", "loading", "finished"] and if it contains 2+ of
+            // those then return a new output reaction that causes the controller to wait 5 seconds, then send fresh
+            // query to content script and go back to WAITING_FOR_PAGE_STATE
+
             //after next major model release, if this comes up, then maybe, if the agent repeatedly says that the page
             // hasn't fully loaded, we should consider the possibility that the "wait until page fully loaded" logic in
             // content script didn't work properly and we should fetch fresh elements

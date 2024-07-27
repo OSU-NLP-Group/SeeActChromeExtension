@@ -428,6 +428,7 @@ export class BrowserHelper {
         resultArrays.push(Array.from(currScopeResults));
 
         //todo consider implementing custom array merging logic instead of HTML[][].flat() if this method is proving to be a noticeable performance bottleneck even sometimes
+        // e.g. look at this source: https://dev.to/uilicious/javascript-array-push-is-945x-faster-than-array-concat-1oki
         return resultArrays.flat();
     }
 

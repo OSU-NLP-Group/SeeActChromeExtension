@@ -114,6 +114,7 @@ export enum Page2AgentControllerPortMsgType {
 
 export enum PanelToAnnotationCoordinatorPortMsgType {
     ANNOTATION_DETAILS = "annotationDetails",
+    START_CAPTURER = "startCapturer",
 }
 
 export enum AnnotationCoordinator2PanelPortMsgType {
