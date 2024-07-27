@@ -47,6 +47,9 @@ export class ActionAnnotationCoordinator {
     readonly chromeWrapper: ChromeWrapper
     readonly logger: Logger;
 
+    idOfTabWithCapturer: number | undefined;
+
+
     currAnnotationId: string | undefined;
     //when adding support for more actions, don't forget to update input validation in handleMessageFromSidePanel()
     currAnnotationAction: Action.CLICK | Action.PRESS_ENTER | undefined;
@@ -99,13 +102,13 @@ export class ActionAnnotationCoordinator {
             if (this.state != AnnotationCoordinatorState.IDLE) {
                 const errMsg = `side panel connected while in state ${this.state}`;
                 this.logger.warn(`${errMsg}; resetting coordinator before accepting connection`);
-                this.terminateAnnotationCapture(errMsg);
+                this.resetAnnotationCaptureCoordinator(errMsg);
             }
             if (this.portToSidePanel) {
                 const errMsg = `side panel connected while a side panel port was already open`;
                 this.logger.error(`${errMsg}; disconnecting old port and resetting coordinator before accepting connection`);
                 this.portToSidePanel.disconnect();
-                this.terminateAnnotationCapture(errMsg);
+                this.resetAnnotationCaptureCoordinator(errMsg);
             }
 
             this.portToSidePanel = port;
@@ -122,43 +125,60 @@ export class ActionAnnotationCoordinator {
             if (this.state !== AnnotationCoordinatorState.IDLE) {
                 const errMsg = `panel disconnected while in state ${this.state}`;
                 this.logger.warn(errMsg);
-                this.terminateAnnotationCapture(errMsg);
+                this.resetAnnotationCaptureCoordinator(errMsg);
             }
         });
 
     }
 
-    handleMessageFromSidePanel = async (message: any, port: Port): Promise<void> => {
-        if (message.type === PanelToAnnotationCoordinatorPortMsgType.ANNOTATION_DETAILS) {
+    handleMessageFromSidePanel = async (message: any, sidePanelPort: Port): Promise<void> => {
+        if (message.type === PanelToAnnotationCoordinatorPortMsgType.START_CAPTURER) {
+            const currTabInfo = await this.swHelper.getActiveTab();
+            if (currTabInfo.id !== undefined && currTabInfo.id === this.idOfTabWithCapturer) {
+                this.resetAnnotationCaptureCoordinator(`capturer already started in current tab`, `current tab id: ${currTabInfo.id}`);
+                return;
+            }
+            const preInjectStateUpdates = (tabId: number, url?: string): string | undefined => {
+                this.idOfTabWithCapturer = tabId;
+                this.currActionUrl = url;
+                this.state = AnnotationCoordinatorState.WAITING_FOR_CONTENT_SCRIPT_INIT;
+                return undefined;//tells the injector that there's no error that would necessitate abort of inject
+            }
+            const injectionErrMsg = await this.swHelper.injectContentScript("annotation content script", './src/page_data_collection.js', preInjectStateUpdates);
+            if (injectionErrMsg) {
+                this.logger.warn(`error injecting content script for annotation capture: ${injectionErrMsg}`);
+                this.idOfTabWithCapturer = undefined;
+                this.resetAnnotationCaptureCoordinator(`ERROR while injecting content script for annotation capture`, injectionErrMsg)
+                return;
+            }
+        } else if (message.type === PanelToAnnotationCoordinatorPortMsgType.ANNOTATION_DETAILS) {
             await this.mutex.runExclusive(async () => {
                 if (this.state !== AnnotationCoordinatorState.WAITING_FOR_ANNOTATION_DETAILS) {
                     const errMsg = `received annotation details message while in state ${this.state}`;
                     this.logger.error(errMsg);
-                    this.terminateAnnotationCapture(errMsg);
+                    this.resetAnnotationCaptureCoordinator(errMsg);
                     return;
                 }
 
                 const validationErrMsg = this.validateAndStoreAnnotationDetails(message);
                 if (validationErrMsg) {
                     this.logger.error(validationErrMsg);
-                    this.terminateAnnotationCapture(validationErrMsg);
+                    this.resetAnnotationCaptureCoordinator(validationErrMsg);
                     return;
                 }
 
-                const preInjectStateUpdates = (tabId: number, url?: string): string | undefined => {
-                    this.currActionUrl = url;
-                    this.state = AnnotationCoordinatorState.WAITING_FOR_CONTENT_SCRIPT_INIT;
-                    return undefined;//tells the injector that there's no error that would necessitate abort of inject
-                }
-                const injectionErrMsg = await this.swHelper.injectContentScript("annotation content script", './src/page_data_collection.js', preInjectStateUpdates);
-                if (injectionErrMsg) {
-                    this.logger.warn(`error injecting content script for annotation capture: ${injectionErrMsg}`);
-                    this.terminateAnnotationCapture(injectionErrMsg);
+                if (!this.portToContentScript) {
+                    const errMsg = `received annotation details message without a content script port`;
+                    this.logger.error(errMsg);
+                    this.resetAnnotationCaptureCoordinator(errMsg);
                     return;
                 }
+
+                this.state = AnnotationCoordinatorState.WAITING_FOR_PAGE_INFO;
+                this.portToContentScript.postMessage({type: AnnotationCoordinator2PagePortMsgType.REQ_ACTION_DETAILS_AND_CONTEXT});
             });
         } else {
-            this.logger.warn(`unrecognized message type from side panel: ${message.type} on port ${port.name}: ${JSON.stringify(message).slice(0, 100)}`);
+            this.logger.warn(`unrecognized message type from side panel: ${message.type} on port ${sidePanelPort.name}: ${JSON.stringify(message).slice(0, 100)}`);
         }
     }
 
@@ -186,7 +206,7 @@ export class ActionAnnotationCoordinator {
             if (this.state !== AnnotationCoordinatorState.WAITING_FOR_CONTENT_SCRIPT_INIT) {
                 const termReason = `received connection from content script while not waiting for content script initialization, but rather in state ${AnnotationCoordinatorState[this.state]}`;
                 this.logger.error(termReason);
-                this.terminateAnnotationCapture(termReason);
+                this.resetAnnotationCaptureCoordinator(termReason);
                 return;
             }
             this.logger.trace("content script connected to annotation coordinator in service worker");
@@ -203,7 +223,7 @@ export class ActionAnnotationCoordinator {
         } else if (message.type === Page2AnnotationCoordinatorPortMsgType.PAGE_INFO) {
             await this.mutex.runExclusive(() => this.processActionContextAndDetails(message));
         } else if (message.type === Page2AnnotationCoordinatorPortMsgType.TERMINAL) {
-            await this.mutex.runExclusive(() => this.terminateAnnotationCapture(`content script encountered fatal error: ${message.error}`));
+            await this.mutex.runExclusive(() => this.resetAnnotationCaptureCoordinator(`content script encountered fatal error: ${message.error}`));
         } else {
             this.logger.warn(`unknown message from content script:${renderUnknownValue(message).slice(0, 100)}`);
         }
@@ -213,11 +233,11 @@ export class ActionAnnotationCoordinator {
         if (this.state !== AnnotationCoordinatorState.WAITING_FOR_CONTENT_SCRIPT_INIT) {
             const errMsg = `content script sent READY message while annotation coordinator is in state ${AnnotationCoordinatorState[this.state]}`;
             this.logger.error(errMsg);
-            this.terminateAnnotationCapture(errMsg);
+            this.resetAnnotationCaptureCoordinator(errMsg);
             return;
         }
-        this.state = AnnotationCoordinatorState.WAITING_FOR_PAGE_INFO;
-        pagePort.postMessage({type: AnnotationCoordinator2PagePortMsgType.REQ_ACTION_DETAILS_AND_CONTEXT});
+        this.state = AnnotationCoordinatorState.IDLE;
+        this.logger.info(`content script connection ${pagePort.name} is initialized and ready for action annotation`);
     }
 
     private async processActionContextAndDetails(message: any) {
@@ -230,7 +250,7 @@ export class ActionAnnotationCoordinator {
         }
         if (preconditionErrMsg) {
             this.logger.error(preconditionErrMsg);
-            this.terminateAnnotationCapture(preconditionErrMsg);
+            this.resetAnnotationCaptureCoordinator(preconditionErrMsg);
             return;
         }
 
@@ -245,7 +265,7 @@ export class ActionAnnotationCoordinator {
         const validationErrMsg = this.validateAndStoreActionContextAndDetails(message);
         if (validationErrMsg) {
             this.logger.error(validationErrMsg);
-            this.terminateAnnotationCapture(validationErrMsg);
+            this.resetAnnotationCaptureCoordinator(validationErrMsg);
             return;
         }
 
@@ -254,14 +274,14 @@ export class ActionAnnotationCoordinator {
             const screenshotCapture = await this.swHelper.captureScreenshot("annotation_action_targeted");
             if (screenshotCapture.error) {
                 this.logger.warn(`error capturing screenshot of target element for action annotation: ${screenshotCapture.error}`);
-                this.terminateAnnotationCapture(screenshotCapture.error);
+                this.resetAnnotationCaptureCoordinator(screenshotCapture.error);
                 return;
             }
             this.currActionTargetedScreenshotBase64 = screenshotCapture.screenshotBase64;
         }
 
         await this.exportActionAnnotation();
-        this.terminateAnnotationCapture("action annotation successfully exported");
+        this.resetAnnotationCaptureCoordinator("action annotation successfully exported");
     }
 
     validateAndStoreActionContextAndDetails = (message: any): string|undefined => {
@@ -300,8 +320,9 @@ export class ActionAnnotationCoordinator {
     handlePageDisconnectFromAnnotationCoordinator = async (port: Port): Promise<void> => {
         await this.mutex.runExclusive(() => {
             this.portToContentScript = undefined;
+            this.idOfTabWithCapturer = undefined;
             this.logger.info(`content script port ${port.name} disconnected from annotation coordinator in service worker`);
-            this.terminateAnnotationCapture(`content script ${port.name} disconnected`);
+            this.resetAnnotationCaptureCoordinator(`content script ${port.name} disconnected`);
         });
     }
 
@@ -350,7 +371,7 @@ export class ActionAnnotationCoordinator {
         if (!this.portToSidePanel) {
             const errMsg = `no side panel port to send action annotation zip to for download`;
             this.logger.error(errMsg);
-            this.terminateAnnotationCapture(errMsg);
+            this.resetAnnotationCaptureCoordinator(errMsg);
             return;
         }
 
@@ -377,7 +398,22 @@ export class ActionAnnotationCoordinator {
             if (!this.portToSidePanel) {
                 const errMsg = `asked to initiate annotation capture without a side panel port`;
                 this.logger.warn(errMsg);
-                this.terminateAnnotationCapture(errMsg);
+                this.resetAnnotationCaptureCoordinator(errMsg);
+                return;
+            }
+
+            if (!this.portToContentScript) {
+                const errMsg = `asked to initiate annotation capture when capturer hasn't been started up in the current tab yet`;
+                this.logger.warn(errMsg);
+                this.resetAnnotationCaptureCoordinator(errMsg);
+                return;
+            }
+
+            const currTabInfo = await this.swHelper.getActiveTab();
+            if (currTabInfo.id !== this.idOfTabWithCapturer) {
+                const errMsg = `asked to initiate annotation capture while active tab id ${currTabInfo.id} differs from the tab id ${this.idOfTabWithCapturer} with the content script`;
+                this.logger.warn(errMsg);
+                this.resetAnnotationCaptureCoordinator(errMsg);
                 return;
             }
 
@@ -385,7 +421,7 @@ export class ActionAnnotationCoordinator {
             const screenshotCapture = await this.swHelper.captureScreenshot("annotation_action_context");
             if (screenshotCapture.error) {
                 this.logger.warn(`error capturing context screenshot for action annotation: ${screenshotCapture.error}`);
-                this.terminateAnnotationCapture(screenshotCapture.error);
+                this.resetAnnotationCaptureCoordinator(screenshotCapture.error);
                 return;
             }
             this.currActionContextScreenshotBase64 = screenshotCapture.screenshotBase64;
@@ -395,9 +431,9 @@ export class ActionAnnotationCoordinator {
         });
     }
 
-    terminateAnnotationCapture = (reason: string): void => {
-        this.logger.info(`terminating the capture of action annotation ${this.currAnnotationId} for reason: ${reason}`);
-
+    resetAnnotationCaptureCoordinator = (reason: string, details?: string): void => {
+        this.logger.info(`terminating the capture of action annotation ${this.currAnnotationId} for reason: ${reason} with details ${details}`);
+        this.portToSidePanel?.postMessage({type: AnnotationCoordinator2PanelPortMsgType.NOTIFICATION, msg: reason, details: details});
         this.state = AnnotationCoordinatorState.IDLE;
         this.currAnnotationId = undefined;
         this.currAnnotationAction = undefined;

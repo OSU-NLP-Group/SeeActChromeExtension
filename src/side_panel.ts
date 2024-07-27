@@ -15,6 +15,9 @@ if (!(eulaReviewButton && eulaReviewButton instanceof HTMLButtonElement)) throw 
 const annotatorModeContainer = document.getElementById('annotator-mode-container');
 if (!(annotatorModeContainer && annotatorModeContainer instanceof HTMLDivElement)) throw new Error('valid annotator-mode-container not found');
 
+const annotatorStartButton = document.getElementById('action-annotator-start');
+if (!(annotatorStartButton && annotatorStartButton instanceof HTMLButtonElement)) throw new Error('valid action-annotator-start button not found');
+
 const annotatorActionType = document.getElementById('action-type');
 if (!(annotatorActionType && annotatorActionType instanceof HTMLSelectElement)) throw new Error('valid action-type not found');
 
@@ -99,6 +102,8 @@ document.addEventListener('mousemove', (e) => {
 
 eulaReviewButton.addEventListener('click', () => chrome.tabs.create({url: './src/installation_greeting.html'}));
 userGuideButton.addEventListener('click', () => chrome.tabs.create({url: 'user_manual.pdf'}));
+
+annotatorStartButton.addEventListener('click', manager.startActionAnnotationCapturer);
 
 //redirecting click on icon to click on button so that disabling the button effectively disables its icon as well
 startButton.addEventListener('click', manager.startTaskClickHandler);

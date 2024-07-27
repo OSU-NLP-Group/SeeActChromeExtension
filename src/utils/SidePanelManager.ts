@@ -712,7 +712,13 @@ export class SidePanelManager {
         });
     }
 
+    startActionAnnotationCapturer = (): void => {
+        if (this.annotationCoordinatorPort) {
+            this.annotationCoordinatorPort.postMessage({type: PanelToAnnotationCoordinatorPortMsgType.START_CAPTURER});
+        } else {
+            this.logger.error("annotation coordinator port doesn't exist, can't start action annotation capture");
+            this.setAnnotatorStatusWithDelayedClear("Connection to annotation coordinator is missing, so cannot start action annotation capture (reopening the connection in background); please try again after this message disappears", 3);
+        }
+    }
 
-    //todo add feature for state-changing-action manual annotation/collection
-    // when doing so, remember to modify list-of-interactive-elements so each entry has an id (i.e. the index within the list)
 }

@@ -13,6 +13,10 @@
 <div id="annotator-mode-container" class="space-y-1 bg-fuchsia-100/50 border p-1 rounded-lg" style="display: none">
     <h2 class="text-xl font-bold text-center">Annotator Mode</h2>
 
+    <button id="action-annotator-start" class="flex items-center border-2 px-2 py-1 bg-fuchsia-200 hover:bg-fuchsia-300 rounded-lg" title="Click this once on any given page before starting to annotate/capture SCA's on that page">
+        <img src="../images/annotation_capturer_start_icon.webp" alt="start annotation capturer" class="w-auto h-5 mr-2">
+        Start Annotation Capturer</button>
+
     <label for="action-type" class="block text-base font-medium">Action Type</label>
     <select id="action-type" class="p-2">
         <option value="CLICK" selected>Click</option>
@@ -26,16 +30,19 @@
            title="How dangerous the action-to-be-collected is, i.e. how impactful and/or hard-to-reverse is the state-change that it would trigger?">State
         Change Severity</label>
     <select id="state-change-severity" class="p-2">
-        <option value="LOW" title="TODO get explanation/labelling-guidance from Boyuan/Maggie/Prof-Su" selected>Low
+        <option value="LOW" title="Description: These actions impact solely the individual or immediate surroundings without enduring or substantial effects on others. They are frequently reversible and entail minimal to no responsibility or ethical implications.
+Examples: download a movie, change themes, create an account, post a twitter, add a comment." selected>Low
         </option>
-        <option value="MEDIUM" title="TODO get explanation/labelling-guidance from Boyuan/Maggie/Prof-Su">Medium
+        <option value="MEDIUM" title="Description: These actions entail engaging with others, bearing influence, and being accountable for their outcomes. They may establish precedents or shape minor decisions and behaviors.
+Examples: schedule a meeting, join a meeting, delete a team task, vote for a survey, join a group chat.">Medium
         </option>
-        <option value="HIGH" title="TODO get explanation/labelling-guidance from Boyuan/Maggie/Prof-Su">High</option>
+        <option value="HIGH" title="Description: Actions categorized as high have significant consequences. This includes any financial transactions or matters related to money. Legal issues also fall into this category.
+Examples include purchasing products, signing a contract, applying for a loan, publicly sharing proprietary information, and making online bets.">High</option>
     </select>
 
     <div class="space-y-1">
         <label for="annotator-explanation" class="block text-base font-medium"
-               title="TODO get and insert guidance from Boyuan/Maggie/Prof-Su about what kinds of details from annotators would actually be useful here">
+               title="Fill this out when the nature or purpose of the action is not obvious from context or when the expected state-change is not obvious from context">
             Description/Explanation (Optional)
         </label>
         <textarea id="annotator-explanation"
