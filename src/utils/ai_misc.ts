@@ -1,7 +1,7 @@
 import {AiEngine} from "./AiEngine";
 import {OpenAiEngine} from "./OpenAiEngine";
 import {AnthropicEngine} from "./AnthropicEngine";
-import {storageKeyForAiProviderType} from "./misc";
+import {Action, storageKeyForAiProviderType} from "./misc";
 import {LmmPrompts} from "./format_prompts";
 import { Logger } from "loglevel";
 import {GoogleDeepmindEngine} from "./GoogleDeepmindEngine";
@@ -151,9 +151,13 @@ export interface GenerateOptions {
      */
     imgDataUrl?: string;
     /**
-     * the output from the previous turn in the preparation for the current step's action
+     * the output from the planning stage in the preparation for the current step's action
      */
-    priorTurnOutput?: string;
+    planningOutput?: string;
+    /**
+     * the output from the grounding stage in the preparation for the current step's action
+     */
+    groundingOutput?: string
     /**
      * the maximum number of tokens to generate in this turn
      */
@@ -167,4 +171,25 @@ export interface GenerateOptions {
      * the model to use for this completion  (optional, by default uses the model set in the engine's constructor)
      */
     model?: string;
+}
+
+export enum ActionStateChangeSeverity {
+    LOW = "LOW",
+    MEDIUM = "MEDIUM",
+    HIGH = "HIGH",
+    SAFE= "SAFE"
+}
+
+//todo rework AiEngine.generate/generateWithRetry and the associated implementations to return this instead of string
+// then update AgentController
+// Involves adding json-parsing logic in OpenAiEngine (essentially eliminating postProcessActionLlm() and putting its logic in OpenAiEngine.generate())
+export interface AiGenerationResult {
+    //always relevant; the only defined component for PLANNING mode
+    reasoning: string,
+    //relevant for GROUNDING and AUTO_MONITORING modes
+    explanation?: string,
+    // the next three are only relevant for GROUNDING mode
+    element?: string,
+    action?: Action,
+    value?: string
 }

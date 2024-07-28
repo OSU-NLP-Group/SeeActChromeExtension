@@ -27,6 +27,7 @@ export interface LmmPrompts {
     queryPrompt: string;
     groundingPrompt: string;
     elementlessActionPrompt: string;
+    autoMonitorPrompt: string;
 }
 
 /**
@@ -83,7 +84,7 @@ export const formatChoices = (elements: Array<SerializableElementData>, candidat
 }
 
 /**
- * @description processes the output of the LLM and isolates a) the alphabetic name of the element which should be
+ * @description processes the grounding output of the LLM and isolates a) the alphabetic name of the element which should be
  * interacted with, b) the action which should be performed on that element, optionally c) the text value
  * which should be used in that action, and d) a 1-sentence explanation of the action
  * @param llmText the output of the LLM when asked what element should be interacted with and how
@@ -211,6 +212,42 @@ Response component for actions that will not target an element:
 export const groundingWithToolUseElementlessActionPromptExplanation = `Based on your prior planning, the next action is not specific to an element. 
     When calling the 'browser_action' tool, the action should be chosen from the options {SCROLL_UP, SCROLL_DOWN, PRESS_ENTER, TERMINATE, NONE}`;
 
+export const autoMonitorPromptIntro = `The below action is potentially state-changing and may require human confirmation. Please review the proposed action, in the context of the above task specification, screenshot, and planning output.  
+Think step by step about whether this action could have any effects (especially hard-to-reverse effects) which the user might conceivably not desire or even just not want to be surprised by.  
+The definitions of the levels of state-change severity of actions are:  
+- LOW: 
+  - Description: These actions impact solely the individual or immediate surroundings without enduring or substantial effects on others. They are frequently reversible and entail minimal to no responsibility or ethical implications.
+  - Examples: download a movie, change themes, create an account, post a tweet, add a comment.
+- MEDIUM:
+  - Description: These actions entail engaging with others, bearing influence, and being accountable for their outcomes. They may establish precedents or shape minor decisions and behaviors.
+  - Examples: schedule a meeting, join a meeting, delete a team task, vote for a survey, join a group chat.
+- HIGH:
+  - Description: Actions categorized as high have significant consequences. This includes any financial transactions or matters related to money. Legal issues also fall into this category.
+  - Examples: purchasing products, signing a contract, applying for a loan, publicly sharing proprietary information, and making online bets.
+- SAFE:
+  - Description: All actions that don't qualify as LOW, MEDIUM, or HIGH on state-changing severity
+  - Example: press a button and go to another page.
+`;
+export const actionJudgmentFuncDesc = "mechanism for submitting an assessment of the potential state-changing nature of an action";
+export const actionJudgmentSeverityParamDesc = "whether the proposed action's state-change is LOW, MEDIUM, or HIGH severity (or SAFE if it isn't meaningfully state-changing)";
+export const actionJudgmentExplanationParamDesc = `a 1-sentence explanation of why the proposed action belongs to the chosen state-change severity level.`;
+export const actionJudgmentRequiredProps = ["severity", "explanation"];
+export const autoMonitorResponseJsonSchema = `{
+    "reasoning": { "type": ["string"] },
+    "severity": { "type": ["string"] },
+    "explanation": { "type": ["string"] }
+}`;
+export const autoMonitorPromptConclusion = `(Response Format)
+Please present your output in JSON format, following the schema below.
+${autoMonitorResponseJsonSchema}
+Explanation of schema fields:
+- reasoning: Perform all reasoning (as guided by the above prompt) in this string.
+- severity: ${actionJudgmentSeverityParamDesc}
+- explanation: ${actionJudgmentExplanationParamDesc}
+`;
+export const autoMonitorPromptWithToolUseConclusion = `To respond, you _must_ call the 'action_judgment' tool after reasoning about the proposed action. Any response that doesn't call that tool at the end will be rejected!`;
+
+
 /**
  * @description generate the prompts for the web agent for the current step of the task
  * This was originally in src/prompts.py, but I put it here because almost everything from prompts.py was irrelevant
@@ -222,10 +259,11 @@ export const groundingWithToolUseElementlessActionPromptExplanation = `Based on 
  *                 being an abbreviated version of the element's html
  * @param viewportInfo information about the viewport and the dimensions of the page that it's showing part of
  * @param aiProviderType the type of AI model provider that the prompts will be sent to
- * @return four prompts for the language model: 1) a system prompt (used with both of the other prompts);
+ * @return five prompts for the language model: 1) a system prompt (used with both of the other prompts);
  *          2) a prompt for the model planning its next step; and
  *          3) a prompt for the model identifying the element to interact with and how to interact with it
  *          4) a prompt for the model to choose an action when there is no specific element to interact with
+ *          5) a prompt for the model to check whether a proposed action is potentially state-changing and needs human confirmation
  */
 export const generatePrompt = (task: string, previousActions: Array<string>, choices: Array<string>,
                                viewportInfo: ViewportDetails, aiProviderType: AiProviderId): LmmPrompts => {
@@ -234,6 +272,7 @@ export const generatePrompt = (task: string, previousActions: Array<string>, cho
 
     let groundingPrompt: string = onlineReferringPromptDesc + "\n\n";
     let customizedElementlessActionPrompt = "";
+    let autoMonitorPrompt = autoMonitorPromptIntro + "\n";
     if (choices) {
         groundingPrompt += _formatOptions(choices);
     }
@@ -246,14 +285,16 @@ export const generatePrompt = (task: string, previousActions: Array<string>, cho
         groundingPrompt += groundingOutputWithToolUsePromptIntro;
         customizedElementlessActionPrompt = groundingOutputWithToolUsePromptIntro + "\n" +
             groundingWithToolUseElementlessActionPromptExplanation;
+        autoMonitorPrompt += autoMonitorPromptWithToolUseConclusion;
     } else {
         groundingPrompt += groundingOutputPromptIntro + "\n" + groundingResponseJsonSchema + "\n" + groundingOutputPromptGeneralExplanation + "\n" + groundingOutputPromptExplanation;
         customizedElementlessActionPrompt = groundingOutputPromptIntro + "\n" + groundingResponseJsonSchema + "\n" + groundingElementlessActionPromptExplanation;
+        autoMonitorPrompt += autoMonitorPromptConclusion;
     }
 
     return {
         sysPrompt: sysPrompt, queryPrompt: queryPrompt, groundingPrompt: groundingPrompt,
-        elementlessActionPrompt: customizedElementlessActionPrompt
+        elementlessActionPrompt: customizedElementlessActionPrompt, autoMonitorPrompt: autoMonitorPrompt
     };
 }
 

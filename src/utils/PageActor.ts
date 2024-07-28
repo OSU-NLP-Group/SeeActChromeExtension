@@ -234,15 +234,13 @@ export class PageActor {
     performPressEnterAction = async (actionOutcome: ActionOutcome,
                                      targetElementDesc: string): Promise<void> => {
         this.logger.trace(`about to press Enter on ${targetElementDesc}`);
-        const activeElem = this.domWrapper.getActiveElement();
+        const activeElem = this.browserHelper.findRealActiveElement();
         if (activeElem === null) {
             actionOutcome.success = false;
             actionOutcome.result += "; no element is currently focused in the tab";
             return;
         } else {
             this.logger.debug(`active element is a ${activeElem.tagName} at xpath: ${this.browserHelper.getFullXpath(activeElem)}`);
-            //if it comes up, we can add more layers of logic here for identifying the real active element even if it's
-            // hidden inside some number of nested iframes and/or shadow roots
         }
 
         try {
@@ -303,8 +301,10 @@ export class PageActor {
     performActionFromController = async (message: any): Promise<void> => {
         if (!this.interactiveElements) {
             this.logger.error("perform-action message received from background script but no interactive elements are currently stored");
-            this.portToBackground.postMessage(
-                {type: Page2AgentControllerPortMsgType.TERMINAL, error: "no interactive elements stored to be acted on"});
+            this.portToBackground.postMessage({
+                    type: Page2AgentControllerPortMsgType.TERMINAL,
+                    error: "no interactive elements stored to be acted on"
+                });
             return;
         }
         const actionToPerform: Action = message.action;
@@ -404,8 +404,10 @@ export class PageActor {
     highlightCandidateElement = async (message: any): Promise<void> => {
         if (!this.interactiveElements) {
             this.logger.error("highlight-candidate-element message received from background script but no interactive elements are currently stored");
-            this.portToBackground.postMessage(
-                {type: Page2AgentControllerPortMsgType.TERMINAL, error: "no interactive elements stored to be highlighted"});
+            this.portToBackground.postMessage({
+                    type: Page2AgentControllerPortMsgType.TERMINAL,
+                    error: "no interactive elements stored to be highlighted"
+                });
             return;
         } else if ((typeof message.elementIndex !== "number") || message.elementIndex >= this.interactiveElements.length) {
             this.logger.error("highlight-candidate-element message received from background script but element index is invalid");
@@ -413,8 +415,21 @@ export class PageActor {
                 {type: Page2AgentControllerPortMsgType.TERMINAL, error: "invalid element index provided to highlight"});
             return;
         }
-        const elementToActOnData = this.interactiveElements[message.elementIndex];
-        const elementToActOn = elementToActOnData.element;
+
+        let elementToActOn: HTMLElement;
+        if (message.elementIndex) {
+            const elementToActOnData = this.interactiveElements[message.elementIndex];
+            elementToActOn = elementToActOnData.element;
+        } else {
+            const focusedElement = this.browserHelper.findRealActiveElement();
+            if (focusedElement !== null) {
+                elementToActOn = focusedElement;
+            } else {
+                this.logger.warn("highlight-candidate-element message received from background script but no element was specified to be highlighted, and no element is currently focused");
+                return;//the later attempt to actually perform the action will fail, so no need to notify the background script
+            }
+        }
+
         await this.browserHelper.highlightElement(elementToActOn.style);
 
         try {
@@ -437,7 +452,8 @@ export class PageActor {
      * @param message the message received from the agent controller
      */
     handleRequestFromAgentController = async (message: any): Promise<void> => {
-        this.logger.trace(`message received from agent controller: ${JSON.stringify(message).slice(0,100)} by page ${document.URL}`);
+        this.logger.trace(`message received from agent controller: ${JSON.stringify(message)
+            .slice(0, 100)} by page ${document.URL}`);
         this.hasControllerEverResponded = true;
         if (message.type === AgentController2PagePortMsgType.REQ_PAGE_STATE) {
             if (message.isMonitorRetry) {this.interactiveElements = undefined;}

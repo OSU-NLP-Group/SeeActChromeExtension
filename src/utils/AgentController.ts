@@ -181,6 +181,7 @@ export class AgentController {
     monitorFeedback: string = "";
 
     numPriorScreenshotsTakenForPromptingCurrentAction: number = 0;
+    currActionTargetedScreenshotUrl: string | undefined;
 
     state: AgentControllerState = AgentControllerState.IDLE;
 
@@ -555,7 +556,8 @@ export class AgentController {
                 this.terminateTask(termReason);
                 return;
             }
-            if (this.pendingActionInfo.elementIndex !== undefined) {
+            const isTargetElementHighlightingNeeded = this.pendingActionInfo.elementIndex !== undefined || this.pendingActionInfo.action === Action.PRESS_ENTER;
+            if (isTargetElementHighlightingNeeded) {
                 this.logger.info("about to instruct page actor to highlight the target element");
                 try {
                     pageActorPort.postMessage({
@@ -581,7 +583,7 @@ export class AgentController {
                 this.state = AgentControllerState.WAITING_FOR_MONITOR_RESPONSE;
             } else {
                 //to get high confidence that the screenshot with highlighted target element has been captured
-                if (this.pendingActionInfo.elementIndex !== undefined) { await sleep(40 + elementHighlightRenderDelay); }
+                if (isTargetElementHighlightingNeeded) { await sleep(40 + elementHighlightRenderDelay); }
 
                 if (this.terminationSignal) {
                     this.logger.info("received termination signal after deciding on the action but before actually committing it (possibly while waiting for a screenshot to be captured with the target element highlighted; terminating task")
@@ -590,7 +592,15 @@ export class AgentController {
                     // This prevents the agent from performing a final action after the user presses the terminate button
                     return;
                 }
+
+                //todo call ai engine (possibly prefer a secondary ai engine, since a given big AI model seems to often be partial to its own outputs when used as a judge)
+                // to review the proposed action
+                // Pass a screenshot of the page after the element is highlighted to the reviewer ai call (fall back to standard screenshot if targeted screenshot somehow not available, but log a warning)
+                //  If targeted screenshot is being passed in, first add a line to the automonitorPrompt explaining that
+
+
                 this.numPriorScreenshotsTakenForPromptingCurrentAction = 0;
+                this.currActionTargetedScreenshotUrl = undefined;
                 this.state = AgentControllerState.WAITING_FOR_ACTION;
                 try {
                     pageActorPort.postMessage({
@@ -684,7 +694,7 @@ export class AgentController {
             }
 
             groundingOutput = await this.aiEngine.generateWithRetry(
-                {prompts: prompts, generationType: GenerateMode.GROUNDING, imgDataUrl: screenshotDataUrl, priorTurnOutput: planningOutput},
+                {prompts: prompts, generationType: GenerateMode.GROUNDING, imgDataUrl: screenshotDataUrl, planningOutput: planningOutput},
                 aiApiBaseDelay);
         } catch (error) {
             const termReason = `error getting next step from ai; error: ${renderUnknownValue(error)}`;
@@ -858,7 +868,11 @@ export class AgentController {
         } else {
             this.logger.warn("no db connection available, cannot save screenshot");
         }
-        if (screenshotType === "initial") { this.numPriorScreenshotsTakenForPromptingCurrentAction++; }
+        if (screenshotType === "initial") {
+            this.numPriorScreenshotsTakenForPromptingCurrentAction++;
+        } else if (screenshotType === "targeted") {
+            this.currActionTargetedScreenshotUrl = screenshotResult.screenshotDataUrl;
+        }
         return screenshotResult.screenshotDataUrl;
     }
 
@@ -1338,6 +1352,7 @@ export class AgentController {
         this.failureOrNoopStreak = 0;
         this.wasPrevActionRejectedByMonitor = false;
         this.monitorFeedback = "";
+        this.currActionTargetedScreenshotUrl = undefined;
         this.numPriorScreenshotsTakenForPromptingCurrentAction = 0;
         if (this.portToContentScript) {
             this.logger.info("terminating task while content script connection may still be open, attempting to close it")

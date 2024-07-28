@@ -120,7 +120,7 @@ describe('OpenAiEngine.generate', () => {
 
         const req1Model = "gpt-4-vision-preview-alt";
         const result1 = await engine.generate({
-            prompts: prompts, generationType: GenerateMode.GROUNDING, imgDataUrl: dummyImgDataUrl, priorTurnOutput: t0RespTxt, model: req1Model
+            prompts: prompts, generationType: GenerateMode.GROUNDING, imgDataUrl: dummyImgDataUrl, planningOutput: t0RespTxt, model: req1Model
         });
         expect(engine.currKeyIdx).toEqual(2);
         expect(engine.nextAvailTime).toEqual([0, 0, 0]);
@@ -177,7 +177,7 @@ describe('OpenAiEngine.generate', () => {
             ]
         } as ChatCompletion);
         const result1 = await engine.generate(
-            {prompts: prompts, generationType: GenerateMode.GROUNDING, imgDataUrl: dummyImgDataUrl, priorTurnOutput: t0RespTxt});
+            {prompts: prompts, generationType: GenerateMode.GROUNDING, imgDataUrl: dummyImgDataUrl, planningOutput: t0RespTxt});
         expect(result1).toEqual(t1RespTxt);
 
         //@ts-expect-error testing, will fail if create not called
@@ -240,7 +240,7 @@ describe('OpenAiEngine.generateWithRetry', () => {
 
         const req1Start = Date.now();
         const result1 = await engine.generateWithRetry(
-            {prompts: prompts, generationType: GenerateMode.GROUNDING, imgDataUrl: dummyImgDataUrl, priorTurnOutput: t0RespTxt});
+            {prompts: prompts, generationType: GenerateMode.GROUNDING, imgDataUrl: dummyImgDataUrl, planningOutput: t0RespTxt});
         const req1Time = Date.now() - req1Start;
         expect(req1Time).toBeLessThan(increasedBaseBackoffDelay);
         expect(result1).toEqual(t1RespTxt);
@@ -303,7 +303,7 @@ describe('OpenAiEngine.generateWithRetry', () => {
 
         const req1Start = Date.now();
         const result1 = await engine.generateWithRetry(
-            {prompts: prompts, generationType: GenerateMode.GROUNDING, imgDataUrl: dummyImgDataUrl, priorTurnOutput: t0RespTxt}, 10);
+            {prompts: prompts, generationType: GenerateMode.GROUNDING, imgDataUrl: dummyImgDataUrl, planningOutput: t0RespTxt}, 10);
         const req1Time = Date.now() - req1Start;
         expect(req1Time).toBeGreaterThan(10 + 30 + 90 + 270 + 810);
         expect(req1Time).toBeLessThan(10 + 30 + 90 + 270 + 810 + 2430);
