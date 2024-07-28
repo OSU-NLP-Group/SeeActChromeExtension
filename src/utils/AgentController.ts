@@ -47,7 +47,13 @@ import {ChromeWrapper} from "./ChromeWrapper";
 import JSZip from "jszip";
 import {IDBPDatabase} from "idb";
 import {AiEngine} from "./AiEngine";
-import {AiProviderId, AiProviders, GenerateMode} from "./ai_misc";
+import {
+    ActionStateChangeSeverity,
+    AiProviderId,
+    AiProviders,
+    GenerateMode,
+    isActionStateChangeSeverity
+} from "./ai_misc";
 import {ServiceWorkerHelper} from "./ServiceWorkerHelper";
 import Port = chrome.runtime.Port;
 
@@ -80,6 +86,15 @@ enum LmmOutputReaction {
     ABORT_TASK,
     PROCEED_WITH_ACTION,
     TRY_REPROMPT
+}
+
+/**
+ * allows simplification of the method that consuls the LLM to determine whether the next action is safe
+ */
+enum AutoMonitorReaction {
+    ABORT_TASK,
+    PROCEED_WITH_ACTION,
+    ESCALATE_TO_HUMAN_MONITOR
 }
 
 /**
@@ -179,6 +194,10 @@ export class AgentController {
 
     wasPrevActionRejectedByMonitor: boolean = false;
     monitorFeedback: string = "";
+
+    //for "auto-monitor" feature, so it can turn on monitor-mode-related behaviors when the auto-monitor escalates a
+    // proposed action to the human user, then turn them off again when the human user has responded
+    isMonitorModeTempEnabled = false;
 
     numPriorScreenshotsTakenForPromptingCurrentAction: number = 0;
     currActionTargetedScreenshotUrl: string | undefined;
@@ -486,12 +505,24 @@ export class AgentController {
             this.monitorFeedback = "";
             this.pendingActionInfo = undefined;
             this.wasPrevActionRejectedByMonitor = false;
+            if (this.isMonitorModeTempEnabled) {
+                this.isMonitorModeTempEnabled = false;
+                this.cachedMonitorMode = false;
+            }
         }
 
         while (this.noopCount <= this.maxNoopLimit && this.failureOrNoopStreak <= this.maxFailureOrNoopStreakLimit) {
             this.logger.debug(`noop count: ${this.noopCount}, failure-or-noop streak: ${this.failureOrNoopStreak}; noopLimit: ${this.maxNoopLimit}, failure-or-noop streak limit: ${this.maxFailureOrNoopStreakLimit}`);
-            const reactionToLmmOutput = await this.queryLmmAndProcessResponsesForAction(interactiveChoices,
-                screenshotDataUrl, candidateIds, interactiveElements, monitorRejectionInfo, viewportInfo);
+
+            const prompts: LmmPrompts = generatePrompt(this.taskSpecification,
+                this.actionsSoFar.map(entry => `${entry.success ? "SUCCEEDED" : "FAILED"}-${entry.actionDesc}; explanation: ${entry.explanation}`),
+                interactiveChoices, viewportInfo, this.aiEngine.providerDetails().id);
+            if (monitorRejectionInfo !== undefined) {
+                prompts.queryPrompt += `\n${monitorRejectionInfo}`;
+            }
+            this.logger.debug("prompts: " + JSON.stringify(prompts));
+            const reactionToLmmOutput = await this.queryLmmAndProcessResponsesForAction(
+                screenshotDataUrl, candidateIds, interactiveElements, prompts);
             if (this.terminationSignal) {
                 this.logger.info("received termination signal while processing interactive elements; terminating task")
                 //the task termination will be handled by the terminateTask method being called by the handler (for
@@ -558,28 +589,26 @@ export class AgentController {
                     return;
                 }
 
-
-                //todo call ai engine (possibly prefer a secondary ai engine, since a given big AI model seems to often be partial to its own outputs when used as a judge)
-                // to review the proposed action
-                // Pass a screenshot of the page after the element is highlighted to the reviewer ai call (fall back to standard screenshot if targeted screenshot somehow not available, but log a warning if isTargetElementHighlightingNeeded)
-                //  If targeted screenshot is being passed in, first add a line to the automonitorPrompt explaining that
-
-
-                this.numPriorScreenshotsTakenForPromptingCurrentAction = 0;
+                const autoMonitorOutput = await this.consultAutoMonitor(isTargetElementHighlightingNeeded, screenshotDataUrl, prompts);
                 this.currActionTargetedScreenshotUrl = undefined;
-                this.state = AgentControllerState.WAITING_FOR_ACTION;
-                try {
-                    pageActorPort.postMessage({
-                        type: AgentController2PagePortMsgType.REQ_ACTION, action: this.pendingActionInfo.action,
-                        elementIndex: this.pendingActionInfo.elementIndex, value: this.pendingActionInfo.value
-                    });
-                } catch (error: any) {
-                    if ('message' in error && error.message === expectedMsgForPortDisconnection) {
-                        this.logger.info("content script disconnected from service worker while processing interactive elements and before trying to request an action; task will resume after new content script connection is established");
-                        this.state = AgentControllerState.PENDING_RECONNECT;
-                        this.pendingActionInfo = undefined;
-                    } else {this.terminateTask(`unexpected error while requesting an action; error: ${renderUnknownValue(error)}`);}
-                }
+                if (autoMonitorOutput === AutoMonitorReaction.ESCALATE_TO_HUMAN_MONITOR) {
+                    this.state = AgentControllerState.WAITING_FOR_MONITOR_RESPONSE;
+                } else if (autoMonitorOutput === AutoMonitorReaction.PROCEED_WITH_ACTION) {
+                    this.numPriorScreenshotsTakenForPromptingCurrentAction = 0;
+                    this.state = AgentControllerState.WAITING_FOR_ACTION;
+                    try {
+                        pageActorPort.postMessage({
+                            type: AgentController2PagePortMsgType.REQ_ACTION, action: this.pendingActionInfo.action,
+                            elementIndex: this.pendingActionInfo.elementIndex, value: this.pendingActionInfo.value
+                        });
+                    } catch (error: any) {
+                        if ('message' in error && error.message === expectedMsgForPortDisconnection) {
+                            this.logger.info("content script disconnected from service worker while processing interactive elements and before trying to request an action; task will resume after new content script connection is established");
+                            this.state = AgentControllerState.PENDING_RECONNECT;
+                            this.pendingActionInfo = undefined;
+                        } else {this.terminateTask(`unexpected error while requesting an action; error: ${renderUnknownValue(error)}`);}
+                    }
+                }//else, if autoMonitor output is ABORT TASK, terminateTask() was already called there, and now we just return 2 lines after this
             }
             return;//not doing break here b/c no point doing the noop checks if it successfully chose an action which
             // was sent to the content script
@@ -589,40 +618,110 @@ export class AgentController {
         } else if (this.failureOrNoopStreak > this.maxFailureOrNoopStreakLimit) {this.terminateTask(`exceeded the maximum failure-or-noop streak limit of ${this.maxFailureOrNoopStreakLimit}`);}
     }
 
+    private async consultAutoMonitor(isTargetElementHighlightingNeeded: boolean, screenshotDataUrl: string, prompts: LmmPrompts): Promise<AutoMonitorReaction> {
+        if (this.portToSidePanel === undefined) {
+            this.logger.error("no side panel connection to send auto-monitor query prompt to; abandoning task");
+            //terminateTask() will be called by the onDisconnect listener
+            return AutoMonitorReaction.ABORT_TASK;
+        }
+
+        //todo add ability to disable this feature (to reduce delays/costs)
+        //todo add ability to pick separate ai engine as judge (since my skimming of papers suggests that a given big AI model seems to often be partial to its own outputs when used as a judge)
+
+        let screenshotDataUrlForJudge: string;
+        if (isTargetElementHighlightingNeeded) {
+            if (this.currActionTargetedScreenshotUrl === undefined) {
+                this.logger.warn("targeted screenshot was needed but not captured; falling back to standard screenshot for auto monitor");
+                screenshotDataUrlForJudge = screenshotDataUrl;
+            } else {
+                screenshotDataUrlForJudge = this.currActionTargetedScreenshotUrl;
+                prompts.autoMonitorPrompt += `\nThe screenshot above has a highlighting effect on/around the target element for the action.`;
+            }
+        } else {
+            screenshotDataUrlForJudge = screenshotDataUrl;
+        }
+
+        let judgeOutput: string;
+        const startOfAiJudgeQuerying = Date.now();
+        try {
+            judgeOutput = await this.aiEngine.generateWithRetry({
+                prompts: prompts, generationType: GenerateMode.AUTO_MONITORING,
+                imgDataUrl: screenshotDataUrlForJudge
+            });
+        } catch (error) {
+            this.terminateTask(`error getting safety judgment from ai; error: ${renderUnknownValue(error)}`);
+            return AutoMonitorReaction.ABORT_TASK;
+        }
+        this.logger.debug(`ai querying for judge took ${Date.now() - startOfAiJudgeQuerying}ms`);
+        this.logger.info("judge output: " + judgeOutput);
+        try {
+            this.portToSidePanel.postMessage({
+                type: AgentController2PanelPortMsgType.NOTIFICATION, details: judgeOutput,
+                msg: "AI judgement of action safety complete"
+            });
+        } catch (error: any) {
+            this.terminateTask(`error while trying to send notification to side panel about auto-monitor call completion; error: ${renderUnknownValue(error)}`);
+            return AutoMonitorReaction.ABORT_TASK;
+        }
+
+        let llmRespObj: any;
+        try {
+            llmRespObj = JSON.parse(judgeOutput);
+        } catch (e) {
+            this.terminateTask(`Invalid JSON response from the model (which shouldn't be possible per API docs): [<${judgeOutput}>] with error ${renderUnknownValue(e)}`);
+            return AutoMonitorReaction.ABORT_TASK;
+        }
+        if (!isActionStateChangeSeverity(llmRespObj.severity) || typeof llmRespObj.explanation !== "string") {
+            this.terminateTask(`AI output for safety judgment was invalid: ${judgeOutput}`);
+            return AutoMonitorReaction.ABORT_TASK;
+        }
+        const severity: ActionStateChangeSeverity = llmRespObj.severity;
+        if (severity !== ActionStateChangeSeverity.SAFE) {
+            this.logger.info(`AI Judge decided that the proposed action was unsafe (severity ${severity}); explanation: ${llmRespObj.explanation}; escalating this action to human user as monitor`);
+            this.isMonitorModeTempEnabled = true;
+            this.cachedMonitorMode = true;
+
+            try {
+                this.portToSidePanel.postMessage({
+                    type: AgentController2PanelPortMsgType.AUTO_MONITOR_ESCALATION, severity: severity,
+                    explanation: llmRespObj.explanation
+                });
+            } catch (error: any) {
+                this.terminateTask(`error while trying to send notification to side panel about proposed action being escalated to user by auto-monitor; error: ${renderUnknownValue(error)}`);
+                return AutoMonitorReaction.ABORT_TASK;
+            }
+            return AutoMonitorReaction.ESCALATE_TO_HUMAN_MONITOR;
+        } else {
+            return AutoMonitorReaction.PROCEED_WITH_ACTION;
+        }
+
+        //todo let user set threshold for auto-monitor, so it only escalates medium/high or even just escalates high
+    }
+
     //todo ask Boyuan if he wants me to break this up even further- I'm on the fence as to whether it would actually
     // improve code readability
     /**
      * @description Queries the LLM for the next action to take based on the current state of the page and the actions
      * so far, then processes the response and (if there is a chosen action) stores the chosen action in
      * this.pendingActionInfo
-     * @param interactiveChoices brief descriptions of the interactive elements on the page (starting and ending with the appropriate html tag)
      * @param screenshotDataUrl the data URL of the screenshot of the current page
      * @param candidateIds the indices of the interactive elements that are candidates for the next action
      * @param interactiveElements the full data about the interactive elements on the page
-     * @param monitorRejectionContext optional string to include in the query prompt if the previous action was rejected by the monitor
-     * @param viewportInfo information about the viewport and the dimensions of the page that it's showing part of
+     * @param prompts prompts for AI models
      * @return indicator of what the main "processPageStateFromActor" function should do next based on the LLM response
      *         (e.g. whether to try reprompting, proceed with the action, or abort the task)
      */
     private queryLmmAndProcessResponsesForAction = async (
-        interactiveChoices: string[], screenshotDataUrl: string, candidateIds: number[],
-        interactiveElements: SerializableElementData[], monitorRejectionContext: string | undefined,
-        viewportInfo: ViewportDetails): Promise<LmmOutputReaction> => {
+        screenshotDataUrl: string, candidateIds: number[], interactiveElements: SerializableElementData[],
+        prompts: LmmPrompts): Promise<LmmOutputReaction> => {
         if (this.portToSidePanel === undefined) {
             this.logger.error("no side panel connection to send query prompt to; abandoning task");
             //terminateTask() will be called by the onDisconnect listener
             return LmmOutputReaction.ABORT_TASK;
         }
 
-        const prompts: LmmPrompts = generatePrompt(this.taskSpecification,
-            this.actionsSoFar.map(entry => `${entry.success ? "SUCCEEDED" : "FAILED"}-${entry.actionDesc}; explanation: ${entry.explanation}`),
-            interactiveChoices, viewportInfo, this.aiEngine.providerDetails().id);
-        if (monitorRejectionContext !== undefined) {
-            prompts.queryPrompt += `\n${monitorRejectionContext}`;
-        }
 
-        this.logger.debug("prompts: " + JSON.stringify(prompts));
-        const startOfAiQuerying = Date.now();
+        const startOfAiAgentQuerying = Date.now();
         let planningOutput: string;
         let groundingOutput: string;
         const aiApiBaseDelay = 1_000;
@@ -657,7 +756,7 @@ export class AgentController {
             this.terminateTask(`error getting next step from ai; error: ${renderUnknownValue(error)}`);
             return LmmOutputReaction.ABORT_TASK;
         }
-        this.logger.debug(`ai querying took ${Date.now() - startOfAiQuerying}ms`);
+        this.logger.debug(`ai querying for agent took ${Date.now() - startOfAiAgentQuerying}ms`);
         this.logger.info("grounding output: " + groundingOutput);
 
         const [element, action, value, explanation] = postProcessActionLlm(groundingOutput);
@@ -950,6 +1049,10 @@ export class AgentController {
             return;
         }
         this.numPriorScreenshotsTakenForPromptingCurrentAction = 0;
+        if (this.isMonitorModeTempEnabled) {
+            this.isMonitorModeTempEnabled = false;
+            this.cachedMonitorMode = false;
+        }
         this.state = AgentControllerState.WAITING_FOR_ACTION;
         try {
             this.portToContentScript.postMessage({
@@ -1238,6 +1341,11 @@ export class AgentController {
         }
         this.taskId = undefined;
         taskIdHolder.currTaskId = undefined;
+
+        if (this.isMonitorModeTempEnabled) {
+            this.cachedMonitorMode = false;
+            this.isMonitorModeTempEnabled = false;
+        }
 
         this.taskSpecification = "";
         this.currTaskTabId = undefined;
