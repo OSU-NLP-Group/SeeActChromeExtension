@@ -117,8 +117,18 @@ export interface AiEngineCreateOptions {
  * todo replace the 'turn' (0 or 1) thing with this
  */
 export enum GenerateMode {
+    /**
+     * asking the model to analyze situation and plan next move
+     */
     PLANNING = "PLANNING",
+    /**
+     * asking the model to identify the specific element to interact with next
+     */
     GROUNDING = "GROUNDING",
+    /**
+     * asking the model to evaluate whether the proposed next action is potentially state-changing
+     * (and thus would need to be referred to the human user for review)
+     */
     AUTO_MONITORING = "AUTO_MONITORING"
 }
 
@@ -133,11 +143,9 @@ export interface GenerateOptions {
      */
     prompts: LmmPrompts;
     /**
-     * the 0-based index of the current query in the preparation for the current step's action
-     *  0 means we're asking the model to analyze situation and plan next move
-     *  1 means we're asking the model to identify the specific element to interact with next
+     * what type of query should be sent to the model
      */
-    turnInStep: 0 | 1;
+    generationType: GenerateMode;
     /**
      * a data url containing a base-64 encoded image to be used as input to the model
      */

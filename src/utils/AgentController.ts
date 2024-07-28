@@ -14,8 +14,8 @@ import {
 } from "./shared_logging_setup";
 import {
     Action,
-    AgentController2PanelPortMsgType,
     AgentController2PagePortMsgType,
+    AgentController2PanelPortMsgType,
     base64ToByteArray,
     buildGenericActionDesc,
     defaultIsMonitorMode,
@@ -28,6 +28,7 @@ import {
     Page2AgentControllerPortMsgType,
     Panel2AgentControllerPortMsgType,
     renderUnknownValue,
+    SerializableElementData,
     setupModeCache,
     sleep,
     storageKeyForAiProviderType,
@@ -38,7 +39,7 @@ import {
     storageKeyForMaxOps,
     storageKeyForMonitorMode,
     validateIntegerLimitUpdate,
-    ViewportDetails, SerializableElementData
+    ViewportDetails
 } from "./misc";
 import {formatChoices, generatePrompt, LmmPrompts, postProcessActionLlm} from "./format_prompts";
 import {getIndexFromOptionName} from "./format_prompt_utils";
@@ -46,7 +47,7 @@ import {ChromeWrapper} from "./ChromeWrapper";
 import JSZip from "jszip";
 import {IDBPDatabase} from "idb";
 import {AiEngine} from "./AiEngine";
-import {AiProviderId, AiProviders} from "./ai_misc";
+import {AiProviderId, AiProviders, GenerateMode} from "./ai_misc";
 import {ServiceWorkerHelper} from "./ServiceWorkerHelper";
 import Port = chrome.runtime.Port;
 
@@ -668,7 +669,7 @@ export class AgentController {
         // depending on model cleverness
         try {
             planningOutput = await this.aiEngine.generateWithRetry(
-                {prompts: prompts, turnInStep: 0, imgDataUrl: screenshotDataUrl}, aiApiBaseDelay);
+                {prompts: prompts, generationType: GenerateMode.PLANNING, imgDataUrl: screenshotDataUrl}, aiApiBaseDelay);
             this.logger.info("planning output: " + planningOutput);
             try {
                 this.portToSidePanel.postMessage({
@@ -683,7 +684,7 @@ export class AgentController {
             }
 
             groundingOutput = await this.aiEngine.generateWithRetry(
-                {prompts: prompts, turnInStep: 1, imgDataUrl: screenshotDataUrl, priorTurnOutput: planningOutput},
+                {prompts: prompts, generationType: GenerateMode.GROUNDING, imgDataUrl: screenshotDataUrl, priorTurnOutput: planningOutput},
                 aiApiBaseDelay);
         } catch (error) {
             const termReason = `error getting next step from ai; error: ${renderUnknownValue(error)}`;

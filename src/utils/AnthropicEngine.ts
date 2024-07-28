@@ -16,7 +16,7 @@ import {
     groundingPromptExplanationParamDesc,
     groundingPromptValueParamDesc
 } from "./format_prompts";
-import {AiEngineCreateOptions, AiProviderDetails, AiProviders, GenerateOptions} from "./ai_misc";
+import {AiEngineCreateOptions, AiProviderDetails, AiProviders, GenerateMode, GenerateOptions} from "./ai_misc";
 
 const anthropicSupportedMediaTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 function checkImageTypeIsAnthropicSupported(dataUrlImageType: string): dataUrlImageType is "image/jpeg" | "image/png" | "image/gif" | "image/webp" {
@@ -48,7 +48,7 @@ export class AnthropicEngine extends AiEngine {
 
 
     generate = async ({
-                          prompts, turnInStep, imgDataUrl, priorTurnOutput,
+                          prompts, generationType, imgDataUrl, priorTurnOutput,
                           maxNewTokens = 4096, temp = this.temperature, model = this.model
                       }: GenerateOptions):
         Promise<string> => {
@@ -98,10 +98,10 @@ export class AnthropicEngine extends AiEngine {
         }
 
         let respStr: string | undefined;
-        if (turnInStep === 0) {
+        if (generationType === GenerateMode.PLANNING) {
             const response = await this.anthropic.messages.create(requestBody);
             respStr = (response.content[0] as TextBlock).text;
-        } else if (turnInStep === 1) {
+        } else if (generationType === GenerateMode.GROUNDING) {
             if (priorTurnOutput === undefined) {
                 throw new Error("priorTurnOutput must be provided for turn 1");
             } else if (priorTurnOutput.length > 0) {

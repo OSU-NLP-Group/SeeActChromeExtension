@@ -3,7 +3,7 @@ import {APIConnectionError, APIConnectionTimeoutError, InternalServerError, Rate
 import {AiEngine} from "./AiEngine";
 import ChatCompletionMessageParam = OpenAI.ChatCompletionMessageParam;
 import ChatCompletionContentPart = OpenAI.ChatCompletionContentPart;
-import {AiEngineCreateOptions, AiProviderDetails, AiProviders, GenerateOptions} from "./ai_misc";
+import {AiEngineCreateOptions, AiProviderDetails, AiProviders, GenerateMode, GenerateOptions} from "./ai_misc";
 
 export class OpenAiEngine extends AiEngine {
 
@@ -28,7 +28,7 @@ export class OpenAiEngine extends AiEngine {
 
 
     generate = async ({
-                          prompts, turnInStep, imgDataUrl, priorTurnOutput,
+                          prompts, generationType, imgDataUrl, priorTurnOutput,
                           maxNewTokens = 4096, temp = this.temperature, model = this.model
                       }: GenerateOptions):
         Promise<string> => {
@@ -56,14 +56,14 @@ export class OpenAiEngine extends AiEngine {
         }
 
         let respStr: string | undefined | null;
-        if (turnInStep === 0) {
+        if (generationType === GenerateMode.PLANNING) {
             const response = await this.openAi.chat.completions.create(
                 {messages: messages, model: model, temperature: temp, max_tokens: maxNewTokens});
             respStr = response.choices?.[0].message?.content;
             //confer with Boyuan- should this log warning with response object if respStr null? or throw error?
             // feedback - don't worry about the api being that weird/unreliable
 
-        } else if (turnInStep === 1) {
+        } else if (generationType === GenerateMode.GROUNDING) {
             if (priorTurnOutput === undefined) {
                 throw new Error("priorTurnOutput must be provided for turn 1");
             } else if (priorTurnOutput.length > 0) {

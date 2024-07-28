@@ -7,6 +7,7 @@ import {onlineElementlessActionPrompt, LmmPrompts} from "../../src/utils/format_
 import {APIConnectionError, InternalServerError, RateLimitError} from "openai/error";
 import log from "loglevel";
 import {origLoggerFactory} from "../../src/utils/shared_logging_setup";
+import {GenerateMode} from "../../src/utils/ai_misc";
 
 const exampleModel = "gpt-4-vision-preview";
 
@@ -97,7 +98,7 @@ describe('OpenAiEngine.generate', () => {
         const req0Temp = 0.1;
         const req0MaxTokens = 8192;
         const result0 = await engine.generate({
-            prompts: prompts, turnInStep: 0, imgDataUrl: dummyImgDataUrl, maxNewTokens: req0MaxTokens, temp: req0Temp
+            prompts: prompts, generationType: GenerateMode.PLANNING, imgDataUrl: dummyImgDataUrl, maxNewTokens: req0MaxTokens, temp: req0Temp
         });
         expect(engine.currKeyIdx).toEqual(1);
         expect(engine.nextAvailTime).toEqual([0, 0, 0]);
@@ -119,7 +120,7 @@ describe('OpenAiEngine.generate', () => {
 
         const req1Model = "gpt-4-vision-preview-alt";
         const result1 = await engine.generate({
-            prompts: prompts, turnInStep: 1, imgDataUrl: dummyImgDataUrl, priorTurnOutput: t0RespTxt, model: req1Model
+            prompts: prompts, generationType: GenerateMode.GROUNDING, imgDataUrl: dummyImgDataUrl, priorTurnOutput: t0RespTxt, model: req1Model
         });
         expect(engine.currKeyIdx).toEqual(2);
         expect(engine.nextAvailTime).toEqual([0, 0, 0]);
@@ -145,7 +146,7 @@ describe('OpenAiEngine.generate', () => {
                 prompts: {
                     sysPrompt: "sys", queryPrompt: "query", groundingPrompt: "referring",
                     elementlessActionPrompt: "elementless action prompt"
-                }, turnInStep: 1, imgDataUrl: dummyImgDataUrl
+                }, generationType: GenerateMode.GROUNDING, imgDataUrl: dummyImgDataUrl
             })).rejects
             .toThrow("priorTurnOutput must be provided for turn 1")
     });
@@ -163,7 +164,7 @@ describe('OpenAiEngine.generate', () => {
             ]
         } as ChatCompletion);
 
-        const result0 = await engine.generate({prompts: prompts, turnInStep: 0, imgDataUrl: dummyImgDataUrl});
+        const result0 = await engine.generate({prompts: prompts, generationType: GenerateMode.PLANNING, imgDataUrl: dummyImgDataUrl});
         expect(result0).toEqual(t0RespTxt);
         // @ts-expect-error testing, will fail if create not called
         const request0Body = mockCompletions.create.mock.lastCall[0];
@@ -176,7 +177,7 @@ describe('OpenAiEngine.generate', () => {
             ]
         } as ChatCompletion);
         const result1 = await engine.generate(
-            {prompts: prompts, turnInStep: 1, imgDataUrl: dummyImgDataUrl, priorTurnOutput: t0RespTxt});
+            {prompts: prompts, generationType: GenerateMode.GROUNDING, imgDataUrl: dummyImgDataUrl, priorTurnOutput: t0RespTxt});
         expect(result1).toEqual(t1RespTxt);
 
         //@ts-expect-error testing, will fail if create not called
@@ -223,7 +224,7 @@ describe('OpenAiEngine.generateWithRetry', () => {
 
         const req0Start = Date.now();
         const result0 = await engine.generateWithRetry(
-            {prompts: prompts, turnInStep: 0, imgDataUrl: dummyImgDataUrl}, increasedBaseBackoffDelay);
+            {prompts: prompts, generationType: GenerateMode.PLANNING, imgDataUrl: dummyImgDataUrl}, increasedBaseBackoffDelay);
         const req0Time = Date.now() - req0Start;
         expect(req0Time).toBeLessThan(increasedBaseBackoffDelay);
         expect(result0).toEqual(t0RespTxt);
@@ -239,7 +240,7 @@ describe('OpenAiEngine.generateWithRetry', () => {
 
         const req1Start = Date.now();
         const result1 = await engine.generateWithRetry(
-            {prompts: prompts, turnInStep: 1, imgDataUrl: dummyImgDataUrl, priorTurnOutput: t0RespTxt});
+            {prompts: prompts, generationType: GenerateMode.GROUNDING, imgDataUrl: dummyImgDataUrl, priorTurnOutput: t0RespTxt});
         const req1Time = Date.now() - req1Start;
         expect(req1Time).toBeLessThan(increasedBaseBackoffDelay);
         expect(result1).toEqual(t1RespTxt);
@@ -270,7 +271,7 @@ describe('OpenAiEngine.generateWithRetry', () => {
 
         const req0Start = Date.now();
         const result0 = await engine.generateWithRetry(
-            {prompts: prompts, turnInStep: 0, imgDataUrl: dummyImgDataUrl}, 100);
+            {prompts: prompts, generationType: GenerateMode.PLANNING, imgDataUrl: dummyImgDataUrl}, 100);
         const req0Time = Date.now() - req0Start;
         expect(req0Time).toBeGreaterThan(100 + 300 + 900);
         expect(req0Time).toBeLessThan(100 + 300 + 900 + 2700);
@@ -302,7 +303,7 @@ describe('OpenAiEngine.generateWithRetry', () => {
 
         const req1Start = Date.now();
         const result1 = await engine.generateWithRetry(
-            {prompts: prompts, turnInStep: 1, imgDataUrl: dummyImgDataUrl, priorTurnOutput: t0RespTxt}, 10);
+            {prompts: prompts, generationType: GenerateMode.GROUNDING, imgDataUrl: dummyImgDataUrl, priorTurnOutput: t0RespTxt}, 10);
         const req1Time = Date.now() - req1Start;
         expect(req1Time).toBeGreaterThan(10 + 30 + 90 + 270 + 810);
         expect(req1Time).toBeLessThan(10 + 30 + 90 + 270 + 810 + 2430);
@@ -327,7 +328,7 @@ describe('OpenAiEngine.generateWithRetry', () => {
             });
         await expect(async () => {
             await engine.generateWithRetry(
-                {prompts: prompts, turnInStep: 0, imgDataUrl: dummyImgDataUrl}, undefined, 3)
+                {prompts: prompts, generationType: GenerateMode.PLANNING, imgDataUrl: dummyImgDataUrl}, undefined, 3)
         }).rejects.toThrow(finalError);
     });
 
@@ -344,7 +345,7 @@ describe('OpenAiEngine.generateWithRetry', () => {
         const start = Date.now();
         await expect(async () => {
             await engine.generateWithRetry(
-                {prompts: prompts, turnInStep: 0, imgDataUrl: dummyImgDataUrl}, increasedBaseBackoffDelay)
+                {prompts: prompts, generationType: GenerateMode.PLANNING, imgDataUrl: dummyImgDataUrl}, increasedBaseBackoffDelay)
         })
             .rejects.toThrow(authenticationError);
         const time = Date.now() - start;
