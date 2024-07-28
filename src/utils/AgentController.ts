@@ -89,15 +89,6 @@ enum LmmOutputReaction {
 }
 
 /**
- * allows simplification of the method that consuls the LLM to determine whether the next action is safe
- */
-enum AutoMonitorReaction {
-    ABORT_TASK,
-    PROCEED_WITH_ACTION,
-    ESCALATE_TO_HUMAN_MONITOR
-}
-
-/**
  * used to store information about the current AI-suggested action, so that the controller can later make decisions,
  * logs, and records based on detailed information if the action fails
  */
@@ -521,7 +512,7 @@ export class AgentController {
                 prompts.queryPrompt += `\n${monitorRejectionInfo}`;
             }
             this.logger.debug("prompts: " + JSON.stringify(prompts));
-            const reactionToLmmOutput = await this.queryLmmAndProcessResponsesForAction(
+            const [lmmOutputReaction, planningOutput, groundingOutput] = await this.queryLmmAndProcessResponsesForAction(
                 screenshotDataUrl, candidateIds, interactiveElements, prompts);
             if (this.terminationSignal) {
                 this.logger.info("received termination signal while processing interactive elements; terminating task")
@@ -531,9 +522,9 @@ export class AgentController {
                 // and also lets the user cut off a noop-loop.
                 return;
             }
-            if (reactionToLmmOutput === LmmOutputReaction.ABORT_TASK) {
+            if (lmmOutputReaction === LmmOutputReaction.ABORT_TASK) {
                 return;
-            } else if (reactionToLmmOutput === LmmOutputReaction.TRY_REPROMPT) {
+            } else if (lmmOutputReaction === LmmOutputReaction.TRY_REPROMPT) {
                 continue;
             }
 
@@ -589,11 +580,17 @@ export class AgentController {
                     return;
                 }
 
-                const autoMonitorOutput = await this.consultAutoMonitor(isTargetElementHighlightingNeeded, screenshotDataUrl, prompts);
+                //todo later add something here which will short circuit these checks if auto-monitor feature is
+                // disabled (to reduce delays/costs)
+                let autoMonitorAllowsProceeding = this.pendingActionInfo.action !== Action.CLICK
+                    && this.pendingActionInfo.action !== Action.PRESS_ENTER;
+                if (!autoMonitorAllowsProceeding) {//if action is a type that can possibly be dangerous, actually invoke the auto-monitor
+                    autoMonitorAllowsProceeding = await this.consultAutoMonitor(isTargetElementHighlightingNeeded,
+                        screenshotDataUrl, prompts, planningOutput, groundingOutput);
+                }
+
                 this.currActionTargetedScreenshotUrl = undefined;
-                if (autoMonitorOutput === AutoMonitorReaction.ESCALATE_TO_HUMAN_MONITOR) {
-                    this.state = AgentControllerState.WAITING_FOR_MONITOR_RESPONSE;
-                } else if (autoMonitorOutput === AutoMonitorReaction.PROCEED_WITH_ACTION) {
+                if (autoMonitorAllowsProceeding) {
                     this.numPriorScreenshotsTakenForPromptingCurrentAction = 0;
                     this.state = AgentControllerState.WAITING_FOR_ACTION;
                     try {
@@ -608,7 +605,8 @@ export class AgentController {
                             this.pendingActionInfo = undefined;
                         } else {this.terminateTask(`unexpected error while requesting an action; error: ${renderUnknownValue(error)}`);}
                     }
-                }//else, if autoMonitor output is ABORT TASK, terminateTask() was already called there, and now we just return 2 lines after this
+                }//otherwise, either the task will have already been aborted or else the state will have been switched
+                // to WAITING_FOR_MONITOR_RESPONSE, so no need to do anything here before the return in 2 lines
             }
             return;//not doing break here b/c no point doing the noop checks if it successfully chose an action which
             // was sent to the content script
@@ -618,14 +616,15 @@ export class AgentController {
         } else if (this.failureOrNoopStreak > this.maxFailureOrNoopStreakLimit) {this.terminateTask(`exceeded the maximum failure-or-noop streak limit of ${this.maxFailureOrNoopStreakLimit}`);}
     }
 
-    private async consultAutoMonitor(isTargetElementHighlightingNeeded: boolean, screenshotDataUrl: string, prompts: LmmPrompts): Promise<AutoMonitorReaction> {
+    private async consultAutoMonitor(
+        isTargetElementHighlightingNeeded: boolean, screenshotDataUrl: string, prompts: LmmPrompts, planningOutput: string,
+        groundingOutput: string): Promise<boolean> {
         if (this.portToSidePanel === undefined) {
             this.logger.error("no side panel connection to send auto-monitor query prompt to; abandoning task");
             //terminateTask() will be called by the onDisconnect listener
-            return AutoMonitorReaction.ABORT_TASK;
+            return false;
         }
 
-        //todo add ability to disable this feature (to reduce delays/costs)
         //todo add ability to pick separate ai engine as judge (since my skimming of papers suggests that a given big AI model seems to often be partial to its own outputs when used as a judge)
 
         let screenshotDataUrlForJudge: string;
@@ -645,12 +644,12 @@ export class AgentController {
         const startOfAiJudgeQuerying = Date.now();
         try {
             judgeOutput = await this.aiEngine.generateWithRetry({
-                prompts: prompts, generationType: GenerateMode.AUTO_MONITORING,
-                imgDataUrl: screenshotDataUrlForJudge
+                prompts: prompts, generationType: GenerateMode.AUTO_MONITORING, planningOutput: planningOutput,
+                imgDataUrl: screenshotDataUrlForJudge, groundingOutput: groundingOutput
             });
         } catch (error) {
             this.terminateTask(`error getting safety judgment from ai; error: ${renderUnknownValue(error)}`);
-            return AutoMonitorReaction.ABORT_TASK;
+            return false;
         }
         this.logger.debug(`ai querying for judge took ${Date.now() - startOfAiJudgeQuerying}ms`);
         this.logger.info("judge output: " + judgeOutput);
@@ -661,7 +660,7 @@ export class AgentController {
             });
         } catch (error: any) {
             this.terminateTask(`error while trying to send notification to side panel about auto-monitor call completion; error: ${renderUnknownValue(error)}`);
-            return AutoMonitorReaction.ABORT_TASK;
+            return false;
         }
 
         let llmRespObj: any;
@@ -669,13 +668,14 @@ export class AgentController {
             llmRespObj = JSON.parse(judgeOutput);
         } catch (e) {
             this.terminateTask(`Invalid JSON response from the model (which shouldn't be possible per API docs): [<${judgeOutput}>] with error ${renderUnknownValue(e)}`);
-            return AutoMonitorReaction.ABORT_TASK;
+            return false;
         }
         if (!isActionStateChangeSeverity(llmRespObj.severity) || typeof llmRespObj.explanation !== "string") {
             this.terminateTask(`AI output for safety judgment was invalid: ${judgeOutput}`);
-            return AutoMonitorReaction.ABORT_TASK;
+            return false;
         }
         const severity: ActionStateChangeSeverity = llmRespObj.severity;
+        //todo let user set threshold for auto-monitor, so it only escalates medium/high or even just escalates high
         if (severity !== ActionStateChangeSeverity.SAFE) {
             this.logger.info(`AI Judge decided that the proposed action was unsafe (severity ${severity}); explanation: ${llmRespObj.explanation}; escalating this action to human user as monitor`);
             this.isMonitorModeTempEnabled = true;
@@ -688,14 +688,13 @@ export class AgentController {
                 });
             } catch (error: any) {
                 this.terminateTask(`error while trying to send notification to side panel about proposed action being escalated to user by auto-monitor; error: ${renderUnknownValue(error)}`);
-                return AutoMonitorReaction.ABORT_TASK;
+                return false;
             }
-            return AutoMonitorReaction.ESCALATE_TO_HUMAN_MONITOR;
+            this.state = AgentControllerState.WAITING_FOR_MONITOR_RESPONSE;
+            return false;
         } else {
-            return AutoMonitorReaction.PROCEED_WITH_ACTION;
+            return true;
         }
-
-        //todo let user set threshold for auto-monitor, so it only escalates medium/high or even just escalates high
     }
 
     //todo ask Boyuan if he wants me to break this up even further- I'm on the fence as to whether it would actually
@@ -708,16 +707,18 @@ export class AgentController {
      * @param candidateIds the indices of the interactive elements that are candidates for the next action
      * @param interactiveElements the full data about the interactive elements on the page
      * @param prompts prompts for AI models
-     * @return indicator of what the main "processPageStateFromActor" function should do next based on the LLM response
+     * @return primarily, an indicator of what the main "processPageStateFromActor" function should do next based on the LLM response
      *         (e.g. whether to try reprompting, proceed with the action, or abort the task)
+     *         If the response is that the action should be performed, the next two parts of the return tuple will be
+     *          the planning and grounding LMM outputs respectively (otherwise those entries of the tuple will be empty strings)
      */
     private queryLmmAndProcessResponsesForAction = async (
         screenshotDataUrl: string, candidateIds: number[], interactiveElements: SerializableElementData[],
-        prompts: LmmPrompts): Promise<LmmOutputReaction> => {
+        prompts: LmmPrompts): Promise<[LmmOutputReaction, string, string]> => {
         if (this.portToSidePanel === undefined) {
             this.logger.error("no side panel connection to send query prompt to; abandoning task");
             //terminateTask() will be called by the onDisconnect listener
-            return LmmOutputReaction.ABORT_TASK;
+            return [LmmOutputReaction.ABORT_TASK, "", ""];
         }
 
 
@@ -744,7 +745,7 @@ export class AgentController {
                 });
             } catch (error: any) {
                 this.terminateTask(`error while trying to send notification to side panel about planning completion; error: ${renderUnknownValue(error)}`);
-                return LmmOutputReaction.ABORT_TASK;
+                return [LmmOutputReaction.ABORT_TASK, "", ""];
             }
 
             groundingOutput = await this.aiEngine.generateWithRetry({
@@ -754,7 +755,7 @@ export class AgentController {
                 aiApiBaseDelay);
         } catch (error) {
             this.terminateTask(`error getting next step from ai; error: ${renderUnknownValue(error)}`);
-            return LmmOutputReaction.ABORT_TASK;
+            return [LmmOutputReaction.ABORT_TASK, "", ""];
         }
         this.logger.debug(`ai querying for agent took ${Date.now() - startOfAiAgentQuerying}ms`);
         this.logger.info("grounding output: " + groundingOutput);
@@ -779,7 +780,7 @@ export class AgentController {
                 success: true, explanation: explanation
             });
             this.terminateTask("Task completed: " + explanation, false);
-            return LmmOutputReaction.ABORT_TASK;
+            return [LmmOutputReaction.ABORT_TASK, "", ""];
         } else if (action === Action.NONE) {
             //todo add logic to check explanation string for ["still", "loading", "finished"] and if it contains 2+ of
             // those then return a new output reaction that causes the controller to wait 5 seconds, then send fresh
@@ -802,9 +803,9 @@ export class AgentController {
                 });
             } catch (error: any) {
                 this.terminateTask(`error while trying to send notification to side panel about refusal to specify next action; error: ${renderUnknownValue(error)}`);
-                return LmmOutputReaction.ABORT_TASK;
+                return [LmmOutputReaction.ABORT_TASK, "", ""];
             }
-            return LmmOutputReaction.TRY_REPROMPT;
+            return [LmmOutputReaction.TRY_REPROMPT, "", ""];
         }
         const actionNeedsNoElement = action === Action.SCROLL_UP || action === Action.SCROLL_DOWN
             || action === Action.PRESS_ENTER;
@@ -827,9 +828,9 @@ export class AgentController {
                 });
             } catch (error: any) {
                 this.terminateTask(`error while trying to send notification to side panel about failure to specify valid target element for next action; error: ${renderUnknownValue(error)}`);
-                return LmmOutputReaction.ABORT_TASK;
+                return [LmmOutputReaction.ABORT_TASK, "", ""];
             }
-            return LmmOutputReaction.TRY_REPROMPT;
+            return [LmmOutputReaction.TRY_REPROMPT, "", ""];
         } else if (chosenCandidateIndex === candidateIds.length && !actionNeedsNoElement) {
             this.logger.info("ai selected 'none of the above' option for element selection when action targets specific element, marking action as noop");
             this.noopCount++;
@@ -846,9 +847,9 @@ export class AgentController {
                 });
             } catch (error: any) {
                 this.terminateTask(`error while trying to send notification to side panel about inconsistency in specification of next action; error: ${renderUnknownValue(error)}`);
-                return LmmOutputReaction.ABORT_TASK;
+                return [LmmOutputReaction.ABORT_TASK, "", ""];
             }
-            return LmmOutputReaction.TRY_REPROMPT;
+            return [LmmOutputReaction.TRY_REPROMPT, "", ""];
         }
         //todo if it says 'scroll down' when viewport info shows that we're already at the bottom, simply treat that as a no-op and remprompt
         // same for scroll up when at top
@@ -868,7 +869,7 @@ export class AgentController {
         this.mightNextActionCausePageNav = (action === Action.PRESS_ENTER || action === Action.CLICK);
 
 
-        return LmmOutputReaction.PROCEED_WITH_ACTION;
+        return [LmmOutputReaction.PROCEED_WITH_ACTION, planningOutput, groundingOutput];
     }
 
     /**

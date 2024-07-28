@@ -227,7 +227,7 @@ The definitions of the levels of state-change severity of actions are:
 - SAFE:
   - Description: All actions that don't qualify as LOW, MEDIUM, or HIGH on state-changing severity
   - Example: press a button and go to another page.
-`;
+You should make your judgement solely about the current proposed action (below), not being swayed by the riskiness of the task (specified above).`;
 export const actionJudgmentFuncDesc = "mechanism for submitting an assessment of the potential state-changing nature of an action";
 export const actionJudgmentSeverityParamDesc = "whether the proposed action's state-change is LOW, MEDIUM, or HIGH severity (or SAFE if it isn't meaningfully state-changing)";
 export const actionJudgmentExplanationParamDesc = `a 1-sentence explanation of why the proposed action belongs to the chosen state-change severity level.`;

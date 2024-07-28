@@ -356,11 +356,18 @@ export class SidePanelManager {
             this.state = SidePanelMgrState.WAIT_FOR_ACTION_PERFORMED_RECORD;
             this.pendingActionDiv.textContent = '';
             this.pendingActionDiv.title = '';
-            if (this.isMonitorModeTempEnabled) {
-                this.isMonitorModeTempEnabled = false;
-                this.handleMonitorModeCacheUpdate(false);
-            }
+            this.testAndCleanUpTempMonitorMode();
         });
+    }
+
+    private testAndCleanUpTempMonitorMode() {
+        if (this.isMonitorModeTempEnabled) {
+            this.isMonitorModeTempEnabled = false;
+            this.monitorApproveButton.disabled = true;
+            this.monitorRejectButton.disabled = true;
+            this.monitorFeedbackField.disabled = true;
+            this.handleMonitorModeCacheUpdate(false);
+        }
     }
 
     monitorRejectButtonClickHandler = async (): Promise<void> => {
@@ -389,10 +396,7 @@ export class SidePanelManager {
             this.pendingActionDiv.textContent = '';
             this.pendingActionDiv.title = '';
             this.monitorFeedbackField.value = '';
-            if (this.isMonitorModeTempEnabled) {
-                this.isMonitorModeTempEnabled = false;
-                this.handleMonitorModeCacheUpdate(false);
-            }
+            this.testAndCleanUpTempMonitorMode();
         });
     }
 
@@ -518,10 +522,7 @@ export class SidePanelManager {
     processActionCandidate = (message: any): void => {
         if (this.state === SidePanelMgrState.WAIT_FOR_MONITOR_RESPONSE) {
             this.logger.trace("received ACTION_CANDIDATE message from service worker port while waiting for monitor response from user; implies that a keyboard shortcut for a monitor rejection was used instead of the side panel ui");
-            if (this.isMonitorModeTempEnabled) {
-                this.isMonitorModeTempEnabled = false;
-                this.handleMonitorModeCacheUpdate(false);
-            }
+            this.testAndCleanUpTempMonitorMode();
         } else if (this.state != SidePanelMgrState.WAIT_FOR_PENDING_ACTION_INFO) {
             this.logger.error('received ACTION_CANDIDATE message from service worker port but state is not WAIT_FOR_PENDING_ACTION_INFO');
             return;
@@ -544,7 +545,10 @@ export class SidePanelManager {
     processAutoMonitorEscalation = (message: any): void => {
         this.isMonitorModeTempEnabled = true;
         this.handleMonitorModeCacheUpdate(true);
-        this.setAgentStatusWithDelayedClear(`Pending action judged potentially unsafe at severity ${message.severity} (hover for reason); please review then approve or reject`, undefined, `Explanation of judgement: ${message.explanation}`);
+        this.setAgentStatusWithDelayedClear(`Pending action judged potentially unsafe at severity ${message.severity} (hover for reason); please review then approve or reject`, 15, `Explanation of judgement: ${message.explanation}`);
+        this.monitorApproveButton.disabled = false;
+        this.monitorRejectButton.disabled = false;
+        this.monitorFeedbackField.disabled = false;
 
         this.state = SidePanelMgrState.WAIT_FOR_MONITOR_RESPONSE;
     }
@@ -552,10 +556,7 @@ export class SidePanelManager {
     processActionPerformedRecord = (message: any): void => {
         if (this.state === SidePanelMgrState.WAIT_FOR_MONITOR_RESPONSE) {
             this.logger.debug("received TASK_HISTORY_ENTRY message from service worker port while waiting for monitor response from user; implies that a keyboard shortcut for a monitor judgement was used instead of the side panel ui");
-            if (this.isMonitorModeTempEnabled) {
-                this.isMonitorModeTempEnabled = false;
-                this.handleMonitorModeCacheUpdate(false);
-            }
+            this.testAndCleanUpTempMonitorMode();
         } else if (this.state !== SidePanelMgrState.WAIT_FOR_ACTION_PERFORMED_RECORD) {
             this.logger.error('received TASK_HISTORY_ENTRY message from service worker port but state is not WAIT_FOR_ACTION_PERFORMED_RECORD');
             return;
