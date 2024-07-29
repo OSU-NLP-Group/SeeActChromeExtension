@@ -343,11 +343,7 @@ export class BrowserHelper {
     }
 
     highlightElement = async (elementStyle: CSSStyleDeclaration, highlightDuration: number = 30000) => {
-        if (this.highlightedElementStyle) {
-            if (this.highlightedElementOriginalOutline === undefined) { this.logger.error("highlightedElementOriginalOutline is undefined when resetting the outline of a highlighted element (at the start of the process for highlighting a new element"); }
-            this.highlightedElementStyle.outline = this.highlightedElementOriginalOutline ?? "";
-
-        }
+        await this.clearElementHighlightingEarly();
 
         const initialOutline = elementStyle.outline;
         //const initialBackgroundColor = elemStyle.backgroundColor;
@@ -375,6 +371,19 @@ export class BrowserHelper {
 
         await sleep(elementHighlightRenderDelay);
     }
+
+    clearElementHighlightingEarly = async () => {
+        if (this.highlightedElementStyle) {
+            if (this.highlightedElementOriginalOutline === undefined) { this.logger.error("highlightedElementOriginalOutline is undefined when resetting the outline of a highlighted element (at the start of the process for highlighting a new element"); }
+            this.highlightedElementStyle.outline = this.highlightedElementOriginalOutline ?? "";
+
+            this.highlightedElementStyle = undefined;
+            this.highlightedElementOriginalOutline = undefined;
+        }
+
+        await sleep(elementHighlightRenderDelay);
+    }
+
 
     /**
      * safely access contents of an iframe and record any cases where the iframe content is inaccessible

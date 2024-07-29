@@ -64,13 +64,14 @@ export class PageActor {
      * Method that retrieves information about the page's state (e.g. interactive elements) and sends it to the
      * controller
      */
-    getPageInfoForController = (): void => {
+    getPageInfoForController = async (): Promise<void> => {
         if (this.interactiveElements) {
             this.logger.error("interactive elements already exist; background script might've asked for interactive elements twice in a row without in between instructing that an action be performed or without waiting for the action to be finished")
             this.portToBackground.postMessage(
                 {type: Page2AgentControllerPortMsgType.TERMINAL, error: "interactive elements already exist"});
             return;
         }
+        await this.browserHelper.clearElementHighlightingEarly();
 
         this.interactiveElements = this.browserHelper.getInteractiveElements();
         const elementsInSerializableForm = this.interactiveElements.map(makeElementDataSerializable);
@@ -451,7 +452,7 @@ export class PageActor {
         this.hasControllerEverResponded = true;
         if (message.type === AgentController2PagePortMsgType.REQ_PAGE_STATE) {
             if (message.isMonitorRetry) {this.interactiveElements = undefined;}
-            this.getPageInfoForController();
+            await this.getPageInfoForController();
         } else if (message.type === AgentController2PagePortMsgType.REQ_ACTION) {
             await this.performActionFromController(message);
         } else if (message.type === AgentController2PagePortMsgType.HIGHLIGHT_CANDIDATE_ELEM) {
