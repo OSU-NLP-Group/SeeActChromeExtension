@@ -151,23 +151,9 @@ export class AnthropicEngine extends AiEngine {
                 respStr = JSON.stringify(inputsToTool);
             } else { this.logger.info("PROMPTING_FAILURE- Claude failed to use the 'browser_action' tool for grounding step") }
         } else if (generationType === GenerateMode.AUTO_MONITORING) {
-            if (planningOutput === undefined) {
-                throw new Error("planning Output must be provided for the auto-monitoring ai generation");
-            } else if (planningOutput.length > 0) {
-                requestBody.messages.push({role: "assistant", content: planningOutput});
-            } else {
-                this.logger.info("LLM MALFUNCTION- planning output was empty string");
-            }
-
+            const priorModelOutputs = this.assemblePriorOutputsForAutoMonitoring(planningOutput, groundingOutput);
+            requestBody.messages.push({role: "assistant", content: priorModelOutputs});
             requestBody.messages.push({role: "user", content: prompts.autoMonitorPrompt});
-
-            if (groundingOutput === undefined) {
-                throw new Error("grounding Output must be provided for the auto-monitoring ai generation");
-            } else if (groundingOutput.length > 0) {
-                requestBody.messages.push({role: "assistant", content: groundingOutput});
-            } else {
-                this.logger.info("LLM MALFUNCTION- grounding output was empty string");
-            }
 
             requestBody.tools = [{
                 name: "action_judgment",

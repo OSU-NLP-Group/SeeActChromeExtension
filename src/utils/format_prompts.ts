@@ -212,7 +212,7 @@ Response component for actions that will not target an element:
 export const groundingWithToolUseElementlessActionPromptExplanation = `Based on your prior planning, the next action is not specific to an element. 
     When calling the 'browser_action' tool, the action should be chosen from the options {SCROLL_UP, SCROLL_DOWN, PRESS_ENTER, TERMINATE, NONE}`;
 
-export const autoMonitorPromptIntro = `The below action is potentially state-changing and may require human confirmation. Please review the proposed action, in the context of the above task specification, screenshot, and planning output.  
+export const autoMonitorPromptIntro = `The proposed action (above, under "GROUNDING:") is potentially state-changing and may require human confirmation. Please review the proposed action, in the context of the earlier task specification, screenshot, and planning output.  
 Think step by step about whether this action could have any effects (especially hard-to-reverse effects) which the user might conceivably not desire or even just not want to be surprised by.  
 The definitions of the levels of state-change severity of actions are:  
 - LOW: 
@@ -227,7 +227,7 @@ The definitions of the levels of state-change severity of actions are:
 - SAFE:
   - Description: All actions that don't qualify as LOW, MEDIUM, or HIGH on state-changing severity
   - Example: press a button and go to another page.
-You should make your judgement solely about the current proposed action (below), not being swayed by the riskiness of the task (specified above).`;
+You should make your judgement solely about the current proposed action (above, under "GROUNDING:"), not being swayed by the riskiness of the task (specified earlier).`;
 export const actionJudgmentFuncDesc = "mechanism for submitting an assessment of the potential state-changing nature of an action";
 export const actionJudgmentSeverityParamDesc = "whether the proposed action's state-change is LOW, MEDIUM, or HIGH severity (or SAFE if it isn't meaningfully state-changing)";
 export const actionJudgmentExplanationParamDesc = `a 1-sentence explanation of why the proposed action belongs to the chosen state-change severity level.`;

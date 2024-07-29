@@ -86,24 +86,9 @@ export class OpenAiEngine extends AiEngine {
             //confer with Boyuan- should this log warning with response object if respStr null? or throw error?
             // feedback - don't worry about the api being that weird/unreliable
         } else if (generationType === GenerateMode.AUTO_MONITORING) {
-            if (planningOutput === undefined) {
-                throw new Error("planning Output must be provided for the auto-monitoring ai generation");
-            } else if (planningOutput.length > 0) {
-                messages.push({role: "assistant", content: planningOutput});
-            } else {
-                this.logger.info("LLM MALFUNCTION- planning output was empty string");
-            }
-
+            const priorModelOutputs = this.assemblePriorOutputsForAutoMonitoring(planningOutput, groundingOutput);
+            messages.push({role: "assistant", content: priorModelOutputs});
             messages.push({role: "user", content: prompts.autoMonitorPrompt});
-
-            if (groundingOutput === undefined) {
-                throw new Error("grounding Output must be provided for the auto-monitoring ai generation");
-            } else if (groundingOutput.length > 0) {
-                messages.push({role: "assistant", content: groundingOutput});
-            } else {
-                this.logger.info("LLM MALFUNCTION- grounding output was empty string");
-            }
-
 
             const response = await this.openAi.chat.completions.create({
                 messages: messages, model: model, temperature: temp, max_tokens: maxNewTokens,

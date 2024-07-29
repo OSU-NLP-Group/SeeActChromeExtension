@@ -192,23 +192,9 @@ export class GoogleDeepmindEngine extends AiEngine {
             inputsToTool["reasoning"] = reasoningText;
             respStr = JSON.stringify(inputsToTool);
         } else if (generationType === GenerateMode.AUTO_MONITORING) {
-            if (planningOutput === undefined) {
-                throw new Error("planning Output must be provided for the auto-monitoring ai generation");
-            } else if (planningOutput.length > 0) {
-                requestBody.contents.push({role: "model", parts: [{text: planningOutput}]});
-            } else {
-                this.logger.info("LLM MALFUNCTION- planning output was empty string");
-            }
-
+            const priorModelOutputs = this.assemblePriorOutputsForAutoMonitoring(planningOutput, groundingOutput);
+            requestBody.contents.push({role: "model", parts: [{text: priorModelOutputs}]});
             requestBody.contents.push({role: "user", parts: [{text: prompts.autoMonitorPrompt}]});
-
-            if (groundingOutput === undefined) {
-                throw new Error("grounding Output must be provided for the auto-monitoring ai generation");
-            } else if (groundingOutput.length > 0) {
-                requestBody.contents.push({role: "model", parts: [{text: groundingOutput}]});
-            } else {
-                this.logger.info("LLM MALFUNCTION- grounding output was empty string");
-            }
 
             const result = await chosenModel.generateContent(requestBody);
             this.checkAndLogNegativeGoogleApiResult(result);
