@@ -93,6 +93,8 @@ export class SidePanelManager {
     //because this is above other ui elements, we don't need complex resizing logic for when it becomes enabled/visible vs disabled/hidden
     cachedIsAnnotatorMode = defaultIsAnnotatorMode;
 
+    isMonitorModeTempEnabled = false;
+
     private state: SidePanelMgrState = SidePanelMgrState.IDLE;
     public agentControllerPort?: chrome.runtime.Port;
     public agentControllerReady = false;
@@ -354,7 +356,18 @@ export class SidePanelManager {
             this.state = SidePanelMgrState.WAIT_FOR_ACTION_PERFORMED_RECORD;
             this.pendingActionDiv.textContent = '';
             this.pendingActionDiv.title = '';
+            this.testAndCleanUpTempMonitorMode();
         });
+    }
+
+    private testAndCleanUpTempMonitorMode() {
+        if (this.isMonitorModeTempEnabled) {
+            this.isMonitorModeTempEnabled = false;
+            this.monitorApproveButton.disabled = true;
+            this.monitorRejectButton.disabled = true;
+            this.monitorFeedbackField.disabled = true;
+            this.handleMonitorModeCacheUpdate(false);
+        }
     }
 
     monitorRejectButtonClickHandler = async (): Promise<void> => {
@@ -383,6 +396,7 @@ export class SidePanelManager {
             this.pendingActionDiv.textContent = '';
             this.pendingActionDiv.title = '';
             this.monitorFeedbackField.value = '';
+            this.testAndCleanUpTempMonitorMode();
         });
     }
 
@@ -395,6 +409,8 @@ export class SidePanelManager {
             await this.mutex.runExclusive(() => this.processTaskStartConfirmation(message));
         } else if (message.type === AgentController2PanelPortMsgType.ACTION_CANDIDATE) {
             await this.mutex.runExclusive(() => this.processActionCandidate(message));
+        } else if (message.type === AgentController2PanelPortMsgType.AUTO_MONITOR_ESCALATION) {
+            await this.mutex.runExclusive(() => this.processAutoMonitorEscalation(message));
         } else if (message.type === AgentController2PanelPortMsgType.TASK_HISTORY_ENTRY) {
             await this.mutex.runExclusive(() => this.processActionPerformedRecord(message));
         } else if (message.type === AgentController2PanelPortMsgType.TASK_ENDED) {
@@ -444,6 +460,11 @@ export class SidePanelManager {
         this.monitorFeedbackField.disabled = true;
         this.monitorApproveButton.disabled = true;
         this.monitorRejectButton.disabled = true;
+
+        if (this.isMonitorModeTempEnabled) {
+            this.handleMonitorModeCacheUpdate(false);
+            this.isMonitorModeTempEnabled = false;
+        }
 
         if (this.cachedIsAnnotatorMode) {
             this.annotatorActionType.value = Action.CLICK;
@@ -500,7 +521,8 @@ export class SidePanelManager {
 
     processActionCandidate = (message: any): void => {
         if (this.state === SidePanelMgrState.WAIT_FOR_MONITOR_RESPONSE) {
-            this.logger.trace("received ACTION_CANDIDATE message from service worker port while waiting for monitor response from user; implies that a keyboard shortcut for a monitor rejection was used instead of the side panel ui")
+            this.logger.trace("received ACTION_CANDIDATE message from service worker port while waiting for monitor response from user; implies that a keyboard shortcut for a monitor rejection was used instead of the side panel ui");
+            this.testAndCleanUpTempMonitorMode();
         } else if (this.state != SidePanelMgrState.WAIT_FOR_PENDING_ACTION_INFO) {
             this.logger.error('received ACTION_CANDIDATE message from service worker port but state is not WAIT_FOR_PENDING_ACTION_INFO');
             return;
@@ -520,9 +542,21 @@ export class SidePanelManager {
         this.pendingActionDiv.title = buildGenericActionDesc(pendingActionInfo.action, pendingActionInfo.elementData, pendingActionInfo.value)
     }
 
+    processAutoMonitorEscalation = (message: any): void => {
+        this.isMonitorModeTempEnabled = true;
+        this.handleMonitorModeCacheUpdate(true);
+        this.setAgentStatusWithDelayedClear(`Pending action judged potentially unsafe at severity ${message.severity} (hover for reason); please review then approve or reject`, 15, `Explanation of judgement: ${message.explanation}`);
+        this.monitorApproveButton.disabled = false;
+        this.monitorRejectButton.disabled = false;
+        this.monitorFeedbackField.disabled = false;
+
+        this.state = SidePanelMgrState.WAIT_FOR_MONITOR_RESPONSE;
+    }
+
     processActionPerformedRecord = (message: any): void => {
         if (this.state === SidePanelMgrState.WAIT_FOR_MONITOR_RESPONSE) {
             this.logger.debug("received TASK_HISTORY_ENTRY message from service worker port while waiting for monitor response from user; implies that a keyboard shortcut for a monitor judgement was used instead of the side panel ui");
+            this.testAndCleanUpTempMonitorMode();
         } else if (this.state !== SidePanelMgrState.WAIT_FOR_ACTION_PERFORMED_RECORD) {
             this.logger.error('received TASK_HISTORY_ENTRY message from service worker port but state is not WAIT_FOR_ACTION_PERFORMED_RECORD');
             return;
@@ -655,12 +689,12 @@ export class SidePanelManager {
             const priorHistoryHeight = this.historyList.getBoundingClientRect().height;//px
 
             if (newMonitorModeVal) {//re-displaying monitor mode UI
-                const newHistoryHeight = priorHistoryHeight-this.lastHeightOfMonitorModeContainer;//px
+                const newHistoryHeight = priorHistoryHeight - this.lastHeightOfMonitorModeContainer;//px
                 this.historyList.style.height = `${(newHistoryHeight)}px`;
                 this.monitorModeContainer.style.display = "block";
             } else {//collapsing monitor mode UI
                 this.lastHeightOfMonitorModeContainer = this.monitorModeContainer.getBoundingClientRect().height;
-                const newHistoryHeight = priorHistoryHeight+this.lastHeightOfMonitorModeContainer;//px
+                const newHistoryHeight = priorHistoryHeight + this.lastHeightOfMonitorModeContainer;//px
                 this.historyList.style.height = `${(newHistoryHeight)}px`;
                 this.monitorModeContainer.style.display = "none";
             }

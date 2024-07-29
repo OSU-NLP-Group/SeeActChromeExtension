@@ -11,12 +11,21 @@ import Anthropic, {
     RateLimitError
 } from "@anthropic-ai/sdk";
 import {
+    actionJudgmentFuncDesc, actionJudgmentSeverityParamDesc,
+    actionJudgmentRequiredProps,
     browserActionFuncDesc, browserActionRequiredProps, browserActionSchemaActionDesc,
     groundingPromptElementParamDesc,
     groundingPromptExplanationParamDesc,
-    groundingPromptValueParamDesc
+    groundingPromptValueParamDesc, actionJudgmentExplanationParamDesc
 } from "./format_prompts";
-import {AiEngineCreateOptions, AiProviderDetails, AiProviders, GenerateOptions} from "./ai_misc";
+import {
+    ActionStateChangeSeverity,
+    AiEngineCreateOptions,
+    AiProviderDetails,
+    AiProviders,
+    GenerateMode,
+    GenerateOptions
+} from "./ai_misc";
 
 const anthropicSupportedMediaTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 function checkImageTypeIsAnthropicSupported(dataUrlImageType: string): dataUrlImageType is "image/jpeg" | "image/png" | "image/gif" | "image/webp" {
@@ -48,7 +57,7 @@ export class AnthropicEngine extends AiEngine {
 
 
     generate = async ({
-                          prompts, turnInStep, imgDataUrl, priorTurnOutput,
+                          prompts, generationType, imgDataUrl, planningOutput, groundingOutput,
                           maxNewTokens = 4096, temp = this.temperature, model = this.model
                       }: GenerateOptions):
         Promise<string> => {
@@ -98,14 +107,14 @@ export class AnthropicEngine extends AiEngine {
         }
 
         let respStr: string | undefined;
-        if (turnInStep === 0) {
+        if (generationType === GenerateMode.PLANNING) {
             const response = await this.anthropic.messages.create(requestBody);
             respStr = (response.content[0] as TextBlock).text;
-        } else if (turnInStep === 1) {
-            if (priorTurnOutput === undefined) {
-                throw new Error("priorTurnOutput must be provided for turn 1");
-            } else if (priorTurnOutput.length > 0) {
-                requestBody.messages.push({role: "assistant", content: priorTurnOutput});
+        } else if (generationType === GenerateMode.GROUNDING) {
+            if (planningOutput === undefined) {
+                throw new Error("planning output must be provided for the grounding ai generation");
+            } else if (planningOutput.length > 0) {
+                requestBody.messages.push({role: "assistant", content: planningOutput});
             } else {
                 this.logger.info("LLM MALFUNCTION- planning output was empty string");
             }
@@ -128,7 +137,7 @@ export class AnthropicEngine extends AiEngine {
                 }
             }];
 
-            if (priorTurnOutput.includes(AiEngine.ELEMENTLESS_GROUNDING_TRIGGER)) {
+            if (planningOutput.includes(AiEngine.ELEMENTLESS_GROUNDING_TRIGGER)) {
                 requestBody.messages.push({role: "user", content: prompts.elementlessActionPrompt});
             } else {
                 requestBody.messages.push({role: "user", content: prompts.groundingPrompt});
@@ -142,6 +151,49 @@ export class AnthropicEngine extends AiEngine {
                 inputsToTool["reasoning"] = reasoningBlock?.text;
                 respStr = JSON.stringify(inputsToTool);
             } else { this.logger.info("PROMPTING_FAILURE- Claude failed to use the 'browser_action' tool for grounding step") }
+        } else if (generationType === GenerateMode.AUTO_MONITORING) {
+            if (planningOutput === undefined) {
+                throw new Error("planning Output must be provided for the auto-monitoring ai generation");
+            } else if (planningOutput.length > 0) {
+                requestBody.messages.push({role: "assistant", content: planningOutput});
+            } else {
+                this.logger.info("LLM MALFUNCTION- planning output was empty string");
+            }
+
+            requestBody.messages.push({role: "user", content: prompts.autoMonitorPrompt});
+
+            if (groundingOutput === undefined) {
+                throw new Error("grounding Output must be provided for the auto-monitoring ai generation");
+            } else if (groundingOutput.length > 0) {
+                requestBody.messages.push({role: "assistant", content: groundingOutput});
+            } else {
+                this.logger.info("LLM MALFUNCTION- grounding output was empty string");
+            }
+
+            requestBody.tools = [{
+                name: "action_judgment",
+                description: actionJudgmentFuncDesc,
+                input_schema: {
+                    type: "object",
+                    properties: {
+                        severity: {
+                            type: ["string"], description: actionJudgmentSeverityParamDesc,
+                            enum: Object.keys(ActionStateChangeSeverity)
+                        },
+                        explanation: {type: ["string"], description: actionJudgmentExplanationParamDesc},
+                    },
+                    required: actionJudgmentRequiredProps
+                }
+            }];
+
+            const response = await this.anthropic.messages.create(requestBody);
+            if (response.stop_reason === "tool_use") {
+                const reasoningBlock = response.content.find((block) => block.type === "text") as TextBlock;
+                const toolUseBlock = response.content.find((block) => block.type === "tool_use") as ToolUseBlock;
+                const inputsToTool: any = toolUseBlock?.input ?? {explanation: "no input to tool"};
+                inputsToTool["reasoning"] = reasoningBlock?.text;
+                respStr = JSON.stringify(inputsToTool);
+            } else { this.logger.info("PROMPTING_FAILURE- Claude failed to use the 'action_judgment' tool for auto-monitoring step") }
         }
         //todo unit test and implement rate-limit-respecting code if Boyuan confirms it's still desired
         // feedback- low priority for now

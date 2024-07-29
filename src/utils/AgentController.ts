@@ -14,8 +14,8 @@ import {
 } from "./shared_logging_setup";
 import {
     Action,
-    AgentController2PanelPortMsgType,
     AgentController2PagePortMsgType,
+    AgentController2PanelPortMsgType,
     base64ToByteArray,
     buildGenericActionDesc,
     defaultIsMonitorMode,
@@ -28,6 +28,7 @@ import {
     Page2AgentControllerPortMsgType,
     Panel2AgentControllerPortMsgType,
     renderUnknownValue,
+    SerializableElementData,
     setupModeCache,
     sleep,
     storageKeyForAiProviderType,
@@ -38,7 +39,7 @@ import {
     storageKeyForMaxOps,
     storageKeyForMonitorMode,
     validateIntegerLimitUpdate,
-    ViewportDetails, SerializableElementData
+    ViewportDetails
 } from "./misc";
 import {formatChoices, generatePrompt, LmmPrompts, postProcessActionLlm} from "./format_prompts";
 import {getIndexFromOptionName} from "./format_prompt_utils";
@@ -46,7 +47,13 @@ import {ChromeWrapper} from "./ChromeWrapper";
 import JSZip from "jszip";
 import {IDBPDatabase} from "idb";
 import {AiEngine} from "./AiEngine";
-import {AiProviderId, AiProviders} from "./ai_misc";
+import {
+    ActionStateChangeSeverity,
+    AiProviderId,
+    AiProviders,
+    GenerateMode,
+    isActionStateChangeSeverity
+} from "./ai_misc";
 import {ServiceWorkerHelper} from "./ServiceWorkerHelper";
 import Port = chrome.runtime.Port;
 
@@ -179,7 +186,12 @@ export class AgentController {
     wasPrevActionRejectedByMonitor: boolean = false;
     monitorFeedback: string = "";
 
+    //for "auto-monitor" feature, so it can turn on monitor-mode-related behaviors when the auto-monitor escalates a
+    // proposed action to the human user, then turn them off again when the human user has responded
+    isMonitorModeTempEnabled = false;
+
     numPriorScreenshotsTakenForPromptingCurrentAction: number = 0;
+    currActionTargetedScreenshotUrl: string | undefined;
 
     state: AgentControllerState = AgentControllerState.IDLE;
 
@@ -302,11 +314,10 @@ export class AgentController {
         const injectionErrMsg = await this.swHelper.injectContentScript("agent",
             './src/page_interaction.js', preInjectChecksAndUpdates, newTab);
         if (injectionErrMsg) {
-            this.logger.warn(`error injecting content script for a task: ${injectionErrMsg}`);
             if (injectionErrMsg.indexOf("chrome://") !== -1) {
                 this.logger.warn(isStartOfTask ? "please only try to start the agent on a regular web page." : "please don't switch to a chrome:// URL while the agent is running");
             }
-            this.terminateTask(injectionErrMsg);
+            this.terminateTask(`error injecting content script for a task: ${injectionErrMsg}`);
         }
     }
 
@@ -349,11 +360,7 @@ export class AgentController {
             this.logger.debug(`maxOps: ${this.maxOpsLimit}, maxNoops: ${this.maxNoopLimit}, maxFailures: ${this.maxFailureLimit}, maxFailureOrNoopStreak: ${this.maxFailureOrNoopStreakLimit}`);
             try {
                 await this.injectPageActorScript(true);
-            } catch (error: any) {
-                const termReason = `error injecting content script to start task; error: ${renderUnknownValue(error)}`;
-                this.logger.error(termReason);
-                this.terminateTask(termReason);
-            }
+            } catch (error: any) {this.terminateTask(`error injecting content script to start task; error: ${renderUnknownValue(error)}`);}
         }
     }
 
@@ -364,9 +371,7 @@ export class AgentController {
     addPageConnection = async (port: Port): Promise<void> => {
         await this.mutex.runExclusive(() => {
             if (this.state !== AgentControllerState.WAITING_FOR_CONTENT_SCRIPT_INIT) {
-                const termReason = "received connection from content script while not waiting for content script initialization, but rather in state " + AgentControllerState[this.state];
-                this.logger.error(termReason);
-                this.terminateTask(termReason);
+                this.terminateTask("received connection from content script while not waiting for content script initialization, but rather in state " + AgentControllerState[this.state]);
                 return;
             }
             this.logger.trace("content script connected to agent controller in service worker");
@@ -382,11 +387,7 @@ export class AgentController {
      */
     addSidePanelConnection = async (port: Port): Promise<void> => {
         await this.mutex.runExclusive(() => {
-            if (this.state !== AgentControllerState.IDLE) {
-                const termReason = "received connection from side panel while not idle, but rather in state " + AgentControllerState[this.state];
-                this.logger.error(termReason);
-                this.terminateTask(termReason);
-            }
+            if (this.state !== AgentControllerState.IDLE) {this.terminateTask("received connection from side panel while not idle, but rather in state " + AgentControllerState[this.state]);}
             this.logger.trace("side panel connected to agent controller in service worker");
             this.portToSidePanel = port;
             this.portToSidePanel.onMessage.addListener(this.handlePanelMsgToController);
@@ -407,9 +408,7 @@ export class AgentController {
      */
     processPageActorInitialized = (port: Port): void => {
         if (this.state !== AgentControllerState.WAITING_FOR_CONTENT_SCRIPT_INIT) {
-            const termReason = "received 'content script initialized and ready' message from new content script while not waiting for content script initialization, but rather in state " + AgentControllerState[this.state];
-            this.logger.error(termReason);
-            this.terminateTask(termReason);
+            this.terminateTask("received 'content script initialized and ready' message from new content script while not waiting for content script initialization, but rather in state " + AgentControllerState[this.state]);
             return;
         }
         this.logger.trace("content script initialized and ready; requesting interactive elements")
@@ -423,28 +422,18 @@ export class AgentController {
             if ('message' in error && error.message === expectedMsgForPortDisconnection) {
                 this.logger.info("content script disconnected from service worker while processing initial message and before trying to request interactive elements; task will resume after new content script connection is established");
                 this.state = AgentControllerState.PENDING_RECONNECT;
-            } else {
-                const termReason = `unexpected error while trying to request interactive elements; error: ${renderUnknownValue(error)}`;
-                this.logger.error(`${termReason}; terminating task`);
-                this.terminateTask(termReason);
-            }
+            } else {this.terminateTask(`unexpected error while trying to request interactive elements; error: ${renderUnknownValue(error)}`);}
         }
         if (this.actionsSoFar.length === 0) {
             if (!this.portToSidePanel) {
-                const termReason = "no side panel connection to send task started message to";
-                this.logger.error(`${termReason}; terminating task`);
-                this.terminateTask(termReason);
+                this.terminateTask("no side panel connection to send task started message to");
             } else {
                 try {
                     this.portToSidePanel.postMessage({
                         type: AgentController2PanelPortMsgType.TASK_STARTED, taskId: this.taskId,
                         success: successfulStart, taskSpec: this.taskSpecification
                     });
-                } catch (error: any) {
-                    const termReason = `error while trying to inform side panel about start of task and the requesting of interactive elements; error: ${renderUnknownValue(error)}`;
-                    this.logger.error(`${termReason}; terminating task`);
-                    this.terminateTask(termReason);
-                }
+                } catch (error: any) {this.terminateTask(`error while trying to inform side panel about start of task and the requesting of interactive elements; error: ${renderUnknownValue(error)}`);}
             }
         }
     }
@@ -462,9 +451,7 @@ export class AgentController {
      */
     processPageStateFromActor = async (message: any, pageActorPort: Port): Promise<void> => {
         if (this.state !== AgentControllerState.WAITING_FOR_PAGE_STATE) {
-            const termReason = "received 'sending interactive elements' message from content script while not waiting for elements, but rather in state " + AgentControllerState[this.state];
-            this.logger.error(termReason);
-            this.terminateTask(termReason);
+            this.terminateTask("received 'sending interactive elements' message from content script while not waiting for elements, but rather in state " + AgentControllerState[this.state]);
             return;
         }
         this.logger.trace("received interactive elements from content script")
@@ -500,9 +487,7 @@ export class AgentController {
         let monitorRejectionInfo: string | undefined;
         if (this.wasPrevActionRejectedByMonitor) {
             if (!this.pendingActionInfo) {
-                const termReason = "previous action was rejected by monitor, but no tentative action info stored";
-                this.logger.error(termReason + "; terminating task");
-                this.terminateTask(termReason);
+                this.terminateTask("previous action was rejected by monitor, but no tentative action info stored");
                 return;
             }
             monitorRejectionInfo = "WARNING- The monitor/user rejected your previous planned action: "
@@ -511,12 +496,24 @@ export class AgentController {
             this.monitorFeedback = "";
             this.pendingActionInfo = undefined;
             this.wasPrevActionRejectedByMonitor = false;
+            if (this.isMonitorModeTempEnabled) {
+                this.isMonitorModeTempEnabled = false;
+                this.cachedMonitorMode = false;
+            }
         }
 
         while (this.noopCount <= this.maxNoopLimit && this.failureOrNoopStreak <= this.maxFailureOrNoopStreakLimit) {
             this.logger.debug(`noop count: ${this.noopCount}, failure-or-noop streak: ${this.failureOrNoopStreak}; noopLimit: ${this.maxNoopLimit}, failure-or-noop streak limit: ${this.maxFailureOrNoopStreakLimit}`);
-            const reactionToLmmOutput = await this.queryLmmAndProcessResponsesForAction(interactiveChoices,
-                screenshotDataUrl, candidateIds, interactiveElements, monitorRejectionInfo, viewportInfo);
+
+            const prompts: LmmPrompts = generatePrompt(this.taskSpecification,
+                this.actionsSoFar.map(entry => `${entry.success ? "SUCCEEDED" : "FAILED"}-${entry.actionDesc}; explanation: ${entry.explanation}`),
+                interactiveChoices, viewportInfo, this.aiEngine.providerDetails().id);
+            if (monitorRejectionInfo !== undefined) {
+                prompts.queryPrompt += `\n${monitorRejectionInfo}`;
+            }
+            this.logger.debug("prompts: " + JSON.stringify(prompts));
+            const [lmmOutputReaction, planningOutput, groundingOutput] = await this.queryLmmAndProcessResponsesForAction(
+                screenshotDataUrl, candidateIds, interactiveElements, prompts);
             if (this.terminationSignal) {
                 this.logger.info("received termination signal while processing interactive elements; terminating task")
                 //the task termination will be handled by the terminateTask method being called by the handler (for
@@ -525,16 +522,14 @@ export class AgentController {
                 // and also lets the user cut off a noop-loop.
                 return;
             }
-            if (reactionToLmmOutput === LmmOutputReaction.ABORT_TASK) {
+            if (lmmOutputReaction === LmmOutputReaction.ABORT_TASK) {
                 return;
-            } else if (reactionToLmmOutput === LmmOutputReaction.TRY_REPROMPT) {
+            } else if (lmmOutputReaction === LmmOutputReaction.TRY_REPROMPT) {
                 continue;
             }
 
             if (this.pendingActionInfo === undefined) {
-                const termReason = "Bug in action selection code allowed the scaffolding to reach a point where it would commit to the chosen action while no action had actually been chosen";
-                this.logger.error(termReason + "; terminating task");
-                this.terminateTask(termReason);
+                this.terminateTask("Bug in action selection code allowed the scaffolding to reach a point where it would commit to the chosen action while no action had actually been chosen");
                 return;
             }
 
@@ -543,18 +538,15 @@ export class AgentController {
                     this.portToSidePanel.postMessage(
                         {type: AgentController2PanelPortMsgType.ACTION_CANDIDATE, actionInfo: this.pendingActionInfo});
                 } catch (error: any) {
-                    const termReason = `error while trying to inform side panel about pending action; error: ${renderUnknownValue(error)}`;
-                    this.logger.error(`${termReason}; terminating task`);
-                    this.terminateTask(termReason);
+                    this.terminateTask(`error while trying to inform side panel about pending action; error: ${renderUnknownValue(error)}`);
                     return;
                 }
             } else {
-                const termReason = "side panel connection lost at some point during action planning";
-                this.logger.error(termReason + ", terminating task");
-                this.terminateTask(termReason);
+                this.terminateTask("side panel connection lost at some point during action planning");
                 return;
             }
-            if (this.pendingActionInfo.elementIndex !== undefined) {
+            const isTargetElementHighlightingNeeded = this.pendingActionInfo.elementIndex !== undefined || this.pendingActionInfo.action === Action.PRESS_ENTER;
+            if (isTargetElementHighlightingNeeded) {
                 this.logger.info("about to instruct page actor to highlight the target element");
                 try {
                     pageActorPort.postMessage({
@@ -568,9 +560,7 @@ export class AgentController {
                         this.state = AgentControllerState.PENDING_RECONNECT;
                         this.pendingActionInfo = undefined;
                     } else {
-                        const termReason = `unexpected error while trying to highlight an element for monitor mode; error: ${renderUnknownValue(error)}`;
-                        this.logger.error(`${termReason}; terminating task`);
-                        this.terminateTask(termReason);
+                        this.terminateTask(`unexpected error while trying to highlight an element for monitor mode; error: ${renderUnknownValue(error)}`);
                     }
                     return;
                 }
@@ -580,7 +570,7 @@ export class AgentController {
                 this.state = AgentControllerState.WAITING_FOR_MONITOR_RESPONSE;
             } else {
                 //to get high confidence that the screenshot with highlighted target element has been captured
-                if (this.pendingActionInfo.elementIndex !== undefined) { await sleep(40 + elementHighlightRenderDelay); }
+                if (isTargetElementHighlightingNeeded) { await sleep(40 + elementHighlightRenderDelay); }
 
                 if (this.terminationSignal) {
                     this.logger.info("received termination signal after deciding on the action but before actually committing it (possibly while waiting for a screenshot to be captured with the target element highlighted; terminating task")
@@ -589,36 +579,121 @@ export class AgentController {
                     // This prevents the agent from performing a final action after the user presses the terminate button
                     return;
                 }
-                this.numPriorScreenshotsTakenForPromptingCurrentAction = 0;
-                this.state = AgentControllerState.WAITING_FOR_ACTION;
-                try {
-                    pageActorPort.postMessage({
-                        type: AgentController2PagePortMsgType.REQ_ACTION, action: this.pendingActionInfo.action,
-                        elementIndex: this.pendingActionInfo.elementIndex, value: this.pendingActionInfo.value
-                    });
-                } catch (error: any) {
-                    if ('message' in error && error.message === expectedMsgForPortDisconnection) {
-                        this.logger.info("content script disconnected from service worker while processing interactive elements and before trying to request an action; task will resume after new content script connection is established");
-                        this.state = AgentControllerState.PENDING_RECONNECT;
-                        this.pendingActionInfo = undefined;
-                    } else {
-                        const termReason = `unexpected error while requesting an action; error: ${renderUnknownValue(error)}`;
-                        this.logger.error(`${termReason}; terminating task`);
-                        this.terminateTask(termReason);
-                    }
+
+                //todo later add something here which will short circuit these checks if auto-monitor feature is
+                // disabled (to reduce delays/costs)
+                let autoMonitorAllowsProceeding = this.pendingActionInfo.action !== Action.CLICK
+                    && this.pendingActionInfo.action !== Action.PRESS_ENTER;
+                if (!autoMonitorAllowsProceeding) {//if action is a type that can possibly be dangerous, actually invoke the auto-monitor
+                    autoMonitorAllowsProceeding = await this.consultAutoMonitor(isTargetElementHighlightingNeeded,
+                        screenshotDataUrl, prompts, planningOutput, groundingOutput);
                 }
+
+                this.currActionTargetedScreenshotUrl = undefined;
+                if (autoMonitorAllowsProceeding) {
+                    this.numPriorScreenshotsTakenForPromptingCurrentAction = 0;
+                    this.state = AgentControllerState.WAITING_FOR_ACTION;
+                    try {
+                        pageActorPort.postMessage({
+                            type: AgentController2PagePortMsgType.REQ_ACTION, action: this.pendingActionInfo.action,
+                            elementIndex: this.pendingActionInfo.elementIndex, value: this.pendingActionInfo.value
+                        });
+                    } catch (error: any) {
+                        if ('message' in error && error.message === expectedMsgForPortDisconnection) {
+                            this.logger.info("content script disconnected from service worker while processing interactive elements and before trying to request an action; task will resume after new content script connection is established");
+                            this.state = AgentControllerState.PENDING_RECONNECT;
+                            this.pendingActionInfo = undefined;
+                        } else {this.terminateTask(`unexpected error while requesting an action; error: ${renderUnknownValue(error)}`);}
+                    }
+                }//otherwise, either the task will have already been aborted or else the state will have been switched
+                // to WAITING_FOR_MONITOR_RESPONSE, so no need to do anything here before the return in 2 lines
             }
             return;//not doing break here b/c no point doing the noop checks if it successfully chose an action which
             // was sent to the content script
         }
         if (this.noopCount > this.maxNoopLimit) {
-            const termReason = `exceeded the maximum noop limit of ${this.maxNoopLimit}`;
-            this.logger.warn(`task terminated because it ${termReason}`);
-            this.terminateTask(termReason);
-        } else if (this.failureOrNoopStreak > this.maxFailureOrNoopStreakLimit) {
-            const termReason = `exceeded the maximum failure-or-noop streak limit of ${this.maxFailureOrNoopStreakLimit}`;
-            this.logger.warn(`task terminated because it ${termReason}`);
-            this.terminateTask(termReason);
+            this.terminateTask(`exceeded the maximum noop limit of ${this.maxNoopLimit}`);
+        } else if (this.failureOrNoopStreak > this.maxFailureOrNoopStreakLimit) {this.terminateTask(`exceeded the maximum failure-or-noop streak limit of ${this.maxFailureOrNoopStreakLimit}`);}
+    }
+
+    private async consultAutoMonitor(
+        isTargetElementHighlightingNeeded: boolean, screenshotDataUrl: string, prompts: LmmPrompts, planningOutput: string,
+        groundingOutput: string): Promise<boolean> {
+        if (this.portToSidePanel === undefined) {
+            this.logger.error("no side panel connection to send auto-monitor query prompt to; abandoning task");
+            //terminateTask() will be called by the onDisconnect listener
+            return false;
+        }
+
+        //todo add ability to pick separate ai engine as judge (since my skimming of papers suggests that a given big AI model seems to often be partial to its own outputs when used as a judge)
+
+        let screenshotDataUrlForJudge: string;
+        if (isTargetElementHighlightingNeeded) {
+            if (this.currActionTargetedScreenshotUrl === undefined) {
+                this.logger.warn("targeted screenshot was needed but not captured; falling back to standard screenshot for auto monitor");
+                screenshotDataUrlForJudge = screenshotDataUrl;
+            } else {
+                screenshotDataUrlForJudge = this.currActionTargetedScreenshotUrl;
+                prompts.autoMonitorPrompt += `\nThe screenshot above has a highlighting effect on/around the target element for the action.`;
+            }
+        } else {
+            screenshotDataUrlForJudge = screenshotDataUrl;
+        }
+
+        let judgeOutput: string;
+        const startOfAiJudgeQuerying = Date.now();
+        try {
+            judgeOutput = await this.aiEngine.generateWithRetry({
+                prompts: prompts, generationType: GenerateMode.AUTO_MONITORING, planningOutput: planningOutput,
+                imgDataUrl: screenshotDataUrlForJudge, groundingOutput: groundingOutput
+            });
+        } catch (error) {
+            this.terminateTask(`error getting safety judgment from ai; error: ${renderUnknownValue(error)}`);
+            return false;
+        }
+        this.logger.debug(`ai querying for judge took ${Date.now() - startOfAiJudgeQuerying}ms`);
+        this.logger.info("judge output: " + judgeOutput);
+        try {
+            this.portToSidePanel.postMessage({
+                type: AgentController2PanelPortMsgType.NOTIFICATION, details: judgeOutput,
+                msg: "AI judgement of action safety complete"
+            });
+        } catch (error: any) {
+            this.terminateTask(`error while trying to send notification to side panel about auto-monitor call completion; error: ${renderUnknownValue(error)}`);
+            return false;
+        }
+
+        let llmRespObj: any;
+        try {
+            llmRespObj = JSON.parse(judgeOutput);
+        } catch (e) {
+            this.terminateTask(`Invalid JSON response from the model (which shouldn't be possible per API docs): [<${judgeOutput}>] with error ${renderUnknownValue(e)}`);
+            return false;
+        }
+        if (!isActionStateChangeSeverity(llmRespObj.severity) || typeof llmRespObj.explanation !== "string") {
+            this.terminateTask(`AI output for safety judgment was invalid: ${judgeOutput}`);
+            return false;
+        }
+        const severity: ActionStateChangeSeverity = llmRespObj.severity;
+        //todo let user set threshold for auto-monitor, so it only escalates medium/high or even just escalates high
+        if (severity !== ActionStateChangeSeverity.SAFE) {
+            this.logger.info(`AI Judge decided that the proposed action was unsafe (severity ${severity}); explanation: ${llmRespObj.explanation}; escalating this action to human user as monitor`);
+            this.isMonitorModeTempEnabled = true;
+            this.cachedMonitorMode = true;
+
+            try {
+                this.portToSidePanel.postMessage({
+                    type: AgentController2PanelPortMsgType.AUTO_MONITOR_ESCALATION, severity: severity,
+                    explanation: llmRespObj.explanation
+                });
+            } catch (error: any) {
+                this.terminateTask(`error while trying to send notification to side panel about proposed action being escalated to user by auto-monitor; error: ${renderUnknownValue(error)}`);
+                return false;
+            }
+            this.state = AgentControllerState.WAITING_FOR_MONITOR_RESPONSE;
+            return false;
+        } else {
+            return true;
         }
     }
 
@@ -628,34 +703,26 @@ export class AgentController {
      * @description Queries the LLM for the next action to take based on the current state of the page and the actions
      * so far, then processes the response and (if there is a chosen action) stores the chosen action in
      * this.pendingActionInfo
-     * @param interactiveChoices brief descriptions of the interactive elements on the page (starting and ending with the appropriate html tag)
      * @param screenshotDataUrl the data URL of the screenshot of the current page
      * @param candidateIds the indices of the interactive elements that are candidates for the next action
      * @param interactiveElements the full data about the interactive elements on the page
-     * @param monitorRejectionContext optional string to include in the query prompt if the previous action was rejected by the monitor
-     * @param viewportInfo information about the viewport and the dimensions of the page that it's showing part of
-     * @return indicator of what the main "processPageStateFromActor" function should do next based on the LLM response
+     * @param prompts prompts for AI models
+     * @return primarily, an indicator of what the main "processPageStateFromActor" function should do next based on the LLM response
      *         (e.g. whether to try reprompting, proceed with the action, or abort the task)
+     *         If the response is that the action should be performed, the next two parts of the return tuple will be
+     *          the planning and grounding LMM outputs respectively (otherwise those entries of the tuple will be empty strings)
      */
     private queryLmmAndProcessResponsesForAction = async (
-        interactiveChoices: string[], screenshotDataUrl: string, candidateIds: number[],
-        interactiveElements: SerializableElementData[], monitorRejectionContext: string | undefined,
-        viewportInfo: ViewportDetails): Promise<LmmOutputReaction> => {
+        screenshotDataUrl: string, candidateIds: number[], interactiveElements: SerializableElementData[],
+        prompts: LmmPrompts): Promise<[LmmOutputReaction, string, string]> => {
         if (this.portToSidePanel === undefined) {
             this.logger.error("no side panel connection to send query prompt to; abandoning task");
             //terminateTask() will be called by the onDisconnect listener
-            return LmmOutputReaction.ABORT_TASK;
+            return [LmmOutputReaction.ABORT_TASK, "", ""];
         }
 
-        const prompts: LmmPrompts = generatePrompt(this.taskSpecification,
-            this.actionsSoFar.map(entry => `${entry.success ? "SUCCEEDED" : "FAILED"}-${entry.actionDesc}; explanation: ${entry.explanation}`),
-            interactiveChoices, viewportInfo, this.aiEngine.providerDetails().id);
-        if (monitorRejectionContext !== undefined) {
-            prompts.queryPrompt += `\n${monitorRejectionContext}`;
-        }
 
-        this.logger.debug("prompts: " + JSON.stringify(prompts));
-        const startOfAiQuerying = Date.now();
+        const startOfAiAgentQuerying = Date.now();
         let planningOutput: string;
         let groundingOutput: string;
         const aiApiBaseDelay = 1_000;
@@ -668,7 +735,8 @@ export class AgentController {
         // depending on model cleverness
         try {
             planningOutput = await this.aiEngine.generateWithRetry(
-                {prompts: prompts, turnInStep: 0, imgDataUrl: screenshotDataUrl}, aiApiBaseDelay);
+                {prompts: prompts, generationType: GenerateMode.PLANNING, imgDataUrl: screenshotDataUrl},
+                aiApiBaseDelay);
             this.logger.info("planning output: " + planningOutput);
             try {
                 this.portToSidePanel.postMessage({
@@ -676,22 +744,20 @@ export class AgentController {
                     msg: "AI planning complete, now asking model to specify what exactly it should do next to advance that plan"
                 });
             } catch (error: any) {
-                const termReason = `error while trying to send notification to side panel about planning completion; error: ${renderUnknownValue(error)}`;
-                this.logger.error(termReason);
-                this.terminateTask(termReason);
-                return LmmOutputReaction.ABORT_TASK;
+                this.terminateTask(`error while trying to send notification to side panel about planning completion; error: ${renderUnknownValue(error)}`);
+                return [LmmOutputReaction.ABORT_TASK, "", ""];
             }
 
-            groundingOutput = await this.aiEngine.generateWithRetry(
-                {prompts: prompts, turnInStep: 1, imgDataUrl: screenshotDataUrl, priorTurnOutput: planningOutput},
+            groundingOutput = await this.aiEngine.generateWithRetry({
+                    prompts: prompts, generationType: GenerateMode.GROUNDING, imgDataUrl: screenshotDataUrl,
+                    planningOutput: planningOutput
+                },
                 aiApiBaseDelay);
         } catch (error) {
-            const termReason = `error getting next step from ai; error: ${renderUnknownValue(error)}`;
-            this.logger.error(`${termReason}; terminating task`);
-            this.terminateTask(termReason);
-            return LmmOutputReaction.ABORT_TASK;
+            this.terminateTask(`error getting next step from ai; error: ${renderUnknownValue(error)}`);
+            return [LmmOutputReaction.ABORT_TASK, "", ""];
         }
-        this.logger.debug(`ai querying took ${Date.now() - startOfAiQuerying}ms`);
+        this.logger.debug(`ai querying for agent took ${Date.now() - startOfAiAgentQuerying}ms`);
         this.logger.info("grounding output: " + groundingOutput);
 
         const [element, action, value, explanation] = postProcessActionLlm(groundingOutput);
@@ -713,8 +779,8 @@ export class AgentController {
                 priorUrl: this.currUrlBeforeAction ?? "no_URL", actionDesc: "Terminate task as completed",
                 success: true, explanation: explanation
             });
-            this.terminateTask("Task completed: " + explanation);
-            return LmmOutputReaction.ABORT_TASK;
+            this.terminateTask("Task completed: " + explanation, false);
+            return [LmmOutputReaction.ABORT_TASK, "", ""];
         } else if (action === Action.NONE) {
             //todo add logic to check explanation string for ["still", "loading", "finished"] and if it contains 2+ of
             // those then return a new output reaction that causes the controller to wait 5 seconds, then send fresh
@@ -736,12 +802,10 @@ export class AgentController {
                     msg: "AI refused to specify a next action; reprompting"
                 });
             } catch (error: any) {
-                const termReason = `error while trying to send notification to side panel about refusal to specify next action; error: ${renderUnknownValue(error)}`;
-                this.logger.error(termReason);
-                this.terminateTask(termReason);
-                return LmmOutputReaction.ABORT_TASK;
+                this.terminateTask(`error while trying to send notification to side panel about refusal to specify next action; error: ${renderUnknownValue(error)}`);
+                return [LmmOutputReaction.ABORT_TASK, "", ""];
             }
-            return LmmOutputReaction.TRY_REPROMPT;
+            return [LmmOutputReaction.TRY_REPROMPT, "", ""];
         }
         const actionNeedsNoElement = action === Action.SCROLL_UP || action === Action.SCROLL_DOWN
             || action === Action.PRESS_ENTER;
@@ -763,12 +827,10 @@ export class AgentController {
                     msg: "AI gave invalid specification of element to act on; reprompting"
                 });
             } catch (error: any) {
-                const termReason = `error while trying to send notification to side panel about failure to specify valid target element for next action; error: ${renderUnknownValue(error)}`;
-                this.logger.error(termReason);
-                this.terminateTask(termReason);
-                return LmmOutputReaction.ABORT_TASK;
+                this.terminateTask(`error while trying to send notification to side panel about failure to specify valid target element for next action; error: ${renderUnknownValue(error)}`);
+                return [LmmOutputReaction.ABORT_TASK, "", ""];
             }
-            return LmmOutputReaction.TRY_REPROMPT;
+            return [LmmOutputReaction.TRY_REPROMPT, "", ""];
         } else if (chosenCandidateIndex === candidateIds.length && !actionNeedsNoElement) {
             this.logger.info("ai selected 'none of the above' option for element selection when action targets specific element, marking action as noop");
             this.noopCount++;
@@ -784,12 +846,10 @@ export class AgentController {
                     msg: "AI specified a next action that requires a target element but didn't provide a valid target element identifier; reprompting"
                 });
             } catch (error: any) {
-                const termReason = `error while trying to send notification to side panel about inconsistency in specification of next action; error: ${renderUnknownValue(error)}`;
-                this.logger.error(termReason);
-                this.terminateTask(termReason);
-                return LmmOutputReaction.ABORT_TASK;
+                this.terminateTask(`error while trying to send notification to side panel about inconsistency in specification of next action; error: ${renderUnknownValue(error)}`);
+                return [LmmOutputReaction.ABORT_TASK, "", ""];
             }
-            return LmmOutputReaction.TRY_REPROMPT;
+            return [LmmOutputReaction.TRY_REPROMPT, "", ""];
         }
         //todo if it says 'scroll down' when viewport info shows that we're already at the bottom, simply treat that as a no-op and remprompt
         // same for scroll up when at top
@@ -809,7 +869,7 @@ export class AgentController {
         this.mightNextActionCausePageNav = (action === Action.PRESS_ENTER || action === Action.CLICK);
 
 
-        return LmmOutputReaction.PROCEED_WITH_ACTION;
+        return [LmmOutputReaction.PROCEED_WITH_ACTION, planningOutput, groundingOutput];
     }
 
     /**
@@ -824,9 +884,7 @@ export class AgentController {
      */
     captureAndStoreScreenshot = async (screenshotType: string, promptingIndexForAction: number): Promise<string | undefined> => {
         if (this.taskId === undefined) {
-            const termReason = `task id is undefined when capturing screenshot of type ${screenshotType}`;
-            this.logger.error(`${termReason}; terminating task`);
-            this.terminateTask(termReason);
+            this.terminateTask(`task id is undefined when capturing screenshot of type ${screenshotType}`);
             return;
         }
 
@@ -841,8 +899,7 @@ export class AgentController {
 
         const screenshotResult = await this.swHelper.captureScreenshot(screenshotType);
         if (screenshotResult.error) {
-            this.logger.warn(`error capturing screenshot of type ${screenshotType}: ${screenshotResult.error}`);
-            this.terminateTask(screenshotResult.error);
+            this.terminateTask(`error capturing screenshot of type ${screenshotType}: ${screenshotResult.error}`);
             return undefined;
         }
         if (dbConnHolder.dbConn) {
@@ -857,7 +914,11 @@ export class AgentController {
         } else {
             this.logger.warn("no db connection available, cannot save screenshot");
         }
-        if (screenshotType === "initial") { this.numPriorScreenshotsTakenForPromptingCurrentAction++; }
+        if (screenshotType === "initial") {
+            this.numPriorScreenshotsTakenForPromptingCurrentAction++;
+        } else if (screenshotType === "targeted") {
+            this.currActionTargetedScreenshotUrl = screenshotResult.screenshotDataUrl;
+        }
         return screenshotResult.screenshotDataUrl;
     }
 
@@ -869,9 +930,7 @@ export class AgentController {
      */
     processActionPerformedConfirmation = async (message: any, port: Port): Promise<void> => {
         if (this.state !== AgentControllerState.WAITING_FOR_ACTION) {
-            const termReason = "received 'action performed' message from content script while not waiting for action, but rather in state " + AgentControllerState[this.state];
-            this.logger.error(termReason);
-            this.terminateTask(termReason);
+            this.terminateTask("received 'action performed' message from content script while not waiting for action, but rather in state " + AgentControllerState[this.state]);
             return;
         }
         this.logger.trace("controller notified that action was performed by content script");
@@ -918,11 +977,7 @@ export class AgentController {
                 if ('message' in error && error.message === expectedMsgForPortDisconnection) {
                     this.logger.info("content script disconnected from service worker while processing completed action and before trying to request more interactive elements; task will resume after new content script connection is established");
                     this.state = AgentControllerState.PENDING_RECONNECT;
-                } else {
-                    const termReason = `unexpected error while trying to request more interactive elements; error: ${renderUnknownValue(error)}`;
-                    this.logger.error(`${termReason}; terminating task`);
-                    this.terminateTask(termReason);
-                }
+                } else {this.terminateTask(`unexpected error while trying to request more interactive elements; error: ${renderUnknownValue(error)}`);}
             }
         }
     }
@@ -946,9 +1001,7 @@ export class AgentController {
         });
 
         if (!this.portToSidePanel) {
-            const termReason = "no side panel connection to send action history to";
-            this.logger.error(`${termReason}; terminating task`);
-            this.terminateTask(termReason);
+            this.terminateTask("no side panel connection to send action history to");
             return true;
         }
         try {
@@ -957,9 +1010,7 @@ export class AgentController {
                 actionInfo: this.pendingActionInfo, type: AgentController2PanelPortMsgType.TASK_HISTORY_ENTRY
             });
         } catch (error: any) {
-            const termReason = "error when sending action history entry to side panel";
-            this.logger.error(`${termReason}; terminating task`);
-            this.terminateTask(termReason);
+            this.terminateTask("error when sending action history entry to side panel");
             return true;
         }
 
@@ -975,19 +1026,13 @@ export class AgentController {
         this.logger.debug(`current ops count is ${this.opsCount}, noop count is ${this.noopCount}, failure count is ${this.failureCount}, failure-or-noop streak is ${this.failureOrNoopStreak}`)
 
         if (this.failureOrNoopStreak > this.maxFailureOrNoopStreakLimit) {
-            const termReason = `exceeded the maximum failure-or-noop streak limit of ${this.maxFailureOrNoopStreakLimit}`;
-            this.logger.warn(`task terminated because it ${termReason}`);
-            this.terminateTask(termReason);
+            this.terminateTask(`exceeded the maximum failure-or-noop streak limit of ${this.maxFailureOrNoopStreakLimit}`);
             shouldAbort = true;
         } else if (this.failureCount > this.maxFailureLimit) {
-            const termReason = `exceeded the maximum failure limit of ${this.maxFailureLimit}`;
-            this.logger.warn(`task terminated because it ${termReason}`);
-            this.terminateTask(termReason);
+            this.terminateTask(`exceeded the maximum failure limit of ${this.maxFailureLimit}`);
             shouldAbort = true;
         } else if (this.opsCount > this.maxOpsLimit) {
-            const termReason = `exceeded the maximum operations limit of ${this.maxOpsLimit}`;
-            this.logger.warn("task terminated because it " + termReason);
-            this.terminateTask(termReason);
+            this.terminateTask(`exceeded the maximum operations limit of ${this.maxOpsLimit}`);
             shouldAbort = true;
         }
         return shouldAbort;
@@ -995,22 +1040,20 @@ export class AgentController {
 
     processMonitorApproval = () => {
         if (this.state !== AgentControllerState.WAITING_FOR_MONITOR_RESPONSE) {
-            const termReason = "received monitor approval message while not waiting for monitor response, but rather in state " + AgentControllerState[this.state];
-            this.logger.error(termReason);
-            this.terminateTask(termReason);
+            this.terminateTask("received monitor approval message while not waiting for monitor response, but rather in state " + AgentControllerState[this.state]);
             return;
         } else if (this.portToContentScript === undefined) {
-            const termReason = "received monitor approval message while not having a connection to the content script";
-            this.logger.error(`${termReason}; terminating task`);
-            this.terminateTask(termReason);
+            this.terminateTask("received monitor approval message while not having a connection to the content script");
             return;
         } else if (this.pendingActionInfo === undefined) {
-            const termReason = "Monitor approval received for chosen action, but no chosen action remains stored in controller's memory";
-            this.logger.error(`${termReason}; terminating task`);
-            this.terminateTask(termReason);
+            this.terminateTask("Monitor approval received for chosen action, but no chosen action remains stored in controller's memory");
             return;
         }
         this.numPriorScreenshotsTakenForPromptingCurrentAction = 0;
+        if (this.isMonitorModeTempEnabled) {
+            this.isMonitorModeTempEnabled = false;
+            this.cachedMonitorMode = false;
+        }
         this.state = AgentControllerState.WAITING_FOR_ACTION;
         try {
             this.portToContentScript.postMessage({
@@ -1022,24 +1065,16 @@ export class AgentController {
                 this.logger.info("content script disconnected from service worker while waiting for monitor judgement on proposed action; task will resume after new content script connection is established");
                 this.state = AgentControllerState.PENDING_RECONNECT;
                 this.pendingActionInfo = undefined;
-            } else {
-                const termReason = `unexpected error while requesting an action after monitor approval; error: ${renderUnknownValue(error)}`;
-                this.logger.error(`${termReason}; terminating task`);
-                this.terminateTask(termReason);
-            }
+            } else {this.terminateTask(`unexpected error while requesting an action after monitor approval; error: ${renderUnknownValue(error)}`);}
         }
     }
 
     processMonitorRejection = (message: any) => {
         if (this.state !== AgentControllerState.WAITING_FOR_MONITOR_RESPONSE) {
-            const termReason = `received monitor rejection message while not waiting for monitor response, but rather in state ${AgentControllerState[this.state]}`;
-            this.logger.error(termReason);
-            this.terminateTask(termReason);
+            this.terminateTask(`received monitor rejection message while not waiting for monitor response, but rather in state ${AgentControllerState[this.state]}`);
             return;
         } else if (this.portToContentScript === undefined) {
-            const termReason = "received monitor rejection message while not having a connection to the content script";
-            this.logger.error(termReason + "; terminating task");
-            this.terminateTask(termReason);
+            this.terminateTask("received monitor rejection message while not having a connection to the content script");
             return;
         }
         this.wasPrevActionRejectedByMonitor = true;
@@ -1057,11 +1092,7 @@ export class AgentController {
             if ('message' in error && error.message === expectedMsgForPortDisconnection) {
                 this.logger.info("content script disconnected from agent controller while the latter was waiting for a response from the monitor; task will resume after new content script connection is established");
                 this.state = AgentControllerState.PENDING_RECONNECT;
-            } else {
-                const termReason = `unexpected error trying to request interactive elements; error: ${renderUnknownValue(error)}`;
-                this.logger.error(`${termReason}; terminating task`);
-                this.terminateTask(termReason);
-            }
+            } else {this.terminateTask(`unexpected error trying to request interactive elements; error: ${renderUnknownValue(error)}`);}
         }
     }
 
@@ -1085,7 +1116,7 @@ export class AgentController {
                     }
                     this.terminationSignal = false;
                 } else {
-                    this.terminateTask("user request");
+                    this.terminateTask("user request", false);
                 }
             });
         } else if (message.type === Panel2AgentControllerPortMsgType.MONITOR_APPROVED) {
@@ -1150,9 +1181,7 @@ export class AgentController {
      */
     processActorDisconnectDuringAction = async (): Promise<void> => {
         if (!this.pendingActionInfo) {
-            const termReason = "service worker's connection to content script was lost while performing an action, but no tentative action was stored";
-            this.logger.error(termReason + "; terminating task");
-            this.terminateTask(termReason);
+            this.terminateTask("service worker's connection to content script was lost while performing an action, but no tentative action was stored");
             return;
         }
         this.state = AgentControllerState.ACTIVE;
@@ -1194,9 +1223,7 @@ export class AgentController {
             this.logger.debug("content script disconnected from service worker; port name:", port.name);
             this.portToContentScript = undefined;
             if (this.portToSidePanel === undefined) {
-                const termReason = "content script disconnected while no side panel connection was open";
-                this.logger.error(termReason + "; terminating task");
-                this.terminateTask(termReason);
+                this.terminateTask("content script disconnected while no side panel connection was open");
                 return;
             }
 
@@ -1210,9 +1237,7 @@ export class AgentController {
                         msg: "Reestablishing connection to content script after it broke unexpectedly"
                     });
                 } catch (error: any) {
-                    const termReason = `error while trying to notify side panel about reestablishing connection to content script; error: ${renderUnknownValue(error)}`;
-                    this.logger.error(`${termReason}; terminating task`);
-                    this.terminateTask(termReason);
+                    this.terminateTask(`error while trying to notify side panel about reestablishing connection to content script; error: ${renderUnknownValue(error)}`);
                     return;
                 }
                 await this.injectPageActorScript(false);
@@ -1221,13 +1246,9 @@ export class AgentController {
                 await this.injectPageActorScript(false);
             } else if (this.state === AgentControllerState.IDLE) {
                 this.logger.debug("service worker's connection to content script was lost while in idle state; ignoring");
-            } else {
-                const termReason = `service worker's connection to content script was lost while not waiting for action, but rather in state ${AgentControllerState[this.state]}`;
-                this.logger.error(`${termReason}; terminating task`);
-                this.terminateTask(termReason);
-                //todo Boyuan may eventually want recovery logic here for the user accidentally closing the tab or for the tab/page crashing
-                // reloading or reopening the tab might require adding even more permissions to the manifest.json
-            }
+            } else { this.terminateTask(`service worker's connection to content script was lost while not waiting for action, but rather in state ${AgentControllerState[this.state]}`);}
+            //todo Boyuan may eventually want recovery logic here for the user accidentally closing the tab or for the tab/page crashing
+            // reloading or reopening the tab might require adding even more permissions to the manifest.json
         });
     }
 
@@ -1235,11 +1256,7 @@ export class AgentController {
         await this.mutex.runExclusive(() => {
             this.logger.debug("side panel disconnected from service worker; port name:", port.name);
             this.portToSidePanel = undefined;
-            if (this.state !== AgentControllerState.IDLE) {
-                const termReason = "side panel disconnected";
-                this.logger.error(termReason);
-                this.terminateTask(termReason);
-            }
+            if (this.state !== AgentControllerState.IDLE) {this.terminateTask("side panel disconnected");}
         });
     }
 
@@ -1303,9 +1320,12 @@ export class AgentController {
      * @description Terminates the current task, resetting any state and cleaning up the page connection if it's still
      * open
      */
-    terminateTask = (terminationReason: string): void => {
+    terminateTask = (terminationReason: string, wasTermFromError: boolean = true): void => {
         const taskIdBeingTerminated = this.taskId;
-        this.logger.info(`TERMINATING TASK ${this.taskId} which had specification: ${this.taskSpecification}; final this.state was ${AgentControllerState[this.state]}; termination reason: ${terminationReason}`);
+        const termMsg = `TERMINATING TASK ${this.taskId} which had specification: ${this.taskSpecification}; final this.state was ${AgentControllerState[this.state]}; termination reason: ${terminationReason}`;
+        if (wasTermFromError) {
+            this.logger.error(termMsg);
+        } else {this.logger.info(termMsg);}
         this.logger.info("action history for task: " + JSON.stringify(this.actionsSoFar));
         this.logger.info(`summary of actions in task: ${this.opsCount} operations, ${this.noopCount} no-ops, ${this.failureCount} failures; at end of task, the length of the failure-or-noop streak was ${this.failureOrNoopStreak} (this is not the length of the longest such streak during the task)`)
         if (taskIdBeingTerminated === undefined) {
@@ -1323,6 +1343,11 @@ export class AgentController {
         this.taskId = undefined;
         taskIdHolder.currTaskId = undefined;
 
+        if (this.isMonitorModeTempEnabled) {
+            this.cachedMonitorMode = false;
+            this.isMonitorModeTempEnabled = false;
+        }
+
         this.taskSpecification = "";
         this.currTaskTabId = undefined;
         this.initWebsiteForTask = undefined;
@@ -1337,6 +1362,7 @@ export class AgentController {
         this.failureOrNoopStreak = 0;
         this.wasPrevActionRejectedByMonitor = false;
         this.monitorFeedback = "";
+        this.currActionTargetedScreenshotUrl = undefined;
         this.numPriorScreenshotsTakenForPromptingCurrentAction = 0;
         if (this.portToContentScript) {
             this.logger.info("terminating task while content script connection may still be open, attempting to close it")

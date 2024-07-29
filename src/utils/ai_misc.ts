@@ -1,7 +1,7 @@
 import {AiEngine} from "./AiEngine";
 import {OpenAiEngine} from "./OpenAiEngine";
 import {AnthropicEngine} from "./AnthropicEngine";
-import {storageKeyForAiProviderType} from "./misc";
+import {Action, storageKeyForAiProviderType} from "./misc";
 import {LmmPrompts} from "./format_prompts";
 import { Logger } from "loglevel";
 import {GoogleDeepmindEngine} from "./GoogleDeepmindEngine";
@@ -117,8 +117,18 @@ export interface AiEngineCreateOptions {
  * todo replace the 'turn' (0 or 1) thing with this
  */
 export enum GenerateMode {
+    /**
+     * asking the model to analyze situation and plan next move
+     */
     PLANNING = "PLANNING",
+    /**
+     * asking the model to identify the specific element to interact with next
+     */
     GROUNDING = "GROUNDING",
+    /**
+     * asking the model to evaluate whether the proposed next action is potentially state-changing
+     * (and thus would need to be referred to the human user for review)
+     */
     AUTO_MONITORING = "AUTO_MONITORING"
 }
 
@@ -133,19 +143,21 @@ export interface GenerateOptions {
      */
     prompts: LmmPrompts;
     /**
-     * the 0-based index of the current query in the preparation for the current step's action
-     *  0 means we're asking the model to analyze situation and plan next move
-     *  1 means we're asking the model to identify the specific element to interact with next
+     * what type of query should be sent to the model
      */
-    turnInStep: 0 | 1;
+    generationType: GenerateMode;
     /**
      * a data url containing a base-64 encoded image to be used as input to the model
      */
     imgDataUrl?: string;
     /**
-     * the output from the previous turn in the preparation for the current step's action
+     * the output from the planning stage in the preparation for the current step's action
      */
-    priorTurnOutput?: string;
+    planningOutput?: string;
+    /**
+     * the output from the grounding stage in the preparation for the current step's action
+     */
+    groundingOutput?: string
     /**
      * the maximum number of tokens to generate in this turn
      */
@@ -159,4 +171,30 @@ export interface GenerateOptions {
      * the model to use for this completion  (optional, by default uses the model set in the engine's constructor)
      */
     model?: string;
+}
+
+export enum ActionStateChangeSeverity {
+    SAFE= "SAFE",
+    LOW = "LOW",
+    MEDIUM = "MEDIUM",
+    HIGH = "HIGH"
+}
+
+export function isActionStateChangeSeverity(severity: unknown): severity is ActionStateChangeSeverity {
+    return typeof severity === "string" && Object.values(ActionStateChangeSeverity).includes(severity as ActionStateChangeSeverity);
+}
+
+
+//todo rework AiEngine.generate/generateWithRetry and the associated implementations to return this instead of string
+// then update AgentController
+// Involves adding json-parsing logic in OpenAiEngine (essentially eliminating postProcessActionLlm() and putting its logic in OpenAiEngine.generate())
+export interface AiGenerationResult {
+    //always relevant; the only defined component for PLANNING mode
+    reasoning: string,
+    //relevant for GROUNDING and AUTO_MONITORING modes
+    explanation?: string,
+    // the next three are only relevant for GROUNDING mode
+    element?: string,
+    action?: Action,
+    value?: string
 }

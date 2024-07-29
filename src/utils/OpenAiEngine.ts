@@ -3,7 +3,7 @@ import {APIConnectionError, APIConnectionTimeoutError, InternalServerError, Rate
 import {AiEngine} from "./AiEngine";
 import ChatCompletionMessageParam = OpenAI.ChatCompletionMessageParam;
 import ChatCompletionContentPart = OpenAI.ChatCompletionContentPart;
-import {AiEngineCreateOptions, AiProviderDetails, AiProviders, GenerateOptions} from "./ai_misc";
+import {AiEngineCreateOptions, AiProviderDetails, AiProviders, GenerateMode, GenerateOptions} from "./ai_misc";
 
 export class OpenAiEngine extends AiEngine {
 
@@ -28,7 +28,7 @@ export class OpenAiEngine extends AiEngine {
 
 
     generate = async ({
-                          prompts, turnInStep, imgDataUrl, priorTurnOutput,
+                          prompts, generationType, imgDataUrl, planningOutput, groundingOutput,
                           maxNewTokens = 4096, temp = this.temperature, model = this.model
                       }: GenerateOptions):
         Promise<string> => {
@@ -56,23 +56,23 @@ export class OpenAiEngine extends AiEngine {
         }
 
         let respStr: string | undefined | null;
-        if (turnInStep === 0) {
+        if (generationType === GenerateMode.PLANNING) {
             const response = await this.openAi.chat.completions.create(
                 {messages: messages, model: model, temperature: temp, max_tokens: maxNewTokens});
             respStr = response.choices?.[0].message?.content;
             //confer with Boyuan- should this log warning with response object if respStr null? or throw error?
             // feedback - don't worry about the api being that weird/unreliable
 
-        } else if (turnInStep === 1) {
-            if (priorTurnOutput === undefined) {
-                throw new Error("priorTurnOutput must be provided for turn 1");
-            } else if (priorTurnOutput.length > 0) {
-                messages.push({role: "assistant", content: priorTurnOutput});
+        } else if (generationType === GenerateMode.GROUNDING) {
+            if (planningOutput === undefined) {
+                throw new Error("planning Output must be provided for the grounding ai generation");
+            } else if (planningOutput.length > 0) {
+                messages.push({role: "assistant", content: planningOutput});
             } else {
                 this.logger.info("LLM MALFUNCTION- planning output was empty string");
             }
 
-            if (priorTurnOutput.includes(AiEngine.ELEMENTLESS_GROUNDING_TRIGGER)) {
+            if (planningOutput.includes(AiEngine.ELEMENTLESS_GROUNDING_TRIGGER)) {
                 messages.push({role: "user", content: prompts.elementlessActionPrompt});
             } else {
                 messages.push({role: "user", content: prompts.groundingPrompt});
@@ -85,6 +85,32 @@ export class OpenAiEngine extends AiEngine {
             respStr = response.choices?.[0].message?.content;
             //confer with Boyuan- should this log warning with response object if respStr null? or throw error?
             // feedback - don't worry about the api being that weird/unreliable
+        } else if (generationType === GenerateMode.AUTO_MONITORING) {
+            if (planningOutput === undefined) {
+                throw new Error("planning Output must be provided for the auto-monitoring ai generation");
+            } else if (planningOutput.length > 0) {
+                messages.push({role: "assistant", content: planningOutput});
+            } else {
+                this.logger.info("LLM MALFUNCTION- planning output was empty string");
+            }
+
+            messages.push({role: "user", content: prompts.autoMonitorPrompt});
+
+            if (groundingOutput === undefined) {
+                throw new Error("grounding Output must be provided for the auto-monitoring ai generation");
+            } else if (groundingOutput.length > 0) {
+                messages.push({role: "assistant", content: groundingOutput});
+            } else {
+                this.logger.info("LLM MALFUNCTION- grounding output was empty string");
+            }
+
+
+            const response = await this.openAi.chat.completions.create({
+                messages: messages, model: model, temperature: temp, max_tokens: maxNewTokens,
+                response_format: {type: "json_object"}
+            });
+            respStr = response.choices?.[0].message?.content;
+
         }
         //todo unit test and implement rate-limit-respecting code if Boyuan confirms it's still desired
         // feedback- low priority for now

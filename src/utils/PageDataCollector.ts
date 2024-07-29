@@ -56,7 +56,7 @@ export class PageDataCollector {
                 targetElementData = makeElementDataSerializable(candidateTargetElementsData[0]);
             } else {
                 const activeElem = this.browserHelper.findRealActiveElement();
-                if (activeElem && activeElem.tagName.toLowerCase() !== "body") {
+                if (activeElem) {
                     const activeHtmlElement = activeElem as HTMLElement;
                     const activeElementHtmlSample = activeHtmlElement.outerHTML.slice(0, 100);
 

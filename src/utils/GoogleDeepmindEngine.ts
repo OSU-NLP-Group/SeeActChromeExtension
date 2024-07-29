@@ -1,6 +1,8 @@
 import {AiEngine} from "./AiEngine";
 import {Action} from "./misc";
 import {
+    actionJudgmentExplanationParamDesc,
+    actionJudgmentFuncDesc, actionJudgmentRequiredProps, actionJudgmentSeverityParamDesc,
     browserActionFuncDesc,
     browserActionRequiredProps,
     browserActionSchemaActionDesc,
@@ -8,7 +10,14 @@ import {
     groundingPromptExplanationParamDesc,
     groundingPromptValueParamDesc
 } from "./format_prompts";
-import {AiEngineCreateOptions, AiProviderDetails, AiProviders, GenerateOptions} from "./ai_misc";
+import {
+    ActionStateChangeSeverity,
+    AiEngineCreateOptions,
+    AiProviderDetails,
+    AiProviders,
+    GenerateMode,
+    GenerateOptions
+} from "./ai_misc";
 import {
     FunctionCallingMode,
     FunctionDeclarationSchemaType,
@@ -43,7 +52,7 @@ export class GoogleDeepmindEngine extends AiEngine {
 
 
     generate = async ({
-                          prompts, turnInStep, imgDataUrl, priorTurnOutput,
+                          prompts, generationType, imgDataUrl, planningOutput, groundingOutput,
                           maxNewTokens = 4096, temp = this.temperature, model = this.model
                       }: GenerateOptions):
         Promise<string> => {
@@ -95,6 +104,29 @@ export class GoogleDeepmindEngine extends AiEngine {
                         },
                         required: browserActionRequiredProps
                     }
+                }, {
+                    name: "action_judgment",
+                    description: actionJudgmentFuncDesc,
+                    parameters: {
+                        type: FunctionDeclarationSchemaType.OBJECT,
+                        properties: {
+                            severity: {
+                                type: FunctionDeclarationSchemaType.STRING,
+                                //todo try reenabling this and removing the hacky addition to the description once the
+                                // function calling feature is no longer in beta (and so is more likely to actually
+                                // follow its API schema)
+                                //enum: Object.keys(ActionStateChangeSeverity),
+                                description: actionJudgmentSeverityParamDesc + `; possible values are: ${Object.keys(ActionStateChangeSeverity)
+                                    .join(", ")}`
+
+                            },
+                            explanation: {
+                                type: FunctionDeclarationSchemaType.STRING,
+                                description: actionJudgmentExplanationParamDesc
+                            }
+                        },
+                        required: actionJudgmentRequiredProps
+                    }
                 }]
             }]
         });
@@ -127,7 +159,7 @@ export class GoogleDeepmindEngine extends AiEngine {
         }
 
         let respStr: string | undefined;
-        if (turnInStep === 0) {
+        if (generationType === GenerateMode.PLANNING) {
             //because google API mandates specifying the tool when model object is being created, but the tool shouldn't
             // be used during the planning step
             requestBody.toolConfig = {functionCallingConfig: {mode: FunctionCallingMode.NONE}};
@@ -136,21 +168,49 @@ export class GoogleDeepmindEngine extends AiEngine {
             const result = await chosenModel.generateContent(requestBody);
             this.checkAndLogNegativeGoogleApiResult(result);
             respStr = result.response.text();
-        } else if (turnInStep === 1) {
-            if (priorTurnOutput === undefined) {
-                throw new Error("priorTurnOutput must be provided for turn 1");
-            } else if (priorTurnOutput.length > 0) {
-                requestBody.contents.push({role: "model", parts: [{text: priorTurnOutput}]});
+        } else if (generationType === GenerateMode.GROUNDING) {
+            if (planningOutput === undefined) {
+                throw new Error("planning Output must be provided for the grounding ai generation");
+            } else if (planningOutput.length > 0) {
+                requestBody.contents.push({role: "model", parts: [{text: planningOutput}]});
             } else {
                 this.logger.info("LLM MALFUNCTION- planning output was empty string");
             }
 
-            if (priorTurnOutput.includes(AiEngine.ELEMENTLESS_GROUNDING_TRIGGER)) {
+            if (planningOutput.includes(AiEngine.ELEMENTLESS_GROUNDING_TRIGGER)) {
                 requestBody.contents.push({role: "user", parts: [{text: prompts.elementlessActionPrompt}]});
             } else {
                 requestBody.contents.push({role: "user", parts: [{text: prompts.groundingPrompt}]});
             }
             //this.logger.debug(`calling google deepmind model for grounding with requestBody: ${JSON.stringify(requestBody)}`);
+            const result = await chosenModel.generateContent(requestBody);
+            this.checkAndLogNegativeGoogleApiResult(result);
+
+            const reasoningText = result.response.text();
+            const functionUses = result.response.functionCalls() ??
+                [{name: "fakeFallbackFunction", args: {explanation: "no input to tool"}}];
+            const inputsToTool: any = functionUses[0].args;
+            inputsToTool["reasoning"] = reasoningText;
+            respStr = JSON.stringify(inputsToTool);
+        } else if (generationType === GenerateMode.AUTO_MONITORING) {
+            if (planningOutput === undefined) {
+                throw new Error("planning Output must be provided for the auto-monitoring ai generation");
+            } else if (planningOutput.length > 0) {
+                requestBody.contents.push({role: "model", parts: [{text: planningOutput}]});
+            } else {
+                this.logger.info("LLM MALFUNCTION- planning output was empty string");
+            }
+
+            requestBody.contents.push({role: "user", parts: [{text: prompts.autoMonitorPrompt}]});
+
+            if (groundingOutput === undefined) {
+                throw new Error("grounding Output must be provided for the auto-monitoring ai generation");
+            } else if (groundingOutput.length > 0) {
+                requestBody.contents.push({role: "model", parts: [{text: groundingOutput}]});
+            } else {
+                this.logger.info("LLM MALFUNCTION- grounding output was empty string");
+            }
+
             const result = await chosenModel.generateContent(requestBody);
             this.checkAndLogNegativeGoogleApiResult(result);
 

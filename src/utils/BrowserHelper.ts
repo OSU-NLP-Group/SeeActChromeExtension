@@ -22,6 +22,9 @@ export class BrowserHelper {
 
     readonly logger;
 
+    private highlightedElementOriginalOutline: string | undefined;
+    private highlightedElementStyle: CSSStyleDeclaration | undefined;
+
     constructor(domHelper?: DomWrapper, loggerToUse?: log.Logger) {
         this.domHelper = domHelper ?? new DomWrapper(window);
 
@@ -345,14 +348,27 @@ export class BrowserHelper {
         return interactiveElementsData;
     }
 
-    highlightElement = async (elementStyle: CSSStyleDeclaration) => {
+    highlightElement = async (elementStyle: CSSStyleDeclaration, highlightDuration: number = 30000) => {
+        if (this.highlightedElementStyle) {
+            if (this.highlightedElementOriginalOutline === undefined) { this.logger.error("highlightedElementOriginalOutline is undefined when resetting the outline of a highlighted element (at the start of the process for highlighting a new element"); }
+            this.highlightedElementStyle.outline = this.highlightedElementOriginalOutline ?? "";
+
+        }
+
         const initialOutline = elementStyle.outline;
         //const initialBackgroundColor = elemStyle.backgroundColor;
 
         elementStyle.outline = "3px solid red";
+
+        this.highlightedElementStyle = elementStyle;
+        this.highlightedElementOriginalOutline = initialOutline;
         setTimeout(() => {
-            elementStyle.outline = initialOutline;
-        }, 5000);
+            if (this.highlightedElementStyle === elementStyle) {
+                elementStyle.outline = initialOutline;
+                this.highlightedElementStyle = undefined;
+                this.highlightedElementOriginalOutline = undefined;
+            }//otherwise the highlighting of the element was already reset by a later call of this method
+        }, highlightDuration);
 
         //elemStyle.filter = "brightness(1.5)";
 
@@ -473,13 +489,25 @@ export class BrowserHelper {
 
     /**
      * this tries to tunnel through shadow roots and iframes to find the actual active/focused element
+     * It also automatically deals with the annoying browser behavior of sometimes returning the `<body>` element
+     * as a default value for document.activeElement
+     * Finally, it checks for the active element not being visible and logs a warning if so
      */
     findRealActiveElement = (): HTMLElement | null => {
-        return this.getRealActiveElementInContext(this.domHelper.dom);
+        const activeElem = this.getRealActiveElementInContext(this.domHelper.dom);
+        if (activeElem) {
+            if (activeElem.tagName.toLowerCase() === "body") {
+                return null;
+            }
+            if (this.calcIsHidden(activeElem)) {
+                this.logger.warn(`Active element is hidden, so it's likely not the intended target: ${activeElem.outerHTML.slice(0, 100)}`);
+            }
+        }
+        return activeElem;
     }
 
     private getRealActiveElementInContext(root: Document | ShadowRoot): HTMLElement | null {
-        let actualActiveElement: HTMLElement|null = null;
+        let actualActiveElement: HTMLElement | null = null;
         const currContextActiveElement = root.activeElement as HTMLElement;
         if (currContextActiveElement) {
             if (currContextActiveElement.shadowRoot) {

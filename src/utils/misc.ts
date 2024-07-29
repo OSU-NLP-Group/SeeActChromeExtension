@@ -80,6 +80,7 @@ export enum AgentController2PanelPortMsgType {
     AGENT_CONTROLLER_READY = "agentControllerReady",
     TASK_STARTED = "taskStarted",
     ACTION_CANDIDATE = "actionCandidate",
+    AUTO_MONITOR_ESCALATION = "autoMonitorEscalation",//for when the controller's "auto-monitor" feature has decided to escalate to monitor mode for a single action (to get the human user's input)
     TASK_HISTORY_ENTRY = "taskHistoryEntry",
     TASK_ENDED = "taskEnded",
     ERROR = "error",//cases where the agent controller wants to tell the side panel about a problem with some message from the side panel which was identified before a task id was generated
