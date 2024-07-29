@@ -17,7 +17,7 @@ import {
     AgentController2PagePortMsgType,
     AgentController2PanelPortMsgType,
     base64ToByteArray,
-    buildGenericActionDesc,
+    buildGenericActionDesc, defaultAutoMonitorThreshold,
     defaultIsMonitorMode,
     defaultMaxFailureOrNoopStreak,
     defaultMaxFailures,
@@ -31,7 +31,7 @@ import {
     SerializableElementData,
     setupModeCache,
     sleep,
-    storageKeyForAiProviderType,
+    storageKeyForAiProviderType, storageKeyForAutoMonitorThreshold,
     storageKeyForEulaAcceptance,
     storageKeyForMaxFailureOrNoopStreak,
     storageKeyForMaxFailures,
@@ -180,6 +180,12 @@ export class AgentController {
      */
     maxFailureOrNoopStreakLimit: number = defaultMaxFailureOrNoopStreak;
 
+    /**
+     * the lowest level of risk/state-change-severity which will trigger a proposed action being escalated to human
+     * review (temporarily turning monitor mode on)
+     */
+    autoMonitorThreshold: ActionStateChangeSeverity = defaultAutoMonitorThreshold;
+
     cachedMonitorMode: boolean = defaultIsMonitorMode;
     isDisabledUntilEulaAcceptance: boolean = false;
 
@@ -222,11 +228,12 @@ export class AgentController {
 
         if (chrome?.storage?.local) {
             chrome.storage.local.get([storageKeyForMaxOps, storageKeyForMaxNoops, storageKeyForMaxFailures,
-                storageKeyForMaxFailureOrNoopStreak, storageKeyForEulaAcceptance], async (items) => {
+                storageKeyForMaxFailureOrNoopStreak, storageKeyForEulaAcceptance, storageKeyForAutoMonitorThreshold
+            ], async (items) => {
                 await this.validateAndApplyAgentOptions(true, items[storageKeyForMaxOps],
                     items[storageKeyForMaxNoops], items[storageKeyForMaxFailures],
                     items[storageKeyForMaxFailureOrNoopStreak], undefined,
-                    items[storageKeyForEulaAcceptance]);
+                    items[storageKeyForEulaAcceptance], items[storageKeyForAutoMonitorThreshold]);
             });
             chrome.storage.local.onChanged.addListener(async (
                 changes: { [p: string]: chrome.storage.StorageChange }) => {
@@ -234,7 +241,8 @@ export class AgentController {
                 await this.validateAndApplyAgentOptions(false, changes[storageKeyForMaxOps]?.newValue,
                     changes[storageKeyForMaxNoops]?.newValue, changes[storageKeyForMaxFailures]?.newValue,
                     changes[storageKeyForMaxFailureOrNoopStreak]?.newValue,
-                    changes[storageKeyForAiProviderType]?.newValue, changes[storageKeyForEulaAcceptance]?.newValue);
+                    changes[storageKeyForAiProviderType]?.newValue, changes[storageKeyForEulaAcceptance]?.newValue,
+                    changes[storageKeyForAutoMonitorThreshold]?.newValue);
             });
         }
     }
@@ -250,10 +258,12 @@ export class AgentController {
      * @param newMaxFailureOrNoopStreak possible new value for this.maxFailureOrNoopStreakLimit
      * @param newAiProvider the id of the newly-chosen provider for the AI engine
      * @param eulaAcceptance whether the user has accepted the EULA yet
+     * @param newAutoMonitorThreshold new threshold of riskiness for a proposed action that causes it to be referred to human user for review
      */
     validateAndApplyAgentOptions = async (
         initOrUpdate: boolean, newMaxOps: unknown, newMaxNoops: unknown, newMaxFailures: unknown,
-        newMaxFailureOrNoopStreak: unknown, newAiProvider: unknown, eulaAcceptance: unknown): Promise<void> => {
+        newMaxFailureOrNoopStreak: unknown, newAiProvider: unknown, eulaAcceptance: unknown,
+        newAutoMonitorThreshold: unknown): Promise<void> => {
         const contextStr = initOrUpdate ? "when loading options from storage" : "when processing an update from storage";
         if (validateIntegerLimitUpdate(newMaxOps, 1)) {
             this.maxOpsLimit = newMaxOps;
@@ -270,6 +280,10 @@ export class AgentController {
         if (validateIntegerLimitUpdate(newMaxFailureOrNoopStreak)) {
             this.maxFailureOrNoopStreakLimit = newMaxFailureOrNoopStreak;
         } else if (newMaxFailureOrNoopStreak !== undefined) {this.logger.error(`invalid maxFailureOrNoopStreak value ${newMaxFailureOrNoopStreak} in chrome.storage detected ${contextStr}; ignoring it`);}
+
+        if (isActionStateChangeSeverity(newAutoMonitorThreshold)) {
+            this.autoMonitorThreshold = newAutoMonitorThreshold;
+        } else if (newAutoMonitorThreshold !== undefined) {this.logger.error(`invalid auto-monitor threshold value ${newAutoMonitorThreshold} in chrome.storage detected ${contextStr}; ignoring it`);}
 
         const existingAiProvider = this.aiEngine.providerDetails().id;
         if (newAiProvider && newAiProvider !== existingAiProvider
@@ -686,8 +700,10 @@ export class AgentController {
             return false;
         }
         const severity: ActionStateChangeSeverity = llmRespObj.severity;
-        //todo let user set threshold for auto-monitor, so it only escalates medium/high or even just escalates high
-        if (severity !== ActionStateChangeSeverity.SAFE) {
+        const scaSeverityNameToLevel = (scaSeverityName: ActionStateChangeSeverity) => { return Object.values(ActionStateChangeSeverity).findIndex(severityName => severityName === scaSeverityName); };
+        const actualLevel = scaSeverityNameToLevel(severity);
+        const thresholdLevel = scaSeverityNameToLevel(this.autoMonitorThreshold);
+        if (actualLevel >= thresholdLevel) {
             this.logger.info(`AI Judge decided that the proposed action was unsafe (severity ${severity}); explanation: ${llmRespObj.explanation}; escalating this action to human user as monitor`);
             this.isMonitorModeTempEnabled = true;
             this.cachedMonitorMode = true;
