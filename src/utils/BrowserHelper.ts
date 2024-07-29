@@ -135,7 +135,8 @@ export class BrowserHelper {
         const typeValue = element.getAttribute("type");
 
         const salientAttributes = ["alt", "aria-describedby", "aria-label", "aria-role", "input-checked",
-            "label", "name", "option_selected", "placeholder", "readonly", "text-value", "title", "value"];
+            "label", "name", "option_selected", "placeholder", "readonly", "text-value", "title", "value",
+            "aria-keyshortcuts"];
 
         let parentValue = "";
         let parent = element.parentElement;
