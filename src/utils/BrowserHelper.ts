@@ -3,7 +3,14 @@ import {createNamedLogger} from "./shared_logging_setup";
 import {DomWrapper} from "./DomWrapper";
 import log from "loglevel";
 import * as fuzz from "fuzzball";
-import {ElementData, elementHighlightRenderDelay, renderUnknownValue, SerializableElementData, sleep} from "./misc";
+import {
+    ElementData,
+    elementHighlightRenderDelay,
+    HTMLElementWithDocumentHost,
+    renderUnknownValue,
+    SerializableElementData,
+    sleep
+} from "./misc";
 
 export function makeElementDataSerializable(elementData: ElementData): SerializableElementData {
     const serializableElementData: SerializableElementData = {...elementData};
@@ -244,7 +251,7 @@ export class BrowserHelper {
      * @param element the element to get data about
      * @return data about the element
      */
-    getElementData = (element: HTMLElement): ElementData | null => {
+    getElementData = (element: HTMLElementWithDocumentHost): ElementData | null => {
         const description = this.getElementDescription(element);
         if (!description) return null;
 
@@ -255,22 +262,23 @@ export class BrowserHelper {
         //does it matter that this (& original python code) treat "" as equivalent to null for role and type attributes?
 
         const boundingRect = this.domHelper.grabClientBoundingRect(element);
-        const centerPoint = [boundingRect.x + boundingRect.width / 2,
-            boundingRect.y + boundingRect.height / 2] as const;
-        const mainDiagCorners = {
-            tLx: boundingRect.x, tLy: boundingRect.y,
-            bRx: boundingRect.x + boundingRect.width, bRy: boundingRect.y + boundingRect.height
-        };
+        let elemX = boundingRect.x;
+        let elemY = boundingRect.y;
+        if (element.documentHostChain) {
+            for(const host of element.documentHostChain) {
+                const hostBoundingRect = this.domHelper.grabClientBoundingRect(host);
+                elemX += hostBoundingRect.x;
+                elemY += hostBoundingRect.y;
+            }
+        }
+
+        const centerPoint = [elemX + boundingRect.width / 2, elemY + boundingRect.height / 2] as const;
+        const mainDiagCorners =
+            {tLx: elemX, tLy: elemX, bRx: elemX + boundingRect.width, bRy: elemY + boundingRect.height};
 
         return {
-            centerCoords: centerPoint,
-            description: description,
-            tagHead: tagHead,
-            boundingBox: mainDiagCorners,
-            width: boundingRect.width,
-            height: boundingRect.height,
-            tagName: tagName,
-            element: element,
+            centerCoords: centerPoint, description: description, tagHead: tagHead, boundingBox: mainDiagCorners,
+            width: boundingRect.width, height: boundingRect.height, tagName: tagName, element: element,
             xpath: this.getFullXpath(element)
         };
     }
@@ -419,7 +427,7 @@ export class BrowserHelper {
      */
     enhancedQuerySelectorAll = (cssSelectors: string[], root: ShadowRoot | Document,
                                 elemFilter: (elem: HTMLElement) => boolean, shouldIgnoreHidden: boolean = true
-    ): Array<HTMLElement> => {
+    ): Array<HTMLElementWithDocumentHost> => {
         let possibleShadowRootHosts = Array.from(root.querySelectorAll('*')) as HTMLElement[];
         if (shouldIgnoreHidden) { possibleShadowRootHosts = possibleShadowRootHosts.filter(elem => !this.calcIsHidden(elem)); }
         const shadowRootsOfChildren = possibleShadowRootHosts.map(elem => elem.shadowRoot)
@@ -430,9 +438,17 @@ export class BrowserHelper {
         //+1 is for the current scope results array
         const resultArrays: HTMLElement[][] = new Array<Array<HTMLElement>>(shadowRootsOfChildren.length + iframes.length + 1);
 
-        (iframes.map(this.getIframeContent).filter(Boolean) as Document[])//filter(Boolean) removes nulls
-            .map(iframeContent => this.enhancedQuerySelectorAll(cssSelectors, iframeContent, elemFilter, shouldIgnoreHidden))
-            .forEach(resultsForIframe => resultArrays.push(resultsForIframe));
+        for(const iframe of iframes) {
+            const iframeContent = this.getIframeContent(iframe);
+            if (iframeContent) {
+                const resultsForIframe = this.enhancedQuerySelectorAll(cssSelectors, iframeContent, elemFilter, shouldIgnoreHidden);
+                resultsForIframe.forEach(elem => {
+                    if (elem.documentHostChain === undefined) {elem.documentHostChain = [];}
+                    elem.documentHostChain.push(iframe);
+                });
+                resultArrays.push(resultsForIframe);
+            }
+        }
 
         shadowRootsOfChildren.map(childShadowRoot => this.enhancedQuerySelectorAll(cssSelectors, childShadowRoot, elemFilter, shouldIgnoreHidden))
             .forEach(resultsForShadowRoot => resultArrays.push(resultsForShadowRoot));
