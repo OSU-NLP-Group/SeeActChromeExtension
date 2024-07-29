@@ -2,7 +2,7 @@ import {
     _formatOptions,
     _generateOptionName,
     basicPromptIntro,
-    generateNewQueryPrompt,
+    generateNewPlanningPrompt,
     getIndexFromOptionName,
     noPrevActions,
     prevActionsIntro
@@ -15,7 +15,7 @@ describe('generateNewQueryPrompt', () => {
         const task: string = "some task string";
         const questionDesc: string = "some question desc string";
 
-        const [sysRole, queryText] = generateNewQueryPrompt(sysPrompt, task, [],
+        const [sysRole, queryText] = generateNewPlanningPrompt(sysPrompt, task, [],
             questionDesc);
         expect(sysRole).toContain(sysPrompt);
 
@@ -37,7 +37,7 @@ describe('generateNewQueryPrompt', () => {
         const questionDesc: string = "some question desc string";
 
         const expectedPrevActionsStr: string = prevActions.join("\n");
-        const [sysRole, queryText] = generateNewQueryPrompt(sysPrompt, task, prevActions,
+        const [sysRole, queryText] = generateNewPlanningPrompt(sysPrompt, task, prevActions,
             questionDesc);
         expect(sysRole).toContain(sysPrompt);
 

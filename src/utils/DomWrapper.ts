@@ -11,10 +11,11 @@ export class DomWrapper {
     static readonly XPATH_RESULT_1ST_ORDERED_NODE_TYPE = XPathResult ? XPathResult.FIRST_ORDERED_NODE_TYPE : 9;
 
     readonly dom: Document;
-    private readonly window: Window | DOMWindow;
+    readonly window: Window | DOMWindow;
 
     constructor(windowToUse: Window | DOMWindow) {
         const {document} = windowToUse;
+
         this.dom = document;
         this.window = windowToUse;
     }

@@ -64,13 +64,14 @@ export class PageActor {
      * Method that retrieves information about the page's state (e.g. interactive elements) and sends it to the
      * controller
      */
-    getPageInfoForController = (): void => {
+    getPageInfoForController = async (): Promise<void> => {
         if (this.interactiveElements) {
             this.logger.error("interactive elements already exist; background script might've asked for interactive elements twice in a row without in between instructing that an action be performed or without waiting for the action to be finished")
             this.portToBackground.postMessage(
                 {type: Page2AgentControllerPortMsgType.TERMINAL, error: "interactive elements already exist"});
             return;
         }
+        await this.browserHelper.clearElementHighlightingEarly();
 
         this.interactiveElements = this.browserHelper.getInteractiveElements();
         const elementsInSerializableForm = this.interactiveElements.map(makeElementDataSerializable);
@@ -322,17 +323,13 @@ export class PageActor {
         // broad-coverage mutation observers don't tell us whether the page is basically stable in practice)
         // Maybe only do that if there's a very short difference there for 2 actions in a row on the same page
 
-        if (elementIndexValid) {
+        //todo idea- based on LLM sometimes including element index when scrolling (i.e. element of interest which is off screen)
+        // maybe it would make sense to add ability to scroll-to-element if it did that?
+        if (actionToPerform === Action.SCROLL_UP || actionToPerform === Action.SCROLL_DOWN) {
+            await this.performScrollAction(actionToPerform, actionOutcome);
+        } else if (elementIndexValid) {
             const elementToActOnData = this.interactiveElements[message.elementIndex];
             const elementToActOn = elementToActOnData.element;
-            /*
-            todo consider implementing in js a conditional polling/wait for 'stability'
-             https://playwright.dev/docs/actionability#stable
-             note that a given action type would only need some of the actionability checks
-             https://playwright.dev/docs/actionability#introduction
-             above goals for conditional polling/waiting could be one (or a few) helper methods
-             This might be redundant with the wait for overall page stability _after_ each action
-             */
 
             this.logger.trace("performing action <" + actionToPerform + "> on element <" + elementToActOnData.tagHead + "> " + elementToActOnData.description);
 
@@ -368,9 +365,7 @@ export class PageActor {
             }
 
         } else {
-            if (actionToPerform === Action.SCROLL_UP || actionToPerform === Action.SCROLL_DOWN) {
-                await this.performScrollAction(actionToPerform, actionOutcome);
-            } else if (actionToPerform === Action.PRESS_ENTER) {
+             if (actionToPerform === Action.PRESS_ENTER) {
                 await this.performPressEnterAction(actionOutcome, "whatever element had focus in the tab")
             } else {
                 //The TERMINATE action is handled in the background script
@@ -455,9 +450,10 @@ export class PageActor {
         this.logger.trace(`message received from agent controller: ${JSON.stringify(message)
             .slice(0, 100)} by page ${document.URL}`);
         this.hasControllerEverResponded = true;
+        this.browserHelper.resetElementAnalysis();
         if (message.type === AgentController2PagePortMsgType.REQ_PAGE_STATE) {
             if (message.isMonitorRetry) {this.interactiveElements = undefined;}
-            this.getPageInfoForController();
+            await this.getPageInfoForController();
         } else if (message.type === AgentController2PagePortMsgType.REQ_ACTION) {
             await this.performActionFromController(message);
         } else if (message.type === AgentController2PagePortMsgType.HIGHLIGHT_CANDIDATE_ELEM) {

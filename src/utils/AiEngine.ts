@@ -96,8 +96,7 @@ export abstract class AiEngine {
                 if (this.checkIfRateLimitError(err)) {
                     const rateLimitIssueDetails = this.extractRateLimitErrDetails(err) ?? "details couldn't be parsed";
                     this.logger.info(`hit ${this.providerDetails().label} rate limit but will retry: ${rateLimitIssueDetails}`);
-                }
-                else if (this.checkIfNonfatalError(err)) {
+                } else if (this.checkIfNonfatalError(err)) {
                     this.logger.warn(`non-fatal problem with ${this.providerDetails().label} API, will retry; problem: ${err.message}`);
                 } else {
                     this.logger.error(`problem (${err.message}) occurred with ${this.providerDetails().label} API that isn't likely to get better, not retrying`);
@@ -105,5 +104,26 @@ export abstract class AiEngine {
                 }
             }
         });
+    }
+
+    assemblePriorOutputsForAutoMonitoring = (planningOutput: string | undefined, groundingOutput: string | undefined
+    ): string => {
+        let priorModelOutputs = "PLANNING: \n\n";
+        if (planningOutput === undefined) {
+            throw new Error("planning Output must be provided for the auto-monitoring ai generation");
+        } else if (planningOutput.length > 0) {
+            priorModelOutputs += planningOutput + "\n\n-------------\n\n";
+        } else {
+            this.logger.info("LLM MALFUNCTION- planning output was empty string");
+        }
+        priorModelOutputs += "GROUNDING: \n\n";
+        if (groundingOutput === undefined) {
+            throw new Error("grounding Output must be provided for the auto-monitoring ai generation");
+        } else if (groundingOutput.length > 0) {
+            priorModelOutputs += groundingOutput;
+        } else {
+            this.logger.info("LLM MALFUNCTION- grounding output was empty string");
+        }
+        return priorModelOutputs;
     }
 }

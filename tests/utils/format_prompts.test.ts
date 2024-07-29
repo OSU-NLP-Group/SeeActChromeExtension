@@ -11,7 +11,7 @@ import {
     postProcessActionLlm,
     StrTriple
 } from "../../src/utils/format_prompts";
-import {_formatOptions, generateNewQueryPrompt} from "../../src/utils/format_prompt_utils";
+import {_formatOptions, generateNewPlanningPrompt} from "../../src/utils/format_prompt_utils";
 
 
 describe('_processString', () => {
@@ -168,7 +168,7 @@ describe('generatePrompt', () => {
             "previous action 3 description"];
         const choices: Array<string> = ["<a id=\"0\">Skip to content</a>", "<a id=\"1\">Skip to navigation</a>",
             "button type=\"button\" id=\"5\">Product</button>"];
-        const [expectedSysPrompt, expectedQueryPrompt] = generateNewQueryPrompt(onlineSystemPrompt, task, previousActions, onlineQuestionDesc);
+        const [expectedSysPrompt, expectedQueryPrompt] = generateNewPlanningPrompt(onlineSystemPrompt, task, previousActions, onlineQuestionDesc);
         const expectedGroundingPrompt = onlineReferringPromptDesc + "\n\n" + _formatOptions(choices) +  onlineElementFormat + "\n\n" + onlineActionFormat + "\n\n" +  onlineValueFormat;
 
         const {sysPrompt, queryPrompt, groundingPrompt, elementlessActionPrompt} = generatePrompt(task, previousActions, choices);

@@ -160,11 +160,25 @@ export enum Action {
 }
 
 export enum ActionStateChangeSeverity {
+    SAFE = "SAFE",
     LOW = "LOW",
     MEDIUM = "MEDIUM",
     HIGH = "HIGH"
 }
 
+export function isActionStateChangeSeverity(severity: unknown): severity is ActionStateChangeSeverity {
+    return typeof severity === "string" && Object.values(ActionStateChangeSeverity).includes(severity as ActionStateChangeSeverity);
+}
+
+
+export interface HTMLElementWithDocumentHost extends HTMLElement {
+    /**
+     * the sequence of <iframe> element(s) (progressing from the innermost one that directly contains the actual
+     * element to the outermost one which is a direct child of the real page's Document)
+     * which contain the document(s) that this element is nested inside of
+     */
+    documentHostChain?: HTMLIFrameElement[];
+}
 
 export type ElementData = {
     centerCoords: readonly [number, number],
@@ -187,7 +201,7 @@ export type ElementData = {
     width: number,
     height: number,
     tagName: string,
-    element: HTMLElement
+    element: HTMLElementWithDocumentHost
 }
 export type SerializableElementData = Omit<ElementData, 'element'>;
 export const exampleSerializableElemData: SerializableElementData = {

@@ -35,6 +35,8 @@ export class PageDataCollector {
     handleRequestFromAnnotationCoordinator = async (message: any) => {
         this.logger.trace(`message received from annotation coordinator: ${JSON.stringify(message)} by page ${document.URL}`);
         this.hasCoordinatorEverResponded = true;
+
+        this.browserHelper.resetElementAnalysis();
         if (message.type === AnnotationCoordinator2PagePortMsgType.REQ_ACTION_DETAILS_AND_CONTEXT) {
             let userMessage = "";//to be shown to the user in the status display in the side panel
             let userMessageDetails = "";//to be shown to the user as hovertext of the status display in the side panel
@@ -77,6 +79,7 @@ export class PageDataCollector {
                 this.logger.warn(`no interactive elements found at mouse coordinates ${currMouseX}, ${currMouseY}`);
                 userMessage = "Warning- No interactive elements found at mouse coordinates";
                 userMessageDetails = `Mouse coordinates: (${currMouseX}, ${currMouseY}) relative to viewport: ${JSON.stringify(this.domWrapper.getViewportInfo())}`;
+                await this.browserHelper.clearElementHighlightingEarly();
             }
 
             try {
@@ -113,28 +116,10 @@ export class PageDataCollector {
         };
     }
 
-    /*
-        findMousePositionFromHoverPseudoClass = () => {
-            const startTsForHoverSearch = performance.now();
-            const elementUnderMouse = this.browserHelper.enhancedQuerySelector(':hover', document,
-                elem => !this.browserHelper.calcIsHidden(elem) && elem.tagName.toLowerCase() !== "html");
-            //if broader elements like the root html are showing as having :hover, maybe do exhaustive search then pick the element with :hover pseudoclass and the highest z index?
-            // can reliably test this idea by removing the check for elem.tagName.toLowerCase() !== "html" in the elemFilter after implementing the above line's idea
-
-            this.logger.debug(`time taken for exhaustive search for :hover pseudo class is ${performance.now() - startTsForHoverSearch} ms`);
-            if (elementUnderMouse) {
-                const elemBounds = elementUnderMouse.getBoundingClientRect();
-                this.mouseClientX = (elemBounds.left + elemBounds.right) / 2;
-                this.mouseClientY = (elemBounds.top + elemBounds.bottom) / 2;
-
-                const mouseElemInfo = this.browserHelper.getElementData(elementUnderMouse);
-                if (mouseElemInfo) {
-                    this.logger.info(`found mouse position from exhaustive search for :hover pseudo class: ${this.mouseClientX}, ${this.mouseClientY}; element details: ${JSON.stringify(makeElementDataSerializable(mouseElemInfo))}`);
-                }
-                this.logger.info(`found mouse position from exhaustive search for :hover pseudo class: ${this.mouseClientX}, ${this.mouseClientY}; but couldn't construct ElementData from element ${elementUnderMouse.tagName}`);
-            } else {
-                this.logger.warn("no element found under mouse from exhaustive search for :hover pseudo class");
-            }
-        }
-    */
+    setupMouseMovementTracking = () => {
+        this.browserHelper.setupMouseMovementTracking((newMouseX: number, newMouseY: number) => {
+            this.mouseClientX = newMouseX;
+            this.mouseClientY = newMouseY;
+        });
+    }
 }

@@ -15,13 +15,7 @@ const portToBackground: chrome.runtime.Port = chrome.runtime.connect({name: port
 const dataCollector = new PageDataCollector(portToBackground);
 portToBackground.onMessage.addListener(dataCollector.handleRequestFromAnnotationCoordinator);
 
-document.addEventListener('mousemove', (e) => {
-    dataCollector.mouseClientX = e.clientX;
-    dataCollector.mouseClientY = e.clientY;
-});
-
-
-
+dataCollector.setupMouseMovementTracking();
 
 (async () => {
     await sleep(50);//make sure coordinator has added its listeners before sending READY message
