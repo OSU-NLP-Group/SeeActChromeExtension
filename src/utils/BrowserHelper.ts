@@ -11,6 +11,7 @@ import {
     SerializableElementData,
     sleep
 } from "./misc";
+import {IframeNode, IframeTree} from "./IframeTree";
 
 export function makeElementDataSerializable(elementData: ElementData): SerializableElementData {
     const serializableElementData: SerializableElementData = {...elementData};
@@ -32,10 +33,16 @@ export class BrowserHelper {
     private highlightedElementOriginalOutline: string | undefined;
     private highlightedElementStyle: CSSStyleDeclaration | undefined;
 
+    private cachedIframeTree: IframeTree | undefined;
+
     constructor(domHelper?: DomWrapper, loggerToUse?: log.Logger) {
         this.domHelper = domHelper ?? new DomWrapper(window);
 
         this.logger = loggerToUse ?? createNamedLogger('browser-helper', false);
+    }
+
+    resetElementAnalysis() {
+        this.cachedIframeTree = undefined;
     }
 
     /**
@@ -237,6 +244,30 @@ export class BrowserHelper {
      * @returns the full xpath of the given element (from the root of the page's document element)
      */
     getFullXpath = (element: HTMLElement): string => {
+        let overallXpath = this.getFullXpathHelper(element);
+        const topWindow = (this.domHelper.window as Window).top;
+        if (!topWindow) {
+            this.logger.warn("unable to access window.top, so unable to access the top-level document's iframe tree; cannot provide xpath analysis which takes iframes into account");
+            return overallXpath;
+        }
+
+        if (!this.cachedIframeTree) {this.cachedIframeTree = new IframeTree(topWindow, this.logger);}
+        const nestedIframesPathToElem = this.cachedIframeTree.getIframePathForElement(element);
+        if (nestedIframesPathToElem) {
+            for (let nestedIframeIdx = nestedIframesPathToElem.length - 1; nestedIframeIdx >= 0; nestedIframeIdx--) {
+                const nestedIframeElem = nestedIframesPathToElem[nestedIframeIdx].iframe;
+                if (nestedIframeElem) {
+                    overallXpath = this.getFullXpathHelper(nestedIframeElem) + "/iframe()" + overallXpath;
+                } else {
+                    this.logger.warn("nested iframe element was null in the path to the current element; cannot provide full xpath analysis which takes iframes into account");
+                    overallXpath = "/corrupted-node-in-iframe-tree()" + overallXpath;
+                }
+            }
+        }
+        return overallXpath;
+    }
+
+    private getFullXpathHelper = (element: HTMLElement): string => {
         let xpath = getXPath(element);
         const rootElem = element.getRootNode();
         if (rootElem instanceof ShadowRoot) {
@@ -265,16 +296,21 @@ export class BrowserHelper {
         let elemX = boundingRect.x;
         let elemY = boundingRect.y;
         if (element.documentHostChain) {
-            for(const host of element.documentHostChain) {
+            //this.logger.debug(`base coords were (${elemX}, ${elemY}) for element with tag head ${tagHead} and description: ${description}`);
+            for (const host of element.documentHostChain) {
                 const hostBoundingRect = this.domHelper.grabClientBoundingRect(host);
                 elemX += hostBoundingRect.x;
                 elemY += hostBoundingRect.y;
+                //this.logger.debug(`adjusted coords to (${elemX}, ${elemY}) for host element with tag head ${host.tagName} and description: ${this.getElementDescription(host)}`);
             }
+            //otherwise, you get really bizarre behavior where position measurements for 2nd/3rd/etc. annotations on the
+            // same page are increasingly wildly off (for elements inside iframes)
+            delete element.documentHostChain;
         }
 
         const centerPoint = [elemX + boundingRect.width / 2, elemY + boundingRect.height / 2] as const;
         const mainDiagCorners =
-            {tLx: elemX, tLy: elemX, bRx: elemX + boundingRect.width, bRy: elemY + boundingRect.height};
+            {tLx: elemX, tLy: elemY, bRx: elemX + boundingRect.width, bRy: elemY + boundingRect.height};
 
         return {
             centerCoords: centerPoint, description: description, tagHead: tagHead, boundingBox: mainDiagCorners,
@@ -338,7 +374,7 @@ export class BrowserHelper {
 
         const elemsFetchStartTs = performance.now();
         const uniqueInteractiveElements = this.enhancedQuerySelectorAll(interactiveElementSelectors,
-            this.domHelper.dom, elem => !this.calcIsDisabled(elem), true);
+            this.domHelper.window as Window, elem => !this.calcIsDisabled(elem), true);
         this.logger.debug(`time to fetch interactive elements: ${performance.now() - elemsFetchStartTs} ms`);
 
         const interactiveElementsData = Array.from(uniqueInteractiveElements)
@@ -401,9 +437,13 @@ export class BrowserHelper {
     getIframeContent = (iframe: HTMLIFrameElement): Document | null => {
         try {
             return iframe.contentDocument || iframe.contentWindow?.document || null;
-        } catch (e) {
-            this.logger.debug(`Cannot access iframe content. Possibly different origin: ${iframe.src}; error: ${renderUnknownValue(e)
-                .slice(0, 100)}`);
+        } catch (error: any) {
+            if (error.name === "SecurityError") {
+                this.logger.debug(`Cross-origin (${iframe.src}) iframe detected while grabbing iframe content: ${
+                    renderUnknownValue(error).slice(0, 100)}`);
+            } else {
+                this.logger.error(`Error grabbing iframe content: ${renderUnknownValue(error)}`);
+            }
             return null;
         }
     }
@@ -418,39 +458,56 @@ export class BrowserHelper {
      * protection against duplicates across different scopes (since intuitively it shouldn't be possible for an element
      * to be in both a shadow DOM and the main document)
      * @param cssSelectors The CSS selectors to use to find elements
-     * @param root the base element for the current call's search scope
+     * @param topWindow the window that the search should happen in; this should be the top window of the page
      * @param elemFilter predicate to immediately eliminate irrelevant elements before they slow down the
      *                      array-combining operations
      * @param shouldIgnoreHidden whether to ignore hidden/not-displayed elements
      * @returns array of elements that match any of the CSS selectors;
      *          this is a static view of the elements (not live access that would allow modification)
      */
-    enhancedQuerySelectorAll = (cssSelectors: string[], root: ShadowRoot | Document,
+    enhancedQuerySelectorAll = (cssSelectors: string[], topWindow: Window,
                                 elemFilter: (elem: HTMLElement) => boolean, shouldIgnoreHidden: boolean = true
+    ): Array<HTMLElementWithDocumentHost> => {
+        if (!this.cachedIframeTree) {this.cachedIframeTree = new IframeTree(topWindow, this.logger);}
+        return this.enhancedQuerySelectorAllHelper(cssSelectors, topWindow.document, this.cachedIframeTree.root,
+            elemFilter, shouldIgnoreHidden);
+    }
+
+    enhancedQuerySelectorAllHelper = (cssSelectors: string[], root: ShadowRoot | Document, iframeContextNode: IframeNode,
+                                      elemFilter: (elem: HTMLElement) => boolean, shouldIgnoreHidden: boolean = true
     ): Array<HTMLElementWithDocumentHost> => {
         let possibleShadowRootHosts = Array.from(root.querySelectorAll('*')) as HTMLElement[];
         if (shouldIgnoreHidden) { possibleShadowRootHosts = possibleShadowRootHosts.filter(elem => !this.calcIsHidden(elem)); }
         const shadowRootsOfChildren = possibleShadowRootHosts.map(elem => elem.shadowRoot)
             .filter(Boolean) as ShadowRoot[];//TS compiler doesn't know that filter(Boolean) removes nulls
 
-        let iframes = Array.from(root.querySelectorAll('iframe'))
-        if (shouldIgnoreHidden) { iframes = iframes.filter(iframe => !this.calcIsHidden(iframe)); }
-        //+1 is for the current scope results array
-        const resultArrays: HTMLElement[][] = new Array<Array<HTMLElement>>(shadowRootsOfChildren.length + iframes.length + 1);
+        const iframeNodes = iframeContextNode.children;
+        //+1 is for the current scope results array, in case none of the child iframes get disqualified for being hidden
+        const resultArrays: HTMLElement[][] = new Array<Array<HTMLElement>>(shadowRootsOfChildren.length + iframeNodes.length + 1);
 
-        for(const iframe of iframes) {
-            const iframeContent = this.getIframeContent(iframe);
+        for (const childIframeNode of iframeNodes) {
+            const childIframeElem = childIframeNode.iframe;
+            if (!childIframeElem) {
+                this.logger.warn("iframeNode had null iframe element, so skipping it");
+                continue;
+            }
+            if (shouldIgnoreHidden && this.calcIsHidden(childIframeElem)) {
+                this.logger.debug("Ignoring hidden iframe element");
+                continue;
+            }
+
+            const iframeContent = this.getIframeContent(childIframeElem);
             if (iframeContent) {
-                const resultsForIframe = this.enhancedQuerySelectorAll(cssSelectors, iframeContent, elemFilter, shouldIgnoreHidden);
+                const resultsForIframe = this.enhancedQuerySelectorAllHelper(cssSelectors, iframeContent, childIframeNode, elemFilter, shouldIgnoreHidden);
                 resultsForIframe.forEach(elem => {
                     if (elem.documentHostChain === undefined) {elem.documentHostChain = [];}
-                    elem.documentHostChain.push(iframe);
+                    elem.documentHostChain.push(childIframeElem);
                 });
                 resultArrays.push(resultsForIframe);
             }
         }
 
-        shadowRootsOfChildren.map(childShadowRoot => this.enhancedQuerySelectorAll(cssSelectors, childShadowRoot, elemFilter, shouldIgnoreHidden))
+        shadowRootsOfChildren.map(childShadowRoot => this.enhancedQuerySelectorAllHelper(cssSelectors, childShadowRoot, iframeContextNode, elemFilter, shouldIgnoreHidden))
             .forEach(resultsForShadowRoot => resultArrays.push(resultsForShadowRoot));
 
         //based on https://developer.mozilla.org/en-US/docs/Web/API/Node/isSameNode, I'm pretty confident that simple
@@ -541,6 +598,33 @@ export class BrowserHelper {
             }
         }
         return actualActiveElement;
+    }
+
+    setupMouseMovementTracking = (positionUpdater: (x: number, y: number) => void) => {
+        if (!this.cachedIframeTree) {this.cachedIframeTree = new IframeTree(this.domHelper.window as Window, this.logger);}
+        this.setupMouseMovementTrackingHelper(this.cachedIframeTree.root, positionUpdater);
+    }
+
+    setupMouseMovementTrackingHelper = (iframeContextNode: IframeNode, positionUpdater: (x: number, y: number) => void) => {
+        let currContextDocument: Document | null = null;
+        try {
+            currContextDocument = iframeContextNode.window.document;
+        } catch (error: any) {
+            if (error.name === "SecurityError") {
+                this.logger.debug(`Cross-origin (${iframeContextNode.iframe?.src}) iframe detected while adding mouse movement listeners for nested documents: ${
+                    renderUnknownValue(error).slice(0, 100)}`);
+            } else {
+                this.logger.error(`Error while adding mouse movement listeners for nested documents: ${renderUnknownValue(error)}`);
+            }
+        }
+        if (currContextDocument) {
+            currContextDocument.addEventListener('mousemove', (e) => {
+                positionUpdater(e.clientX + iframeContextNode.coordsOffsetFromViewport.x, e.clientY + iframeContextNode.coordsOffsetFromViewport.y);
+            });
+        }
+        for (const childIframe of iframeContextNode.children) {
+            this.setupMouseMovementTrackingHelper(childIframe, positionUpdater);
+        }
     }
 
 }

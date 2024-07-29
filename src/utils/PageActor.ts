@@ -450,6 +450,7 @@ export class PageActor {
         this.logger.trace(`message received from agent controller: ${JSON.stringify(message)
             .slice(0, 100)} by page ${document.URL}`);
         this.hasControllerEverResponded = true;
+        this.browserHelper.resetElementAnalysis();
         if (message.type === AgentController2PagePortMsgType.REQ_PAGE_STATE) {
             if (message.isMonitorRetry) {this.interactiveElements = undefined;}
             await this.getPageInfoForController();
