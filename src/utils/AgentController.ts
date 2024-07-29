@@ -86,7 +86,8 @@ enum NoopType {
 enum LmmOutputReaction {
     ABORT_TASK,
     PROCEED_WITH_ACTION,
-    TRY_REPROMPT
+    TRY_REPROMPT,
+    FETCH_FRESH_PAGE_STATE
 }
 
 /**
@@ -527,6 +528,17 @@ export class AgentController {
                 return;
             } else if (lmmOutputReaction === LmmOutputReaction.TRY_REPROMPT) {
                 continue;
+            } else if (lmmOutputReaction === LmmOutputReaction.FETCH_FRESH_PAGE_STATE) {
+                this.state = AgentControllerState.WAITING_FOR_PAGE_STATE
+                try {
+                    pageActorPort.postMessage({type: AgentController2PagePortMsgType.REQ_PAGE_STATE});
+                } catch (error: any) {
+                    if ('message' in error && error.message === expectedMsgForPortDisconnection) {
+                        this.logger.info("content script disconnected from service worker while processing previous page state and before trying to request more interactive elements (processing of that page state led to immediate request for fresh page state); task will resume after new content script connection is established");
+                        this.state = AgentControllerState.PENDING_RECONNECT;
+                    } else {this.terminateTask(`unexpected error while trying to request more interactive elements; error: ${renderUnknownValue(error)}`);}
+                }
+                return;
             }
 
             if (this.pendingActionInfo === undefined) {
@@ -782,13 +794,26 @@ export class AgentController {
             this.terminateTask("Task completed: " + explanation, false);
             return [LmmOutputReaction.ABORT_TASK, "", ""];
         } else if (action === Action.NONE) {
-            //todo add logic to check explanation string for ["still", "loading", "finished"] and if it contains 2+ of
-            // those then return a new output reaction that causes the controller to wait 5 seconds, then send fresh
-            // query to content script and go back to WAITING_FOR_PAGE_STATE
+            const pageStillLoadingKeywords = ["still", "loading", "wait", "finished"];
+            const pageStillLoadingHeuristic = pageStillLoadingKeywords.filter(keyword =>
+                explanation.toLowerCase().includes(keyword)).length;
 
-            //after next major model release, if this comes up, then maybe, if the agent repeatedly says that the page
-            // hasn't fully loaded, we should consider the possibility that the "wait until page fully loaded" logic in
-            // content script didn't work properly and we should fetch fresh elements
+            if (pageStillLoadingHeuristic > 1) {
+                this.logger.info("ai selected NONE action with explanation suggesting that the page is still loading; waiting 5 seconds and then sending fresh query to content script");
+                try {
+                    this.portToSidePanel.postMessage({
+                        type: AgentController2PanelPortMsgType.NOTIFICATION,
+                        message: "The AI thinks the page was still loading when page information was last fetched; waiting 5 seconds and then retrieving fresh page information"
+                    });
+                } catch (error: any) {
+                    this.terminateTask(`error while trying to send fresh query to content script after waiting 5 seconds; error: ${renderUnknownValue(error)}`);
+                }
+                await sleep(5_000);
+                return [LmmOutputReaction.FETCH_FRESH_PAGE_STATE, "", ""];
+            } else if (pageStillLoadingHeuristic == 1) {
+                this.logger.info("ai selected NONE action with explanation hinting that the page might still be loading, REVIEW FOR NEW HEURISTIC KEYWORDS");
+            }
+
             this.logger.warn("ai selected NONE action, counting as noop action and reprompting");
             this.noopCount++;
             this.failureOrNoopStreak++;
