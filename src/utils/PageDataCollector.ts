@@ -77,6 +77,7 @@ export class PageDataCollector {
                 this.logger.warn(`no interactive elements found at mouse coordinates ${currMouseX}, ${currMouseY}`);
                 userMessage = "Warning- No interactive elements found at mouse coordinates";
                 userMessageDetails = `Mouse coordinates: (${currMouseX}, ${currMouseY}) relative to viewport: ${JSON.stringify(this.domWrapper.getViewportInfo())}`;
+                await this.browserHelper.clearElementHighlightingEarly();
             }
 
             try {
