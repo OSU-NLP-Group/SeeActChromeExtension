@@ -76,7 +76,8 @@ export enum AgentControllerState {
 enum NoopType {
     INVALID_ELEMENT,//ai gave invalid element name
     ACTION_INCOMPATIBLE_WITH_NONE_OF_ABOVE_ELEMENT,//ai chose 'none of the above' option for element but also chose an action that requires a target element
-    AI_SELECTED_NONE_ACTION//ai selected the NONE action
+    AI_SELECTED_NONE_ACTION,//ai selected the NONE action
+    AI_SELECTED_NONSENSICAL_SCROLL//ai selected a scroll action that would have no effect (scrolling up when at top of page or scrolling down when at bottom)
 }
 
 /**
@@ -513,7 +514,7 @@ export class AgentController {
             }
             this.logger.debug("prompts: " + JSON.stringify(prompts));
             const [lmmOutputReaction, planningOutput, groundingOutput] = await this.queryLmmAndProcessResponsesForAction(
-                screenshotDataUrl, candidateIds, interactiveElements, prompts);
+                screenshotDataUrl, candidateIds, interactiveElements, viewportInfo, prompts);
             if (this.terminationSignal) {
                 this.logger.info("received termination signal while processing interactive elements; terminating task")
                 //the task termination will be handled by the terminateTask method being called by the handler (for
@@ -697,8 +698,6 @@ export class AgentController {
         }
     }
 
-    //todo ask Boyuan if he wants me to break this up even further- I'm on the fence as to whether it would actually
-    // improve code readability
     /**
      * @description Queries the LLM for the next action to take based on the current state of the page and the actions
      * so far, then processes the response and (if there is a chosen action) stores the chosen action in
@@ -706,6 +705,7 @@ export class AgentController {
      * @param screenshotDataUrl the data URL of the screenshot of the current page
      * @param candidateIds the indices of the interactive elements that are candidates for the next action
      * @param interactiveElements the full data about the interactive elements on the page
+     * @param viewportInfo information about the viewport and the dimensions of the page that it's showing part of
      * @param prompts prompts for AI models
      * @return primarily, an indicator of what the main "processPageStateFromActor" function should do next based on the LLM response
      *         (e.g. whether to try reprompting, proceed with the action, or abort the task)
@@ -714,7 +714,7 @@ export class AgentController {
      */
     private queryLmmAndProcessResponsesForAction = async (
         screenshotDataUrl: string, candidateIds: number[], interactiveElements: SerializableElementData[],
-        prompts: LmmPrompts): Promise<[LmmOutputReaction, string, string]> => {
+        viewportInfo: ViewportDetails, prompts: LmmPrompts): Promise<[LmmOutputReaction, string, string]> => {
         if (this.portToSidePanel === undefined) {
             this.logger.error("no side panel connection to send query prompt to; abandoning task");
             //terminateTask() will be called by the onDisconnect listener
@@ -851,8 +851,28 @@ export class AgentController {
             }
             return [LmmOutputReaction.TRY_REPROMPT, "", ""];
         }
-        //todo if it says 'scroll down' when viewport info shows that we're already at the bottom, simply treat that as a no-op and remprompt
-        // same for scroll up when at top
+        //using weird comparison b/c pageScrollHeight is rounded to nearest int
+        const isBrowserAtBottomOfPage = Math.abs(viewportInfo.pageScrollHeight - viewportInfo.height - viewportInfo.scrollY) < 1;
+        if ((action === Action.SCROLL_UP && viewportInfo.scrollY == 0) || (action === Action.SCROLL_UP && isBrowserAtBottomOfPage)) {
+            const problemDesc = `AI selected ${action === Action.SCROLL_UP ? "scroll up when already at top of page" : "scroll down when already at bottom of page"}`;
+            this.logger.info(`${problemDesc}, marking action as noop`);
+            this.noopCount++;
+            this.failureOrNoopStreak++;
+            this.actionsSoFar.push({
+                priorUrl: this.currUrlBeforeAction ?? "no_URL", success: false, explanation: explanation,
+                actionDesc: `NOOP: ${problemDesc}`, noopType: NoopType.AI_SELECTED_NONSENSICAL_SCROLL
+            });
+            try {
+                this.portToSidePanel.postMessage({
+                    type: AgentController2PanelPortMsgType.NOTIFICATION, details: groundingOutput,
+                    msg: `${problemDesc}; reprompting`
+                });
+            } catch (error: any) {
+                this.terminateTask(`error while trying to send notification to side panel about ${problemDesc}; error: ${renderUnknownValue(error)}`);
+                return [LmmOutputReaction.ABORT_TASK, "", ""];
+            }
+            return [LmmOutputReaction.TRY_REPROMPT, "", ""];
+        }
 
         if (chosenCandidateIndex !== undefined && chosenCandidateIndex >= candidateIds.length && actionNeedsNoElement) {
             chosenCandidateIndex = undefined;

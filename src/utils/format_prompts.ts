@@ -1,4 +1,4 @@
-import {_formatOptions, generateNewQueryPrompt} from "./format_prompt_utils";
+import {_formatOptions, generateNewPlanningPrompt} from "./format_prompt_utils";
 import {Action, SerializableElementData, ViewportDetails} from "./misc";
 import {AiProviderId, AiProviders} from "./ai_misc";
 
@@ -267,7 +267,7 @@ export const autoMonitorPromptWithToolUseConclusion = `To respond, you _must_ ca
  */
 export const generatePrompt = (task: string, previousActions: Array<string>, choices: Array<string>,
                                viewportInfo: ViewportDetails, aiProviderType: AiProviderId): LmmPrompts => {
-    const [sysPrompt, queryPrompt] = generateNewQueryPrompt(onlineSystemPrompt, task, previousActions,
+    const queryPrompt = generateNewPlanningPrompt(task, previousActions,
         onlineQuestionDesc, viewportInfo);
 
     let groundingPrompt: string = onlineReferringPromptDesc + "\n\n";
@@ -293,7 +293,7 @@ export const generatePrompt = (task: string, previousActions: Array<string>, cho
     }
 
     return {
-        sysPrompt: sysPrompt, queryPrompt: queryPrompt, groundingPrompt: groundingPrompt,
+        sysPrompt: onlineSystemPrompt, queryPrompt: queryPrompt, groundingPrompt: groundingPrompt,
         elementlessActionPrompt: customizedElementlessActionPrompt, autoMonitorPrompt: autoMonitorPrompt
     };
 }

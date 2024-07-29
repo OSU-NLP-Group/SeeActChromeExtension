@@ -1,6 +1,3 @@
-/*todo use light touch css to ensure the focused element is clearly distinguishable from the rest
-   https://developer.chrome.com/docs/extensions/how-to/ui/a11y#navigation
-   seems to have been handled by tailwind's defaults, but need to double check again after finishing ui overhaul*/
 
 #history {
     padding-left: 15px;/*todo check if still necessary*/

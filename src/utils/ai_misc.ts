@@ -114,7 +114,6 @@ export interface AiEngineCreateOptions {
 
 /**
  * possible modes for ai generation
- * todo replace the 'turn' (0 or 1) thing with this
  */
 export enum GenerateMode {
     /**

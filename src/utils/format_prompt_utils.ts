@@ -15,23 +15,15 @@ export const noPrevActions: string = "No prior actions\n";
  * {environment, high-level plans, next step action}
  *     Each experiment will have a similar prompt in this phase
  *     This prompt is used to generate models' thoughts without disrupt of formatting/referring prompts
- * @param systemPrompt the system prompt for the web agent
- *                      todo confer with Boyuan about why this string is passed to the method
- *                          and then returned untouched as part of the return array
- *                          Feedback- allowed to refactor this to stop passing-in/returning the sys prompt without modification
  * @param task the current task specification from the user
  * @param previousActions an array of string descriptions of previous actions by the web agent
  * @param questionDescription the immediate question to the web agent (e.g. about what it should do next)
  * @param viewportInfo information about the viewport and the dimensions of the page that it's showing part of
  * @return an array with the 'system role' (i.e. system prompt) and the full query/main-prompt for the model
  */
-//todo can rename 'query' to analysis or analysisPlanning or something
-export const generateNewQueryPrompt =
-    (systemPrompt: string, task: string, previousActions: Array<string> | null,
-     questionDescription: string, viewportInfo: ViewportDetails
-    ): Array<string> => {
-        //can make this a let if a requirement comes in that we should add to or modify it
-        const sysRole: string = systemPrompt;
+export const generateNewPlanningPrompt =
+    (task: string, previousActions: Array<string> | null, questionDescription: string, viewportInfo: ViewportDetails
+    ): string => {
 
         let queryText: string = basicPromptIntro + task + "\n\n" + prevActionsIntro;
         if (previousActions === null || previousActions.length === 0) {
@@ -50,7 +42,7 @@ export const generateNewQueryPrompt =
             logger.debug("page is not scrollable vertically because the viewport is taller than the page's content");
         }
 
-        return [sysRole, queryText];
+        return queryText;
     }
 
 /**

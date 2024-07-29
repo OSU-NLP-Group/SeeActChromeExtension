@@ -109,9 +109,6 @@ export class BrowserHelper {
         }
     }
 
-    //todo once receive clearance to rework this (after SeeAct main loop is working and we can confirm
-    // whether rework introduces regression in e2e test), refactor this to just have 1 return point instead of 5-6
-
     /**
      * @description Get a one-line description of an element, with special logic for certain types of elements
      * and some ability to fall back on information from parent element or first child element
@@ -122,9 +119,6 @@ export class BrowserHelper {
         const tagName = element.tagName.toLowerCase();
         const roleValue = element.getAttribute("role");
         const typeValue = element.getAttribute("type");
-
-        //todo put a flag/warning in the description if the element's dimensions are suspiciously tiny (e.g. 1px by 1px)
-
 
         const salientAttributes = ["alt", "aria-describedby", "aria-label", "aria-role", "input-checked",
             "label", "name", "option_selected", "placeholder", "readonly", "text-value", "title", "value"];

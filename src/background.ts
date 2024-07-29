@@ -163,11 +163,6 @@ chrome.runtime.onSuspend.addListener(() => {
     }
 });
 
-//todo before official release, if indexeddb persistent logging was implemented, make mechanism to trigger
-// once every 14 days and purge logs older than 14 days from the extension's indexeddb
-// option 1) get day-of-year, then wipe logs older than 14 days if day-of-year is divisible by 14?
-// option 2) when install (or when wipe old logs), store the current date in chrome.local.storage; then, when background starts up,
-//  check if the current date is at least 14 days after the stored date, and if so, wipe old logs and update the stored date
 
 //todo experiment with console.group() and console.groupEnd() at start and end of code blocks which contain a bunch of
 // logging statements, to make the console log easier to parse
