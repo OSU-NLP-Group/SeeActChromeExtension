@@ -172,18 +172,6 @@ export interface GenerateOptions {
     model?: string;
 }
 
-export enum ActionStateChangeSeverity {
-    SAFE= "SAFE",
-    LOW = "LOW",
-    MEDIUM = "MEDIUM",
-    HIGH = "HIGH"
-}
-
-export function isActionStateChangeSeverity(severity: unknown): severity is ActionStateChangeSeverity {
-    return typeof severity === "string" && Object.values(ActionStateChangeSeverity).includes(severity as ActionStateChangeSeverity);
-}
-
-
 //todo rework AiEngine.generate/generateWithRetry and the associated implementations to return this instead of string
 // then update AgentController
 // Involves adding json-parsing logic in OpenAiEngine (essentially eliminating postProcessActionLlm() and putting its logic in OpenAiEngine.generate())

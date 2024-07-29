@@ -1,5 +1,5 @@
 import {AiEngine} from "./AiEngine";
-import {Action} from "./misc";
+import {Action, ActionStateChangeSeverity} from "./misc";
 import {
     actionJudgmentExplanationParamDesc,
     actionJudgmentFuncDesc, actionJudgmentRequiredProps, actionJudgmentSeverityParamDesc,
@@ -11,7 +11,6 @@ import {
     groundingPromptValueParamDesc
 } from "./format_prompts";
 import {
-    ActionStateChangeSeverity,
     AiEngineCreateOptions,
     AiProviderDetails,
     AiProviders,

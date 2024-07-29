@@ -160,10 +160,16 @@ export enum Action {
 }
 
 export enum ActionStateChangeSeverity {
+    SAFE = "SAFE",
     LOW = "LOW",
     MEDIUM = "MEDIUM",
     HIGH = "HIGH"
 }
+
+export function isActionStateChangeSeverity(severity: unknown): severity is ActionStateChangeSeverity {
+    return typeof severity === "string" && Object.values(ActionStateChangeSeverity).includes(severity as ActionStateChangeSeverity);
+}
+
 
 
 export type ElementData = {

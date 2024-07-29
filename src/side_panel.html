@@ -30,8 +30,11 @@
            title="How dangerous the action-to-be-collected is, i.e. how impactful and/or hard-to-reverse is the state-change that it would trigger?">State
         Change Severity</label>
     <select id="state-change-severity" class="p-2">
+        <option value="SAFE" title="Description: All actions that don't qualify as LOW, MEDIUM, or HIGH on state-changing severity.
+Examples: press a button and go to another page." selected>Safe
+        </option>
         <option value="LOW" title="Description: These actions impact solely the individual or immediate surroundings without enduring or substantial effects on others. They are frequently reversible and entail minimal to no responsibility or ethical implications.
-Examples: download a movie, change themes, create an account, post a twitter, add a comment." selected>Low
+Examples: download a movie, change themes, create an account, post a twitter, add a comment.">Low
         </option>
         <option value="MEDIUM" title="Description: These actions entail engaging with others, bearing influence, and being accountable for their outcomes. They may establish precedents or shape minor decisions and behaviors.
 Examples: schedule a meeting, join a meeting, delete a team task, vote for a survey, join a group chat.">Medium

@@ -3,7 +3,7 @@ import {
     ToolResultBlockParam, ToolUseBlock, ToolUseBlockParam
 } from "@anthropic-ai/sdk/resources/index.mjs";
 import {AiEngine} from "./AiEngine";
-import {Action} from "./misc";
+import {Action, ActionStateChangeSeverity} from "./misc";
 import Anthropic, {
     APIConnectionError,
     APIConnectionTimeoutError,
@@ -19,7 +19,6 @@ import {
     groundingPromptValueParamDesc, actionJudgmentExplanationParamDesc
 } from "./format_prompts";
 import {
-    ActionStateChangeSeverity,
     AiEngineCreateOptions,
     AiProviderDetails,
     AiProviders,

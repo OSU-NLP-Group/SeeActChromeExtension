@@ -13,7 +13,7 @@ import {
     taskIdPlaceholderVal
 } from "./shared_logging_setup";
 import {
-    Action,
+    Action, ActionStateChangeSeverity,
     AgentController2PagePortMsgType,
     AgentController2PanelPortMsgType,
     base64ToByteArray,
@@ -24,7 +24,7 @@ import {
     defaultMaxNoops,
     defaultMaxOps,
     elementHighlightRenderDelay,
-    expectedMsgForPortDisconnection,
+    expectedMsgForPortDisconnection, isActionStateChangeSeverity,
     Page2AgentControllerPortMsgType,
     Panel2AgentControllerPortMsgType,
     renderUnknownValue,
@@ -48,11 +48,9 @@ import JSZip from "jszip";
 import {IDBPDatabase} from "idb";
 import {AiEngine} from "./AiEngine";
 import {
-    ActionStateChangeSeverity,
     AiProviderId,
     AiProviders,
     GenerateMode,
-    isActionStateChangeSeverity
 } from "./ai_misc";
 import {ServiceWorkerHelper} from "./ServiceWorkerHelper";
 import Port = chrome.runtime.Port;
