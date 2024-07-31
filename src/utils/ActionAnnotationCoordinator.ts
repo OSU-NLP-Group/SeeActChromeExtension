@@ -376,7 +376,7 @@ export class ActionAnnotationCoordinator {
         }
 
         this.swHelper.sendZipToSidePanelForDownload(`details for annotated action ${this.currAnnotationId}`,
-            zip, this.portToSidePanel, `action_annotation_${this.currAnnotationId}.zip`,
+            zip, this.portToSidePanel, `action_annotation_${this.currAnnotationStateChangeSeverity}_${this.currAnnotationId}.zip`,
             AnnotationCoordinator2PanelPortMsgType.ANNOTATED_ACTION_EXPORT);
     }
 
