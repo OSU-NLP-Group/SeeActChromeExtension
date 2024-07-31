@@ -1,5 +1,6 @@
 import {createNamedLogger, defaultLogLevel, isLogLevelName} from "./utils/shared_logging_setup";
 import {
+    defaultAutoMonitorThreshold,
     defaultIsAnnotatorMode,
     defaultIsMonitorMode,
     defaultMaxFailureOrNoopStreak,
@@ -7,7 +8,7 @@ import {
     defaultMaxNoops,
     defaultMaxOps,
     defaultShouldWipeActionHistoryOnStart,
-    storageKeyForAiProviderType, storageKeyForAnnotatorMode,
+    storageKeyForAiProviderType, storageKeyForAnnotatorMode, storageKeyForAutoMonitorThreshold,
     storageKeyForLogLevel,
     storageKeyForMaxFailureOrNoopStreak,
     storageKeyForMaxFailures,
@@ -48,6 +49,10 @@ const monitorModeElem = document.getElementById('monitor-mode');
 if (!(monitorModeElem && monitorModeElem instanceof HTMLInputElement)) throw new Error('valid monitor-mode toggle not found');
 const monitorModeToggle = monitorModeElem as HTMLInputElement;
 
+const wipeHistoryOnTaskStartElem = document.getElementById('wipe-prior-history-on-task-start');
+if (!(wipeHistoryOnTaskStartElem && wipeHistoryOnTaskStartElem instanceof HTMLInputElement)) throw new Error('valid wipe-history-on-task-start toggle not found');
+const wipeHistoryOnTaskStartToggle = wipeHistoryOnTaskStartElem as HTMLInputElement;
+
 const annotatorModeElem = document.getElementById('annotator-mode');
 if (!(annotatorModeElem && annotatorModeElem instanceof HTMLInputElement)) throw new Error('valid annotator-mode toggle not found');
 const annotatorModeToggle = annotatorModeElem as HTMLInputElement;
@@ -68,9 +73,9 @@ const maxFailOrNoopStreakElem = document.getElementById('max-failure-or-noop-str
 if (!(maxFailOrNoopStreakElem && maxFailOrNoopStreakElem instanceof HTMLInputElement)) throw new Error('valid max-failure-or-noop-streak field not found');
 const maxFailOrNoopStreakField = maxFailOrNoopStreakElem as HTMLInputElement;
 
-const wipeHistoryOnTaskStartElem = document.getElementById('wipe-prior-history-on-task-start');
-if (!(wipeHistoryOnTaskStartElem && wipeHistoryOnTaskStartElem instanceof HTMLInputElement)) throw new Error('valid wipe-history-on-task-start toggle not found');
-const wipeHistoryOnTaskStartToggle = wipeHistoryOnTaskStartElem as HTMLInputElement;
+const autoMonitorThresholdElem = document.getElementById('auto-monitor-threshold');
+if (!(autoMonitorThresholdElem && autoMonitorThresholdElem instanceof HTMLSelectElement)) throw new Error('valid auto-monitor-threshold select not found');
+const autoMonitorThresholdSelect = autoMonitorThresholdElem as HTMLSelectElement;
 
 const statusDisplayElem = document.getElementById('status-display');
 if (!(statusDisplayElem && statusDisplayElem instanceof HTMLDivElement)) throw new Error('valid status-display div not found');
@@ -83,7 +88,8 @@ const saveButton = saveButtonElem as HTMLButtonElement;
 chrome.storage.local.get([storageKeyForAiProviderType, AiProviders.OPEN_AI.storageKeyForApiKey,
     AiProviders.ANTHROPIC.storageKeyForApiKey, AiProviders.GOOGLE_DEEPMIND.storageKeyForApiKey, storageKeyForLogLevel,
     storageKeyForMonitorMode, storageKeyForAnnotatorMode, storageKeyForMaxOps, storageKeyForMaxNoops, storageKeyForMaxFailures,
-    storageKeyForMaxFailureOrNoopStreak, storageKeyForShouldWipeHistoryOnTaskStart]).then(
+    storageKeyForMaxFailureOrNoopStreak, storageKeyForShouldWipeHistoryOnTaskStart, storageKeyForAutoMonitorThreshold
+]).then(
     (items) => {
 
         aiProviderSelect.value = defaultAiProvider;
@@ -158,6 +164,12 @@ chrome.storage.local.get([storageKeyForAiProviderType, AiProviders.OPEN_AI.stora
             wipeHistoryOnTaskStartToggle.checked = wipeHistoryOnTaskStartVal;
         } else if (wipeHistoryOnTaskStartVal !== undefined) {logger.error(`invalid shouldWipeHistoryOnTaskStart value was found in local storage: ${wipeHistoryOnTaskStartVal}, ignoring it`);}
 
+        autoMonitorThresholdSelect.value = defaultAutoMonitorThreshold;
+        const autoMonitorThresholdVal = items[storageKeyForAutoMonitorThreshold];
+        if (typeof autoMonitorThresholdVal === 'string') {
+            autoMonitorThresholdSelect.value = autoMonitorThresholdVal;
+        } else if (autoMonitorThresholdVal !== undefined) {logger.error(`invalid autoMonitorThreshold value was found in local storage: ${autoMonitorThresholdVal}, ignoring it`);}
+
         statusDisplay.textContent = "Loaded";
     }, (err) => {
         logger.error('error while fetching settings from storage:', err);
@@ -168,8 +180,8 @@ chrome.storage.local.get([storageKeyForAiProviderType, AiProviders.OPEN_AI.stora
 const pendingStatus = 'Pending changes not saved yet';
 
 const configInputElems = [aiProviderSelect, openAiApiKeyField, anthropicApiKeyField,
-    googleDeepmindApiKeyField, logLevelSelector, monitorModeToggle, annotatorModeToggle, maxOpsField, maxNoopsField, maxFailuresField,
-    maxFailOrNoopStreakField, wipeHistoryOnTaskStartToggle];
+    googleDeepmindApiKeyField, monitorModeToggle, wipeHistoryOnTaskStartToggle, annotatorModeToggle, maxOpsField, maxNoopsField, maxFailuresField,
+    maxFailOrNoopStreakField, autoMonitorThresholdSelect, logLevelSelector];
 for (const configElem of configInputElems) {
     configElem.addEventListener('change', () => {statusDisplay.textContent = pendingStatus;})
 }
@@ -214,6 +226,7 @@ saveButton.addEventListener('click', () => {
     newValsForStorage[storageKeyForMaxNoops] = Number.isNaN(maxNoopsVal) ? defaultMaxNoops : maxNoopsVal;
     newValsForStorage[storageKeyForMaxFailures] = Number.isNaN(maxFailuresVal) ? defaultMaxFailures : maxFailuresVal;
     newValsForStorage[storageKeyForMaxFailureOrNoopStreak] = Number.isNaN(maxFailOrNoopStreakVal) ? defaultMaxFailureOrNoopStreak : maxFailOrNoopStreakVal;
+    newValsForStorage[storageKeyForAutoMonitorThreshold] = autoMonitorThresholdSelect.value;
 
     chrome.storage.local.set(newValsForStorage).then(() => {
         logger.debug("settings saved");

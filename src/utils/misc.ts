@@ -13,6 +13,17 @@ export const expectedMsgForSendingRuntimeRequestFromDisconnectedContentScript = 
 // screenshot; i.e. longest realistic amount of time the browser might take to re-render the modified element
 export const elementHighlightRenderDelay = 5;
 
+export enum ActionStateChangeSeverity {
+    SAFE = "SAFE",
+    LOW = "LOW",
+    MEDIUM = "MEDIUM",
+    HIGH = "HIGH"
+}
+
+export function isActionStateChangeSeverity(severity: unknown): severity is ActionStateChangeSeverity {
+    return typeof severity === "string" && Object.values(ActionStateChangeSeverity).includes(severity as ActionStateChangeSeverity);
+}
+
 export const storageKeyForEulaAcceptance = "eulaAccepted";
 
 export const storageKeyForAiProviderType = "aiProviderType";
@@ -27,6 +38,9 @@ export const storageKeyForMaxFailureOrNoopStreak = "maxFailureOrNoopStreak";
 
 export const storageKeyForAnnotatorMode = "isAnnotatorMode";
 
+export const storageKeyForAutoMonitorThreshold = "autoMonitorThreshold";
+
+
 
 export const defaultIsMonitorMode = false;
 export const defaultShouldWipeActionHistoryOnStart = true;
@@ -37,6 +51,8 @@ export const defaultMaxFailures = 10;
 export const defaultMaxFailureOrNoopStreak = 4;
 
 export const defaultIsAnnotatorMode = false;
+
+export const defaultAutoMonitorThreshold = ActionStateChangeSeverity.LOW;
 
 export const validateIntegerLimitUpdate = (newLimitVal: unknown, min: number = 0): newLimitVal is number => {
     return typeof newLimitVal === "number" && Number.isInteger(newLimitVal) && newLimitVal >= min;
@@ -157,17 +173,6 @@ export enum Action {
     HOVER = "HOVER",
     TERMINATE = "TERMINATE",
     NONE = "NONE"
-}
-
-export enum ActionStateChangeSeverity {
-    SAFE = "SAFE",
-    LOW = "LOW",
-    MEDIUM = "MEDIUM",
-    HIGH = "HIGH"
-}
-
-export function isActionStateChangeSeverity(severity: unknown): severity is ActionStateChangeSeverity {
-    return typeof severity === "string" && Object.values(ActionStateChangeSeverity).includes(severity as ActionStateChangeSeverity);
 }
 
 
