@@ -415,6 +415,7 @@ export class BrowserHelper {
         //const initialBackgroundColor = elemStyle.backgroundColor;
 
         elementStyle.outline = "3px solid red";
+
         await sleep(elementHighlightRenderDelay);
 
         const computedStyleSimilarityThreshold = 0.8;
