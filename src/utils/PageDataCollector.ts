@@ -48,10 +48,9 @@ export class PageDataCollector {
 
             const currMouseX = this.mouseClientX;
             const currMouseY = this.mouseClientY;
-            const candidateTargetElementsData = interactiveElementsData.filter((elementData) => {
-                return elementData.boundingBox.tLx <= currMouseX && currMouseX <= elementData.boundingBox.bRx &&
-                    elementData.boundingBox.tLy <= currMouseY && currMouseY <= elementData.boundingBox.bRy;
-            });
+            const foremostElementAtPoint = this.browserHelper.actualElementFromPoint(currMouseX, currMouseY);
+            const candidateTargetElementsData = interactiveElementsData.filter(
+                (elementData) => elementData.element.contains(foremostElementAtPoint));
             candidateTargetElementsData.sort(this.sortBestTargetElemFirst(currMouseX, currMouseY))
             if (candidateTargetElementsData.length > 0) {
                 await this.browserHelper.highlightElement(candidateTargetElementsData[0].element.style);

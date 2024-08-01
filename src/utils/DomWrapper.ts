@@ -123,7 +123,7 @@ export class DomWrapper {
         return this.dom.URL;
     }
 
-    elementFromPoint = (x: number, y: number): Element | null => {
-        return this.dom.elementFromPoint(x, y);
+    elementFromPoint = (x: number, y: number, overrideDoc?: Document): Element | null => {
+        return (overrideDoc ?? this.dom).elementFromPoint(x, y);
     }
 }

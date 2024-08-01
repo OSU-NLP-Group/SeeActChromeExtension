@@ -351,7 +351,7 @@ export class BrowserHelper {
         //can add more query points based on quarters of width and height if we ever encounter a scenario where the existing logic incorrectly dismisses an element as being fully background-hidden
         let isBuried = true;
         for (const queryPoint of queryPoints) {
-            const foregroundElemAtQueryPoint = this.domHelper.elementFromPoint(queryPoint[0], queryPoint[1]);
+            const foregroundElemAtQueryPoint = this.actualElementFromPoint(queryPoint[0], queryPoint[1]);
             if (element.contains(foregroundElemAtQueryPoint)) {
                 isBuried = false;
                 break;
@@ -394,7 +394,8 @@ export class BrowserHelper {
         const elemsFetchStartTs = performance.now();
         const uniqueInteractiveElements = this.enhancedQuerySelectorAll(interactiveElementSelectors,
             this.domHelper.window as Window, elem => !this.calcIsDisabled(elem), true);
-        this.logger.debug(`time to fetch interactive elements: ${performance.now() - elemsFetchStartTs} ms`);
+        const elemFetchDuration = performance.now() - elemsFetchStartTs;//ms
+        (elemFetchDuration < 50 ? this.logger.debug : this.logger.warn)(`time to fetch interactive elements: ${elemFetchDuration} ms`);
 
         const interactiveElementsData = Array.from(uniqueInteractiveElements)
             .map(element => this.getElementData(element))
@@ -665,13 +666,32 @@ export class BrowserHelper {
         return queryPoints;
     }
 
+    actualElementFromPoint(x: number, y: number, doc?: Document): Element | null {
+        let foremostElemAtPoint = this.domHelper.elementFromPoint(x, y, doc);
+
+        if (foremostElemAtPoint && foremostElemAtPoint instanceof HTMLIFrameElement) {
+            const topWindow = (this.domHelper.window as Window).top;
+            if (topWindow) {
+                if (!this.cachedIframeTree) {this.cachedIframeTree = new IframeTree(topWindow, this.logger);}
+                const iframeNode = this.cachedIframeTree.findIframeNodeForIframeElement(foremostElemAtPoint);
+                if (iframeNode) {
+                    const iframeContent = this.getIframeContent(foremostElemAtPoint);
+                    if (iframeContent) {
+                         foremostElemAtPoint = this.actualElementFromPoint(x - iframeNode.coordsOffsetFromViewport.x, y - iframeNode.coordsOffsetFromViewport.y, iframeContent);
+                    } else {this.logger.info("unable to access iframe content, so unable to access the actual element at point which takes iframes into account");}
+                } else {this.logger.info("unable to find iframe node for iframe element, so unable to access the actual element at point which takes iframes into account");}
+            } else { this.logger.warn("unable to access window.top, so unable to access the top-level document's iframe tree; cannot provide actual element at point which takes iframes into account"); }
+        }
+        return foremostElemAtPoint;
+    }
+
     judgeOverlappingElementsForForeground = (elem1Data: ElementData, elem2Data: ElementData): number => {
         const queryPoints = this.findQueryPointsInOverlap(elem1Data, elem2Data);
         if (queryPoints.length === 0) {return 0;}
         let numPointsWhereElem1IsForeground = 0;
         let numPointsWhereElem2IsForeground = 0;
         for (const queryPoint of queryPoints) {
-            const foregroundElemAtQueryPoint = this.domHelper.elementFromPoint(queryPoint[0], queryPoint[1]);
+            const foregroundElemAtQueryPoint = this.actualElementFromPoint(queryPoint[0], queryPoint[1]);
             if (elem1Data.element.contains(foregroundElemAtQueryPoint)) {
                 numPointsWhereElem1IsForeground++;
             } else if (elem2Data.element.contains(foregroundElemAtQueryPoint)) {numPointsWhereElem2IsForeground++;}

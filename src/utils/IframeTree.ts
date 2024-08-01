@@ -118,6 +118,13 @@ export class IframeTree {
         return null;
     }
 
+    findIframeNodeForIframeElement(iframeElement: HTMLIFrameElement): IframeNode | null {
+        let node = null;
+        if (iframeElement.contentWindow) {node = this.nodeMap.get(iframeElement.contentWindow);}
+        if (node === undefined) { node = null; }
+        return node;
+    }
+
     /**
      * Gets the path of IframeNodes from the root to the iframe containing the given element.
      * @param {HTMLElement} element - The element to find the iframe path for.
