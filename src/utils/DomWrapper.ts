@@ -122,4 +122,8 @@ export class DomWrapper {
     getUrl = (): string => {
         return this.dom.URL;
     }
+
+    elementFromPoint = (x: number, y: number): Element | null => {
+        return this.dom.elementFromPoint(x, y);
+    }
 }

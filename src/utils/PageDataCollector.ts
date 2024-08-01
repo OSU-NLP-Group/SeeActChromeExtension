@@ -99,11 +99,11 @@ export class PageDataCollector {
 
     private sortBestTargetElemFirst(currMouseX: number, currMouseY: number) {
         return (elementData1: ElementData, elementData2: ElementData): number => {
-            const elem1ZPos: number = this.browserHelper.getNumericZIndex(elementData1.element);
-            const elem2ZPos: number = this.browserHelper.getNumericZIndex(elementData2.element);
-            if (elem1ZPos !== elem2ZPos) {
-                //return negative if elem1 is foremost and so has larger z index
-                return elem2ZPos - elem1ZPos;
+            const elem1Foregroundedness = this.browserHelper.judgeOverlappingElementsForForeground(elementData1, elementData2);
+
+            if (elem1Foregroundedness !== 0) {
+                //return negative if elem1 is foremost and so should be earlier in the list of target element candidates
+                return -elem1Foregroundedness;
             } else {
                 const elem1CenterDistFromCursor = Math.sqrt(Math.pow(elementData1.centerCoords[0] - currMouseX, 2)
                     + Math.pow(elementData1.centerCoords[1] - currMouseY, 2));
