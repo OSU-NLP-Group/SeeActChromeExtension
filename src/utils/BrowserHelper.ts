@@ -557,13 +557,6 @@ export class BrowserHelper {
         return null;
     }
 
-    getNumericZIndex = (element: HTMLElement): number => {
-        const zIndexStr = this.domHelper.getComputedStyle(element).zIndex;
-        if (zIndexStr === "auto") {
-            return 0;
-        } else { return parseInt(zIndexStr); }
-    }
-
     /**
      * this tries to tunnel through shadow roots and iframes to find the actual active/focused element
      * It also automatically deals with the annoying browser behavior of sometimes returning the `<body>` element
