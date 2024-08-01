@@ -406,34 +406,49 @@ export class BrowserHelper {
         return interactiveElementsData;
     }
 
-    highlightElement = async (elementStyle: CSSStyleDeclaration, highlightDuration: number = 30000) => {
+    highlightElement = async (element: HTMLElement, highlightDuration: number = 30000) => {
         await this.clearElementHighlightingEarly();
+        const elementStyle: CSSStyleDeclaration = element.style;
 
         const initialOutline = elementStyle.outline;
+        const initialComputedOutline = this.domHelper.getComputedStyle(element).outline;
         //const initialBackgroundColor = elemStyle.backgroundColor;
 
         elementStyle.outline = "3px solid red";
 
-        this.highlightedElementStyle = elementStyle;
-        this.highlightedElementOriginalOutline = initialOutline;
-        setTimeout(() => {
-            if (this.highlightedElementStyle === elementStyle) {
-                elementStyle.outline = initialOutline;
-                this.highlightedElementStyle = undefined;
-                this.highlightedElementOriginalOutline = undefined;
-            }//otherwise the highlighting of the element was already reset by a later call of this method
-        }, highlightDuration);
+        const computedStyleSimilarityThreshold = 0.8;
+        const computedOutlinePostStyleMod = this.domHelper.getComputedStyle(element).outline;
+        const computedOutlineSimilarity = fuzz.ratio(initialComputedOutline, computedOutlinePostStyleMod) / 100;
+        if (computedOutlineSimilarity > computedStyleSimilarityThreshold) {
+            this.logger.info(`Element outline was not successfully set to red; computed outline is still the same as before (initialComputedOutline: ${initialComputedOutline}; computedOutlinePostStyleMod: ${computedOutlinePostStyleMod}; similarity ${computedOutlineSimilarity})`);
+            const parentElem = element.parentElement;
+            if (parentElem) {
+                this.logger.debug("trying to highlight parent element instead");
+                await this.highlightElement(parentElem, highlightDuration);
+            }
+        } else {
+            //this.logger.trace(`initialComputedOutline: ${initialComputedOutline}; computedOutlinePostStyleMod: ${computedOutlinePostStyleMod}; similarity: ${computedOutlineSimilarity}`)
+            this.highlightedElementStyle = elementStyle;
+            this.highlightedElementOriginalOutline = initialOutline;
+            setTimeout(() => {
+                if (this.highlightedElementStyle === elementStyle) {
+                    elementStyle.outline = initialOutline;
+                    this.highlightedElementStyle = undefined;
+                    this.highlightedElementOriginalOutline = undefined;
+                }//otherwise the highlighting of the element was already reset by a later call of this method
+            }, highlightDuration);
 
-        //elemStyle.filter = "brightness(1.5)";
+            //elemStyle.filter = "brightness(1.5)";
 
-        // https://stackoverflow.com/questions/1389609/plain-javascript-code-to-highlight-an-html-element
-        // meddling with element.style properties like backgroundColor, outline, filter, (border?)
-        // https://developer.mozilla.org/en-US/docs/Web/CSS/background-color
-        // https://developer.mozilla.org/en-US/docs/Web/CSS/outline
-        // https://developer.mozilla.org/en-US/docs/Web/CSS/filter
-        // https://developer.mozilla.org/en-US/docs/Web/CSS/border
+            // https://stackoverflow.com/questions/1389609/plain-javascript-code-to-highlight-an-html-element
+            // meddling with element.style properties like backgroundColor, outline, filter, (border?)
+            // https://developer.mozilla.org/en-US/docs/Web/CSS/background-color
+            // https://developer.mozilla.org/en-US/docs/Web/CSS/outline
+            // https://developer.mozilla.org/en-US/docs/Web/CSS/filter
+            // https://developer.mozilla.org/en-US/docs/Web/CSS/border
 
-        await sleep(elementHighlightRenderDelay);
+            await sleep(elementHighlightRenderDelay);
+        }
     }
 
     clearElementHighlightingEarly = async () => {
@@ -443,9 +458,9 @@ export class BrowserHelper {
 
             this.highlightedElementStyle = undefined;
             this.highlightedElementOriginalOutline = undefined;
-        }
 
-        await sleep(elementHighlightRenderDelay);
+            await sleep(elementHighlightRenderDelay);
+        }
     }
 
 
@@ -489,6 +504,10 @@ export class BrowserHelper {
                                 elemFilter: (elem: HTMLElement) => boolean, shouldIgnoreHidden: boolean = true
     ): Array<HTMLElementWithDocumentHost> => {
         if (!this.cachedIframeTree) {this.cachedIframeTree = new IframeTree(topWindow, this.logger);}
+        //todo measure which operations in this recursive stack are taking up the most time in total
+        // I suspect the elementFromPoint() calls, since fetch time seemed to have shot up recently from 10-20ms to 60-130ms
+        // Since this is single-threaded, can use instance vars to accumulate time spent on different things
+        //  (as long as those instance vars are reset at the start of each call of this method)
         return this.enhancedQuerySelectorAllHelper(cssSelectors, topWindow.document, this.cachedIframeTree.root,
             elemFilter, shouldIgnoreHidden);
     }

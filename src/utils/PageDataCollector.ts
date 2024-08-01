@@ -53,7 +53,7 @@ export class PageDataCollector {
                 (elementData) => elementData.element.contains(foremostElementAtPoint));
             candidateTargetElementsData.sort(this.sortBestTargetElemFirst(currMouseX, currMouseY))
             if (candidateTargetElementsData.length > 0) {
-                await this.browserHelper.highlightElement(candidateTargetElementsData[0].element.style);
+                await this.browserHelper.highlightElement(candidateTargetElementsData[0].element);
                 targetElementData = makeElementDataSerializable(candidateTargetElementsData[0]);
             } else {
                 const activeElem = this.browserHelper.findRealActiveElement();
@@ -67,7 +67,7 @@ export class PageDataCollector {
                         userMessage = "Target element chosen based on focus rather than mouse coordinates";
                         userMessageDetails = `Active element: ${activeElementHtmlSample}; \nmouse coordinates: (${currMouseX}, ${currMouseY})`;
                         //todo this highlighting doesn't show up in some sites where the focused element already has a pronounced border, maybe add additional logic?
-                        await this.browserHelper.highlightElement(activeHtmlElement.style);
+                        await this.browserHelper.highlightElement(activeHtmlElement);
                         targetElementData = makeElementDataSerializable(relevantInteractiveElementsEntry);
                     } else {
                         this.logger.warn(`no interactive elements found at mouse coordinates ${currMouseX}, ${currMouseY}; active element was defined but wasn't recognized as an interactive element: ${activeElementHtmlSample}`);
