@@ -628,4 +628,41 @@ export class BrowserHelper {
         }
     }
 
+    findQueryPointsInOverlap = (elem1Data: ElementData, elem2Data: ElementData): Array<readonly [number, number]> => {
+        const overlapLeftX = Math.max(elem1Data.boundingBox.tLx, elem2Data.boundingBox.tLx);
+        const overlapRightX = Math.min(elem1Data.boundingBox.bRx, elem2Data.boundingBox.bRx);
+        const overlapTopY = Math.max(elem1Data.boundingBox.tLy, elem2Data.boundingBox.tLy);
+        const overlapBottomY = Math.min(elem1Data.boundingBox.bRy, elem2Data.boundingBox.bRy);
+        const queryPoints: Array<readonly [number, number]> = [];
+        if (overlapLeftX >= overlapRightX || overlapTopY >= overlapBottomY) {
+            this.logger.warn(`No overlap between elements ${elem1Data.description} and ${elem2Data.description}`);
+            return queryPoints;
+        }
+        queryPoints.push([overlapLeftX, overlapTopY], [overlapRightX, overlapTopY], [overlapLeftX, overlapBottomY],
+            [overlapRightX, overlapBottomY]);
+        if (elem1Data.centerCoords[0] >= overlapLeftX && elem1Data.centerCoords[0] <= overlapRightX &&
+            elem1Data.centerCoords[1] >= overlapTopY && elem1Data.centerCoords[1] <= overlapBottomY
+        ) {queryPoints.push(elem1Data.centerCoords);}
+        if (elem2Data.centerCoords[0] >= overlapLeftX && elem2Data.centerCoords[0] <= overlapRightX &&
+            elem2Data.centerCoords[1] >= overlapTopY && elem2Data.centerCoords[1] <= overlapBottomY
+        ) {queryPoints.push(elem2Data.centerCoords);}
+
+        return queryPoints;
+    }
+
+    judgeOverlappingElementsForForeground = (elem1Data: ElementData, elem2Data: ElementData): number => {
+        const queryPoints = this.findQueryPointsInOverlap(elem1Data, elem2Data);
+        if (queryPoints.length === 0) {return 0;}
+        let numPointsWhereElem1IsForeground = 0;
+        let numPointsWhereElem2IsForeground = 0;
+        for (const queryPoint of queryPoints) {
+            const foregroundElemAtQueryPoint = this.domHelper.elementFromPoint(queryPoint[0], queryPoint[1]);
+            if (elem1Data.element.contains(foregroundElemAtQueryPoint)) {
+                numPointsWhereElem1IsForeground++;
+            } else if (elem2Data.element.contains(foregroundElemAtQueryPoint)) {numPointsWhereElem2IsForeground++;}
+        }
+        if (numPointsWhereElem1IsForeground === 0) {this.logger.warn(`No query points where ${elem1Data.description} was in the foreground, when evaluating its overlap with ${elem2Data.description}`);}
+        if (numPointsWhereElem2IsForeground === 0) {this.logger.warn(`No query points where ${elem2Data.description} was in the foreground, when evaluating its overlap with ${elem1Data.description}`);}
+        return numPointsWhereElem1IsForeground - numPointsWhereElem2IsForeground;
+    }
 }
