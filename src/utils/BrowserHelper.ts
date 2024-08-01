@@ -334,12 +334,30 @@ export class BrowserHelper {
             || element.hidden || isElementHiddenForOverflow || elementComputedStyle.opacity === "0"
             || elementComputedStyle.height === "0px" || elementComputedStyle.width === "0px"
             //1x1 px elements are generally a css hack to make an element temporarily ~invisible
-            || elementComputedStyle.height === "1px" || elementComputedStyle.width === "1px";
+            || elementComputedStyle.height === "1px" || elementComputedStyle.width === "1px"
+            || this.isBuriedInBackground(element);
         //maybe eventually update this once content-visibility is supported outside chromium (i.e. in firefox/safari)
         // https://developer.mozilla.org/en-US/docs/Web/CSS/content-visibility
 
         //if needed, can explore adding logic for other tricks mentioned in this article (e.g. 'clip-path')
         // https://css-tricks.com/comparing-various-ways-to-hide-things-in-css/
+    }
+
+    isBuriedInBackground = (element: HTMLElement): boolean => {
+        const boundRect = this.domHelper.grabClientBoundingRect(element);
+        const queryPoints: [number, number][] = [[boundRect.x, boundRect.y], [boundRect.x + boundRect.width, boundRect.y],
+            [boundRect.x, boundRect.y + boundRect.height], [boundRect.x + boundRect.width, boundRect.y + boundRect.height],
+            [boundRect.x + boundRect.width / 2, boundRect.y + boundRect.height / 2]];
+        //can add more query points based on quarters of width and height if we ever encounter a scenario where the existing logic incorrectly dismisses an element as being fully background-hidden
+        let isBuried = true;
+        for (const queryPoint of queryPoints) {
+            const foregroundElemAtQueryPoint = this.domHelper.elementFromPoint(queryPoint[0], queryPoint[1]);
+            if (element.contains(foregroundElemAtQueryPoint)) {
+                isBuried = false;
+                break;
+            }
+        }
+        return isBuried;
     }
 
     /**
@@ -516,7 +534,11 @@ export class BrowserHelper {
         const currScopeResults: Set<HTMLElement> = new Set();
         cssSelectors.map(selector => Array.from(root.querySelectorAll<HTMLElement>(selector)).filter(elemFilter))
             .forEach(resultsForSelector => {
-                resultsForSelector.forEach(elem => currScopeResults.add(elem));
+                resultsForSelector.forEach(elem => {
+                    if (!shouldIgnoreHidden || !this.calcIsHidden(elem)) {
+                        currScopeResults.add(elem);
+                    }
+                });
             })
         resultArrays.push(Array.from(currScopeResults));
 
@@ -654,8 +676,8 @@ export class BrowserHelper {
                 numPointsWhereElem1IsForeground++;
             } else if (elem2Data.element.contains(foregroundElemAtQueryPoint)) {numPointsWhereElem2IsForeground++;}
         }
-        if (numPointsWhereElem1IsForeground === 0) {this.logger.warn(`No query points where ${elem1Data.description} was in the foreground, when evaluating its overlap with ${elem2Data.description}`);}
-        if (numPointsWhereElem2IsForeground === 0) {this.logger.warn(`No query points where ${elem2Data.description} was in the foreground, when evaluating its overlap with ${elem1Data.description}`);}
+        if (numPointsWhereElem1IsForeground === 0) {this.logger.info(`No query points where ${elem1Data.description} was in the foreground, when evaluating its overlap with ${elem2Data.description}`);}
+        if (numPointsWhereElem2IsForeground === 0) {this.logger.info(`No query points where ${elem2Data.description} was in the foreground, when evaluating its overlap with ${elem1Data.description}`);}
         return numPointsWhereElem1IsForeground - numPointsWhereElem2IsForeground;
     }
 }
