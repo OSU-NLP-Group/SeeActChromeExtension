@@ -415,6 +415,7 @@ export class BrowserHelper {
         //const initialBackgroundColor = elemStyle.backgroundColor;
 
         elementStyle.outline = "3px solid red";
+        await sleep(elementHighlightRenderDelay);
 
         const computedStyleSimilarityThreshold = 0.8;
         const computedOutlinePostStyleMod = this.domHelper.getComputedStyle(element).outline;
@@ -446,8 +447,6 @@ export class BrowserHelper {
             // https://developer.mozilla.org/en-US/docs/Web/CSS/outline
             // https://developer.mozilla.org/en-US/docs/Web/CSS/filter
             // https://developer.mozilla.org/en-US/docs/Web/CSS/border
-
-            await sleep(elementHighlightRenderDelay);
         }
     }
 
