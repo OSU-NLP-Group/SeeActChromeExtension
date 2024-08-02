@@ -151,10 +151,10 @@ To be successful, it is important to follow the following rules:
 2. You should only issue one action at a time
 3. For handling the select dropdown elements on the webpage, it's not necessary for you to provide completely accurate options right now. The full list of options for these elements will be supplied later.
 
-Sometimes the action won't require a target element: SCROLL_UP, SCROLL_DOWN, TERMINATE, or NONE; PRESS_ENTER also qualifies if your last action was TYPE.
+Sometimes the very next action won't require a target element: SCROLL_UP, SCROLL_DOWN, TERMINATE, or NONE; PRESS_ENTER also qualifies if your last action was TYPE.
 In such a case, it is very important that you include the exact string SKIP_ELEMENT_SELECTION near the end of your initial/planning output. DO NOT include it if you want to do something else first (e.g. TYPE before PRESS_ENTER).`;
 //todo ask Boyuan about changing the action space- it keeps getting confused or doing things wrong related to the
-// sequence "TYPE on one step then PRESS ENTER on next step"; why don't we just make 2 actions TYPE and TYPE_THEN_ENTER?
+// sequence "TYPE on one step then PRESS ENTER on next step"; why don't we just make 2 actions TYPE and TYPE_THEN_ENTER (or TYPE_THEN_CONFIRM, or TYPE_THEN_PRESS_ENTER, or something)?
 // and get rid of the PRESS_ENTER stand-alone action unless/until it becomes clear that it's needed?
 
 export const onlineReferringPromptDesc = `(Reiteration)

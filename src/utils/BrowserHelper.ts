@@ -364,11 +364,13 @@ export class BrowserHelper {
             [boundRect.x + boundRect.width / 2, boundRect.y + boundRect.height / 2]];
         //can add more query points based on quarters of width and height if we ever encounter a scenario where the existing logic incorrectly dismisses an element as being fully background-hidden
         let isBuried = true;
-        for (const queryPoint of queryPoints) {
+        //select elements are often partially hidden clickable spans and yet are still entirely feasible to interact with through javascript
+        if (element.tagName.toLowerCase() === "select") { isBuried = false;}
+        for (let i = 0; i < queryPoints.length && isBuried; i++){
+            const queryPoint = queryPoints[i];
             const foregroundElemAtQueryPoint = this.actualElementFromPoint(queryPoint[0], queryPoint[1]);
             if (element.contains(foregroundElemAtQueryPoint)) {
                 isBuried = false;
-                break;
             }
         }
         return isBuried;
