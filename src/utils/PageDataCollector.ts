@@ -86,7 +86,8 @@ export class PageDataCollector {
                     type: Page2AnnotationCoordinatorPortMsgType.PAGE_INFO, targetElementData: targetElementData,
                     interactiveElements: elementsDataInSerializableForm, mouseX: currMouseX, mouseY: currMouseY,
                     viewportInfo: this.domWrapper.getViewportInfo(), userMessage: userMessage,
-                    userMessageDetails: userMessageDetails, htmlDump: this.domWrapper.getDocumentElement().outerHTML
+                    userMessageDetails: userMessageDetails, htmlDump: this.domWrapper.getDocumentElement().outerHTML,
+                    url: this.domWrapper.getUrl()
                 });
             } catch (error: any) {
                 this.logger.error(`error in content script while sending interactive elements to annotation coordinator; error: ${renderUnknownValue(error)}`);

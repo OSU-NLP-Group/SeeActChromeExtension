@@ -141,6 +141,9 @@ export class ActionAnnotationCoordinator {
             const preInjectStateUpdates = (tabId: number, url?: string): string | undefined => {
                 this.idOfTabWithCapturer = tabId;
                 this.currActionUrl = url;
+                if (url === undefined) {
+                    this.logger.warn(`no URL found for tab ${tabId} when starting capturer for annotation ${this.currAnnotationId}`);
+                }
                 this.state = AnnotationCoordinatorState.WAITING_FOR_CONTENT_SCRIPT_INIT;
                 return undefined;//tells the injector that there's no error that would necessitate abort of inject
             }
@@ -313,6 +316,11 @@ export class ActionAnnotationCoordinator {
         if (typeof htmlDumpVal !== "string") {
             return `invalid HTML dump value ${renderUnknownValue(htmlDumpVal)} in PAGE_INFO message from content script`;
         } else { this.currActionHtmlDump = htmlDumpVal; }
+
+        const urlVal: unknown = message.url;
+        if (typeof urlVal !== "string") {
+            return `invalid URL value ${renderUnknownValue(urlVal)} in PAGE_INFO message from content script`;
+        } else { this.currActionUrl = urlVal; }
 
         return undefined;//i.e. no validation errors, all data stored successfully
     }
