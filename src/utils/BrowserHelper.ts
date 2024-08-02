@@ -409,7 +409,8 @@ export class BrowserHelper {
         const uniqueInteractiveElements = this.enhancedQuerySelectorAll(interactiveElementSelectors,
             this.domHelper.window as Window, elem => !this.calcIsDisabled(elem), true);
         const elemFetchDuration = performance.now() - elemsFetchStartTs;//ms
-        (elemFetchDuration < 50 ? this.logger.debug : this.logger.warn)(`time to fetch interactive elements: ${elemFetchDuration} ms`);
+        //todo move this threshold back to 50 ms after there's time to investigate/remediate the recent jump in fetch time
+        (elemFetchDuration < 150 ? this.logger.debug : this.logger.warn)(`time to fetch interactive elements: ${elemFetchDuration} ms`);
 
         const interactiveElementsData = Array.from(uniqueInteractiveElements)
             .map(element => this.getElementData(element))
@@ -626,7 +627,7 @@ export class BrowserHelper {
                 return null;
             }
             if (this.calcIsHidden(activeElem)) {
-                this.logger.warn(`Active element is hidden, so it's likely not the intended target: ${activeElem.outerHTML.slice(0, 100)}`);
+                this.logger.warn(`Active element is hidden, so it's likely not the intended target: ${activeElem.outerHTML.slice(0, 300)}`);
             }
         }
         return activeElem;

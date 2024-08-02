@@ -59,7 +59,7 @@ export class PageDataCollector {
                 const activeElem = this.browserHelper.findRealActiveElement();
                 if (activeElem) {
                     const activeHtmlElement = activeElem as HTMLElement;
-                    const activeElementHtmlSample = activeHtmlElement.outerHTML.slice(0, 100);
+                    const activeElementHtmlSample = activeHtmlElement.outerHTML.slice(0, 300);
 
                     const relevantInteractiveElementsEntry = interactiveElementsData.find((elementData) => elementData.element === activeHtmlElement);
                     if (relevantInteractiveElementsEntry) {
