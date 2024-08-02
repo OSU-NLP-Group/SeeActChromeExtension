@@ -404,15 +404,10 @@ export class PageActor {
                     error: "no interactive elements stored to be highlighted"
                 });
             return;
-        } else if ((typeof message.elementIndex !== "number") || message.elementIndex >= this.interactiveElements.length) {
-            this.logger.error("highlight-candidate-element message received from background script but element index is invalid");
-            this.portToBackground.postMessage(
-                {type: Page2AgentControllerPortMsgType.TERMINAL, error: "invalid element index provided to highlight"});
-            return;
         }
 
         let elementToActOn: HTMLElement;
-        if (message.elementIndex) {
+        if ((typeof message.elementIndex === "number") && message.elementIndex < this.interactiveElements.length) {
             const elementToActOnData = this.interactiveElements[message.elementIndex];
             elementToActOn = elementToActOnData.element;
         } else {
