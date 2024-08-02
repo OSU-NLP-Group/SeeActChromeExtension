@@ -330,12 +330,26 @@ export class BrowserHelper {
         const elementComputedStyle = this.domHelper.getComputedStyle(element);
         const isElementHiddenForOverflow = elementComputedStyle.overflow === "hidden" &&
             (element.scrollHeight > element.clientHeight || element.scrollWidth > element.clientWidth);//thanks to https://stackoverflow.com/a/9541579/10808625
-        return elementComputedStyle.display === "none" || elementComputedStyle.visibility === "hidden"
+
+        const doesElemSeemInvisible = elementComputedStyle.display === "none" || elementComputedStyle.visibility === "hidden"
             || element.hidden || isElementHiddenForOverflow || elementComputedStyle.opacity === "0"
             || elementComputedStyle.height === "0px" || elementComputedStyle.width === "0px"
             //1x1 px elements are generally a css hack to make an element temporarily ~invisible
             || elementComputedStyle.height === "1px" || elementComputedStyle.width === "1px"
             || this.isBuriedInBackground(element);
+
+        //if an element is inline and non-childless, its own width and height may not actually be meaningful (since its children
+        // can have non-zero width/height and bubble events like clicks up to this element)
+        if (doesElemSeemInvisible && elementComputedStyle.display.indexOf("inline") !== -1) {
+            for (const child of element.children) {
+                if (!this.calcIsHidden(child as HTMLElement)) {
+                    this.logger.info(`FOUND A WEIRD ELEMENT ${element.outerHTML.slice(0,100)}... which itself seemed invisible but which had some kind of 'inline' display status and which had a visible child ${child.outerHTML.slice(0,100)}...`)
+                    return false;
+                }
+            }
+        }
+
+        return doesElemSeemInvisible;
         //maybe eventually update this once content-visibility is supported outside chromium (i.e. in firefox/safari)
         // https://developer.mozilla.org/en-US/docs/Web/CSS/content-visibility
 
