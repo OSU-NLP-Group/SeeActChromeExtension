@@ -110,7 +110,7 @@ export class ServiceWorkerHelper {
         if (!tabId) {
             return `Can't inject content script into chrome:// URLs for security reasons`;
         } else {
-            this.logger.trace(`injecting ${contentScriptDesc} script into page; in tab ${tabId}`);
+            this.logger.trace(`injecting ${contentScriptDesc} script into page; in tab ${tabId} with title ${tab.title} and url ${tab.url}`);
 
             const errMsg = preInjectChecksAndStateUpdates(tabId, tab.url, tab.title);
             if (errMsg) { return errMsg; }

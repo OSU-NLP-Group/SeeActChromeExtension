@@ -42,28 +42,36 @@ if (document.body) {
 
 const startOfPageLoadWait = Date.now();
 let didLoadFire = false;
+let wasReadyMsgSent = false;
 window.addEventListener('load', async () => {
     didLoadFire = true;
+    logger.trace(`load event fired for page with port ${portIdentifier}`);
 
     const shouldAbort = await pageActor.waitForPageStable("notify background script that content script finished loading");
     if (shouldAbort) {return;}
 
-    logger.debug('page has loaded, sending READY message to background');
+    logger.trace('page has loaded and become stable, sending READY message to background');
     await sleep(20);//just in case page loaded super-quickly and the service worker was delayed in setting up the port's listeners
     logger.debug(`total length of page load wait: ${(Date.now() - startOfPageLoadWait)}ms`);
+    if (wasReadyMsgSent) {
+        logger.warn("READY message was already sent to background by the time the page became stable, not sending it again");
+        return;
+    }
     try {
         portToBackground.postMessage({type: Page2AgentControllerPortMsgType.READY});
+        wasReadyMsgSent = true;
     } catch (error: any) {
         logger.error(`error sending READY message to background: ${renderUnknownValue(error)}`);
     }
 });
 
 (async () => {
-    await sleep(2000);
-    if (!pageActor.hasControllerEverResponded && !didLoadFire) {
+    await sleep(10_000);
+    if (!pageActor.hasControllerEverResponded && !didLoadFire && !wasReadyMsgSent) {
         logger.info("sending backup ready message to background because controller hasn't responded yet and load event hasn't fired (probably it fired before this content script set up a listener for it)");
         try {
             portToBackground.postMessage({type: Page2AgentControllerPortMsgType.READY});
+            wasReadyMsgSent = true;
         } catch (error: any) {
             if ('message' in error && error.message === expectedMsgForPortDisconnection) {
                 logger.info("background disconnected port before backup READY message could be sent");

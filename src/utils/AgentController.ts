@@ -796,6 +796,8 @@ export class AgentController {
         let chosenCandidateIndex = getIndexFromOptionName(element);
 
 
+        //todo add more indexical info here- how many actions completed by this point, value of numPriorScreenshotsTakenForPromptingCurrentAction,
+        // number of repromptings so far in the current for loop in processPageStateFromActor()
         this.predictionsInTask.push({
             modelPlanningOutput: planningOutput, modelGroundingOutput: groundingOutput,
             targetElementData: chosenCandidateIndex !== undefined && chosenCandidateIndex < candidateIds.length

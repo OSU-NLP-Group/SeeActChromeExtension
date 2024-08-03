@@ -195,7 +195,7 @@ export const browserActionRequiredProps = ["explanation", "element", "action", "
 //description for 'action' property in the json schema for the inputs to the 'browser_action' tool
 export const browserActionSchemaActionDesc = "the type of the next action that should be taken";
 
-export const groundingPromptElementParamDesc = `The two-uppercase-letters ID of your chosen element. (can be set to null for PRESS_ENTER, SCROLL_UP, SCROLL_DOWN, or TERMINATE)`;
+export const groundingPromptElementParamDesc = `The one-or-two-uppercase-letters ID of your chosen element. (can be set to null for PRESS_ENTER, SCROLL_UP, SCROLL_DOWN, or TERMINATE)`;
 export const groundingPromptValueParamDesc = `Provide additional input based on action. The value means:
     - If action == TYPE, specify the text to be typed.
     - If action == SELECT, indicate the option to be chosen. Revise the selection value to align with the available options within the element.

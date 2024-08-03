@@ -221,6 +221,8 @@ export class PageActor {
             actionOutcome.result +=
                 `; scrolled page by ${Math.abs(actualVertOffset).toFixed(1)}px ${actualVertOffset < 0 ? "up" : "down"}`;
         } else {
+            //todo fall back to using chrome.debugger to send page_down or page_up keystroke to tab
+
             this.logger.warn(`scroll action failed to move the viewport's vertical position from ${priorVertScrollPos}px`)
             actionOutcome.result += `; scroll action failed to move the viewport's vertical position from ${priorVertScrollPos.toFixed(1)}px`;
         }

@@ -426,6 +426,7 @@ export class BrowserHelper {
     highlightElement = async (element: HTMLElement, highlightDuration: number = 30000) => {
         await this.clearElementHighlightingEarly();
         const elementStyle: CSSStyleDeclaration = element.style;
+        this.logger.trace(`attempting to highlight element with tag name ${element.tagName} and description: ${this.getElementDescription(element)}`);
 
         const initialOutline = elementStyle.outline;
         const initialComputedOutline = this.domHelper.getComputedStyle(element).outline;
@@ -446,7 +447,7 @@ export class BrowserHelper {
                 await this.highlightElement(parentElem, highlightDuration);
             }
         } else {
-            //this.logger.trace(`initialComputedOutline: ${initialComputedOutline}; computedOutlinePostStyleMod: ${computedOutlinePostStyleMod}; similarity: ${computedOutlineSimilarity}`)
+            this.logger.trace(`initialComputedOutline: ${initialComputedOutline}; computedOutlinePostStyleMod: ${computedOutlinePostStyleMod}; similarity: ${computedOutlineSimilarity}`)
             this.highlightedElementStyle = elementStyle;
             this.highlightedElementOriginalOutline = initialOutline;
             setTimeout(() => {
