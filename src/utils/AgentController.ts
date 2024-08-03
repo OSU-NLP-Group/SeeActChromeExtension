@@ -474,11 +474,13 @@ export class AgentController {
         const interactiveElements = message.interactiveElements as SerializableElementData[];
         const viewportInfo = message.viewportInfo as ViewportDetails;
         this.currUrlBeforeAction = message.url as string;
+        this.logger.debug(`number of interactive elements: ${interactiveElements.length}`);
         //todo consider removing the candidateIds complication since BrowserHelper.getInteractiveElements is already
         // filtering out all of the elements that are not really visible&interactive, and candidateIds adds annoying complexity throughout the planning code in this class
         const candidateIds = interactiveElements.map((element, index) => {
             return (element.centerCoords[0] != 0 && element.centerCoords[1] != 0) ? index : undefined;
         }).filter(Boolean) as number[];//ts somehow too dumb to realize that filter(Boolean) removes undefined elements
+        this.logger.debug(`number of candidate elements: ${candidateIds.length}`);
 
         const interactiveChoices = formatChoices(interactiveElements, candidateIds, viewportInfo);
 

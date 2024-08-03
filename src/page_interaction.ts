@@ -43,7 +43,8 @@ if (document.body) {
 const startOfPageLoadWait = Date.now();
 let didLoadFire = false;
 let wasReadyMsgSent = false;
-window.addEventListener('load', async () => {
+
+async function notifyControllerOnceLoadedPageIsStable() {
     didLoadFire = true;
     logger.trace(`load event fired for page with port ${portIdentifier}`);
 
@@ -63,9 +64,17 @@ window.addEventListener('load', async () => {
     } catch (error: any) {
         logger.error(`error sending READY message to background: ${renderUnknownValue(error)}`);
     }
-});
+}
 
 (async () => {
+    if (document.readyState === 'complete') {
+        await notifyControllerOnceLoadedPageIsStable();
+    } else {
+        window.addEventListener('load', async () => {
+            await notifyControllerOnceLoadedPageIsStable();
+        });
+    }
+
     await sleep(10_000);
     if (!pageActor.hasControllerEverResponded && !didLoadFire && !wasReadyMsgSent) {
         logger.info("sending backup ready message to background because controller hasn't responded yet and load event hasn't fired (probably it fired before this content script set up a listener for it)");
