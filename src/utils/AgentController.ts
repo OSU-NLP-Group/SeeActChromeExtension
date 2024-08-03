@@ -898,7 +898,7 @@ export class AgentController {
         }
         //using weird comparison b/c pageScrollHeight is rounded to nearest int
         const isBrowserAtBottomOfPage = Math.abs(viewportInfo.pageScrollHeight - viewportInfo.height - viewportInfo.scrollY) < 1;
-        if ((action === Action.SCROLL_UP && viewportInfo.scrollY == 0) || (action === Action.SCROLL_UP && isBrowserAtBottomOfPage)) {
+        if ((action === Action.SCROLL_UP && viewportInfo.scrollY === 0) || (action === Action.SCROLL_DOWN && isBrowserAtBottomOfPage)) {
             const problemDesc = `AI selected ${action === Action.SCROLL_UP ? "scroll up when already at top of page" : "scroll down when already at bottom of page"}`;
             this.logger.info(`${problemDesc}, marking action as noop`);
             this.noopCount++;

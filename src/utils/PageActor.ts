@@ -487,13 +487,13 @@ export class PageActor {
         if (didPageRegisterStartOfUnload) {
             //sometimes the page registers an 'unload' event but isn't actually going to unload
             // (e.g. clicking a 'write email' link which causes the OS to open a pop-up for choosing how to handle it)
-            await sleep(initialWait);
+            await sleep(5*initialWait);
             //todo test whether this extra logic is relevant
             const isCurrentTabStillActive = this.domWrapper.getVisibilityState() === "visible";
             if (isCurrentTabStillActive) {
-                this.logger.info(`while waiting before ${reasonForWait}, there was a signal that the page was unloading, but the page didn't actually unload; continuing to ${reasonForWait}`);
+                this.logger.info(`WHILE WAITING BEFORE ${reasonForWait}, there was a signal that the page was unloading, but the page didn't actually unload; continuing to ${reasonForWait}`);
             } else {
-                this.logger.info(`while waiting before ${reasonForWait}, there was a signal that the page was unloading, and it turned out that focus shifted to a new tab while the existing page was left in the old tab; old tab's content script is no longer relevant, so will not ${reasonForWait}`);
+                this.logger.info(`WHILE WAITING BEFORE ${reasonForWait}, there was a signal that the page was unloading, and it turned out that focus shifted to a new tab while the existing page was left in the old tab; old tab's content script is no longer relevant, so will not ${reasonForWait}`);
                 return true;
             }
         }
