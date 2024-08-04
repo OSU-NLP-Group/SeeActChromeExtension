@@ -197,7 +197,7 @@ export const browserActionRequiredProps = ["explanation", "element", "action", "
 //description for 'action' property in the json schema for the inputs to the 'browser_action' tool
 export const browserActionSchemaActionDesc = "the type of the next action that should be taken";
 
-export const groundingPromptElementParamDesc = `The one-or-two-uppercase-letters ID of your chosen element. (can be set to null for PRESS_ENTER, SCROLL_UP, SCROLL_DOWN, or TERMINATE)`;
+export const groundingPromptElementParamDesc = `The one-or-two-uppercase-letters ID of your chosen element. (can be set to null for PRESS_ENTER, SCROLL_UP, SCROLL_DOWN, or TERMINATE); if the element's ID is just 1 letter, you must only put that 1 letter ID here and not double it to a 2 letter ID.`;
 export const groundingPromptValueParamDesc = `Provide additional input based on action. The value means:
     - If action == TYPE, specify the text to be typed.
     - If action == SELECT, indicate the option to be chosen. Revise the selection value to align with the available options within the element.
@@ -279,7 +279,7 @@ export const generatePrompt = (task: string, previousActions: Array<string>, cho
         groundingPrompt += _formatOptions(choices);
     }
 
-    if (aiProviderType === AiProviders.ANTHROPIC.id || aiProviderType === AiProviders.GOOGLE_DEEPMIND.id) {
+    if (AiProviders[aiProviderType].supportsToolUse) {
         //Anthropic's/Google Deepmind's support for tool use means we can let the model do normal chain of thought
         // (not jammed into a "reasoning" entry of a json document), which should be more on-policy for it and so
         // hopefully more effective

@@ -666,37 +666,49 @@ export class AgentController {
             screenshotDataUrlForJudge = screenshotDataUrl;
         }
 
-        let judgeOutput: string;
-        const startOfAiJudgeQuerying = Date.now();
-        try {
-            judgeOutput = await this.aiEngine.generateWithRetry({
-                prompts: prompts, generationType: GenerateMode.AUTO_MONITORING, planningOutput: planningOutput,
-                imgDataUrl: screenshotDataUrlForJudge, groundingOutput: groundingOutput
-            });
-        } catch (error) {
-            this.terminateTask(`error getting safety judgment from ai; error: ${renderUnknownValue(error)}`);
-            return false;
-        }
-        this.logger.debug(`ai querying for judge took ${Date.now() - startOfAiJudgeQuerying}ms`);
-        this.logger.info("judge output: " + judgeOutput);
-        try {
-            this.portToSidePanel.postMessage({
-                type: AgentController2PanelPortMsgType.NOTIFICATION, details: judgeOutput,
-                msg: "AI judgement of action safety complete"
-            });
-        } catch (error: any) {
-            this.terminateTask(`error while trying to send notification to side panel about auto-monitor call completion; error: ${renderUnknownValue(error)}`);
-            return false;
+        let judgeOutput: string = "";
+        let llmRespObj: any = {};
+        const isJudgeOutputInvalid = (judgmentObj: any) => !isActionStateChangeSeverity(judgmentObj.severity) || typeof judgmentObj.explanation !== "string"
+
+        for (let judgePromptingIndex = 0; judgePromptingIndex < 3 && isJudgeOutputInvalid(llmRespObj); judgePromptingIndex++) {
+            if (judgePromptingIndex > 0) {
+                if (this.aiEngine.providerDetails().supportsToolUse) {
+                    prompts.autoMonitorPrompt += `\nYou absolutely must call the 'action_judgment' tool after reasoning about the proposed action!`;
+                } else {
+                    prompts.autoMonitorPrompt += `\nYou absolutely must include 'severity' and 'explanation' values in your json output!`;
+                }
+            }
+
+            const startOfAiJudgeQuerying = Date.now();
+            try {
+                judgeOutput = await this.aiEngine.generateWithRetry({
+                    prompts: prompts, generationType: GenerateMode.AUTO_MONITORING, planningOutput: planningOutput,
+                    imgDataUrl: screenshotDataUrlForJudge, groundingOutput: groundingOutput
+                });
+            } catch (error) {
+                this.terminateTask(`error getting safety judgment from ai; error: ${renderUnknownValue(error)}`);
+                return false;
+            }
+            this.logger.debug(`ai querying for judge took ${Date.now() - startOfAiJudgeQuerying}ms`);
+            this.logger.info("judge output: " + judgeOutput);
+            try {
+                this.portToSidePanel.postMessage({
+                    type: AgentController2PanelPortMsgType.NOTIFICATION, details: judgeOutput,
+                    msg: "AI judgement of action safety complete"
+                });
+            } catch (error: any) {
+                this.terminateTask(`error while trying to send notification to side panel about auto-monitor call completion; error: ${renderUnknownValue(error)}`);
+                return false;
+            }
+            try {
+                llmRespObj = JSON.parse(judgeOutput);
+            } catch (e) {
+                this.terminateTask(`Invalid JSON response from the model (which shouldn't be possible per API docs): [<${judgeOutput}>] with error ${renderUnknownValue(e)}`);
+                return false;
+            }
         }
 
-        let llmRespObj: any;
-        try {
-            llmRespObj = JSON.parse(judgeOutput);
-        } catch (e) {
-            this.terminateTask(`Invalid JSON response from the model (which shouldn't be possible per API docs): [<${judgeOutput}>] with error ${renderUnknownValue(e)}`);
-            return false;
-        }
-        if (!isActionStateChangeSeverity(llmRespObj.severity) || typeof llmRespObj.explanation !== "string") {
+        if (isJudgeOutputInvalid(llmRespObj)) {
             this.terminateTask(`AI output for safety judgment was invalid: ${judgeOutput}`);
             return false;
         }

@@ -31,6 +31,10 @@ export interface AiProviderDetails {
      */
     engineCreator: (creationOptions: AiEngineCreateOptions) => AiEngine;
     //later, can add list of acceptable model names (must be VLM's)
+    /**
+     * whether the provider supports the tool use case (i.e. can generate actions in a structured manner)
+     */
+    supportsToolUse: boolean;
 }
 
 /**
@@ -39,16 +43,17 @@ export interface AiProviderDetails {
 export const AiProviders = {
     OPEN_AI: {
         id: "OPEN_AI", label: "OpenAI", storageKeyForApiKey: "openAiApiKey", defaultModelName: "gpt-4o-2024-05-13",
-        engineCreator: (creationOptions: AiEngineCreateOptions) => new OpenAiEngine(creationOptions)
+        engineCreator: (creationOptions: AiEngineCreateOptions) => new OpenAiEngine(creationOptions),
+        supportsToolUse: false//todo update this to true once OpenAiEngine is updated to support tool use
     },
     ANTHROPIC: {
         id: "ANTHROPIC", label: "Anthropic", storageKeyForApiKey: "anthropicApiKey",
-        defaultModelName: "claude-3-5-sonnet-20240620",
+        defaultModelName: "claude-3-5-sonnet-20240620", supportsToolUse: true,
         engineCreator: (creationOptions: AiEngineCreateOptions) => new AnthropicEngine(creationOptions)
     },
     GOOGLE_DEEPMIND: {
         id: "GOOGLE_DEEPMIND", label: "Google DeepMind", storageKeyForApiKey: "googleDeepmindApiKey",
-        defaultModelName: "gemini-1.5-pro",
+        defaultModelName: "gemini-1.5-pro", supportsToolUse: true,
         engineCreator: (creationOptions: AiEngineCreateOptions) => new GoogleDeepmindEngine(creationOptions)
     }
     //can later add Aliyun API (for Qwen-VL-Max) and Ollama (for local/personal hosting of misc small VLM's like phi-3-vision or paligemma)
