@@ -545,7 +545,8 @@ export class SidePanelManager {
     processAutoMonitorEscalation = (message: any): void => {
         this.isMonitorModeTempEnabled = true;
         this.handleMonitorModeCacheUpdate(true);
-        this.setAgentStatusWithDelayedClear(`Pending action judged potentially unsafe at severity ${message.severity} (hover for reason); please review then approve or reject`, 15, `Explanation of judgement: ${message.explanation}`);
+        //todo revert this when judge goes back to normal (i.e. judge not blocking/escalating actions that fall below current threshold)
+        this.setAgentStatusWithDelayedClear(`Pending action judged at danger level ${message.severity} (hover for reason); please review then approve or reject`, 15, `Explanation of judgement: ${message.explanation}`);
         this.monitorApproveButton.disabled = false;
         this.monitorRejectButton.disabled = false;
         this.monitorFeedbackField.disabled = false;
@@ -619,6 +620,7 @@ export class SidePanelManager {
             this.statusPopup.innerHTML = marked.setOptions({async: false}).parse(hovertext) as string;
         }
         setTimeout(() => {
+            this.logger.trace(`after ${delay} seconds, clearing agent status ${status} with hovertext ${hovertext?.slice(0, 100)}...`);
             this.agentStatusDiv.textContent = 'No status update available at the moment.';
             this.statusPopup.innerHTML = '';
             this.statusPopup.style.display = "none";
@@ -631,6 +633,7 @@ export class SidePanelManager {
             this.annotatorStatusDiv.title = hovertext;
         }
         setTimeout(() => {
+            this.logger.trace(`after ${delay} seconds, clearing annotator status ${status} with hovertext ${hovertext?.slice(0, 100)}...`);
             this.annotatorStatusDiv.textContent = 'No status update available at the moment.';
             this.annotatorStatusDiv.title = '';
         }, delay * 1000)
@@ -655,6 +658,8 @@ export class SidePanelManager {
         newEntry.textContent = displayedText;
         newEntry.title = hoverText;
         this.historyList.appendChild(newEntry);
+        //todo if mouse is not inside history element (i.e. if user isn't looking at an existing history entry),
+        // automatically scroll the history element's contents to bottom to show the latest history entry
     }
 
     displayStatusPopup = (): void => {

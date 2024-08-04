@@ -411,8 +411,8 @@ export class BrowserHelper {
         const uniqueInteractiveElements = this.enhancedQuerySelectorAll(interactiveElementSelectors,
             this.domHelper.window as Window, elem => !this.calcIsDisabled(elem), true);
         const elemFetchDuration = performance.now() - elemsFetchStartTs;//ms
-        //todo move this threshold back to 50 ms after there's time to investigate/remediate the recent jump in fetch time
-        (elemFetchDuration < 150 ? this.logger.debug : this.logger.warn)(`time to fetch interactive elements: ${elemFetchDuration} ms`);
+        //todo move this threshold to 250 or 500 ms after there's time to investigate/remediate the recent jump in fetch time
+        (elemFetchDuration < 1000 ? this.logger.debug : this.logger.info)(`TIME TO FETCH INTERACTIVE ELEMENTS: ${elemFetchDuration} ms`);
 
         const interactiveElementsData = Array.from(uniqueInteractiveElements)
             .map(element => this.getElementData(element))
@@ -578,6 +578,10 @@ export class BrowserHelper {
                     }
                 });
             })
+        //todo search for scrollable elements and add them to the results
+        // https://developer.mozilla.org/en-US/docs/Web/API/Element/scrollHeight
+        // then need to modify getElementData to check for whether the element is scrollable and if so add a flag (and possibly more details like scrollHeight relative to client height and offsetTop/(scrollHeight-clientHeight)
+
         resultArrays.push(Array.from(currScopeResults));
 
         //todo consider implementing custom array merging logic instead of HTML[][].flat() if this method is proving to be a noticeable performance bottleneck even sometimes
