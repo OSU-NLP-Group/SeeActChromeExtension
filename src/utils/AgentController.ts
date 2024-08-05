@@ -487,7 +487,7 @@ export class AgentController {
         // (e.g. querying ai at least some of the time with both current and prior screenshots)
         // to check for actions being silently ineffectual, with no error message and the content script having
         // judged the action as successful
-        // Maybe could limit this to only some action types that are particularly prone to being ineffectual, or
+        // Maybe could limit this to only some action types that are particularly prone to being ineffectual (e.g. it's hard to tell whether click action failed), or
         // use a non-ML software tool to check for the two images being too close to identical
         //      the latter could be easily thrown off by ads or other dynamic content. maybe getting a good solution for this would be more effort than it's worth
         const numPromptingScreenshotsTakenForCurrentActionBeforeThisRound = this.numPriorScreenshotsTakenForPromptingCurrentAction;
@@ -808,6 +808,9 @@ export class AgentController {
         this.logger.debug(`suggested action: ${action}; value: ${value}; explanation: ${explanation}`);
         let chosenCandidateIndex = getIndexFromOptionName(element);
 
+        //todo if planning output included SKIP_ELEMENT_SELECTION and then grounding output is NONE or invalid
+        // (e.g. action that requires element), then should immediately retry grouding prompt step with
+        // element-containing grounding prompt without having to do the planning step again
 
         //todo add more indexical info here- how many actions completed by this point, value of numPriorScreenshotsTakenForPromptingCurrentAction,
         // number of repromptings so far in the current for loop in processPageStateFromActor()

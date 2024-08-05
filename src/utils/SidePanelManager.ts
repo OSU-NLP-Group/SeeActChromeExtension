@@ -508,7 +508,7 @@ export class SidePanelManager {
             this.addHistoryEntry(`Task started: ${message.taskSpec}`, `Task ID: ${message.taskId}`, "task_start")
             this.startButton.disabled = true;
             this.killButton.disabled = false;
-            this.taskSpecField.value = '';
+            //this.taskSpecField.value = ''; disabled at Boyuan's request
             if (this.cachedMonitorMode) {
                 this.monitorFeedbackField.disabled = false;
             }

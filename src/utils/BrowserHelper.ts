@@ -331,12 +331,16 @@ export class BrowserHelper {
         const isElementHiddenForOverflow = elementComputedStyle.overflow === "hidden" &&
             (element.scrollHeight > element.clientHeight || element.scrollWidth > element.clientWidth);//thanks to https://stackoverflow.com/a/9541579/10808625
 
-        const doesElemSeemInvisible = elementComputedStyle.display === "none" || elementComputedStyle.visibility === "hidden"
+        let doesElemSeemInvisible = elementComputedStyle.display === "none" || elementComputedStyle.visibility === "hidden"
             || element.hidden || isElementHiddenForOverflow || elementComputedStyle.opacity === "0"
             || elementComputedStyle.height === "0px" || elementComputedStyle.width === "0px"
-            //1x1 px elements are generally a css hack to make an element temporarily ~invisible
-            || elementComputedStyle.height === "1px" || elementComputedStyle.width === "1px"
             || this.isBuriedInBackground(element);
+
+        if (element.tagName.toLowerCase() !== "input") {
+            //1x1 px elements are generally a css hack to make an element temporarily ~invisible, but sometimes there are
+            // weird shenanigans with things like checkbox inputs being 1x1 but somehow hooked up to a larger clickable span
+            doesElemSeemInvisible = doesElemSeemInvisible || elementComputedStyle.height === "1px" || elementComputedStyle.width === "1px";
+        }
 
         //if an element is inline and non-childless, its own width and height may not actually be meaningful (since its children
         // can have non-zero width/height and bubble events like clicks up to this element)
@@ -364,8 +368,10 @@ export class BrowserHelper {
             [boundRect.x + boundRect.width / 2, boundRect.y + boundRect.height / 2]];
         //can add more query points based on quarters of width and height if we ever encounter a scenario where the existing logic incorrectly dismisses an element as being fully background-hidden
         let isBuried = true;
-        //select elements are often partially hidden clickable spans and yet are still entirely feasible to interact with through javascript
-        if (element.tagName.toLowerCase() === "select") { isBuried = false;}
+        //select elements are often partially hidden behind clickable spans and yet are still entirely feasible to interact with through javascript
+        // similar problem with checkbox input elements
+        const tag = element.tagName.toLowerCase();
+        if (tag === "select" || tag === "input") { isBuried = false;}
         for (let i = 0; i < queryPoints.length && isBuried; i++){
             const queryPoint = queryPoints[i];
             const foregroundElemAtQueryPoint = this.actualElementFromPoint(queryPoint[0], queryPoint[1]);
