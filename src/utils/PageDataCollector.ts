@@ -61,7 +61,9 @@ export class PageDataCollector {
             }
 
             const candidateTargetElementsData = interactiveElementsData.filter(
-                (elementData) => elementData.element.contains(foremostElementAtPoint));
+                (elementData) => elementData.element.contains(foremostElementAtPoint)
+                    //check the parent's contents because of things like 1x1px <input> elements with a clickable <span> sibling element
+                    || elementData.element.parentElement?.contains(foremostElementAtPoint));
             candidateTargetElementsData.sort(this.sortBestTargetElemFirst(currMouseX, currMouseY))
             if (candidateTargetElementsData.length > 0) {
                 if (foremostElementAtPoint) {

@@ -400,7 +400,7 @@ export class ActionAnnotationCoordinator {
 
         let zipFilename = `BROKEN_action_annotation_${this.currAnnotationStateChangeSeverity}_${this.currAnnotationId}.zip`;
         if (this.currActionTargetElement) {
-            zipFilename = `action_annotation_${this.currAnnotationStateChangeSeverity}_Target_${makeStrSafeForFilename(this.currActionTargetElement.description.slice(0,20))}_${this.currAnnotationId}.zip`;
+            zipFilename = `action_annotation_${this.currAnnotationStateChangeSeverity}_Target_${makeStrSafeForFilename(this.currActionTargetElement.description.slice(0,30))}_${this.currAnnotationId}.zip`;
         }
         this.swHelper.sendZipToSidePanelForDownload(`details for annotated action ${this.currAnnotationId}`,
             zip, this.portToSidePanel, zipFilename, AnnotationCoordinator2PanelPortMsgType.ANNOTATED_ACTION_EXPORT);
