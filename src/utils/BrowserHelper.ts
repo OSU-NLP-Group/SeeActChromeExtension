@@ -139,13 +139,7 @@ export class BrowserHelper {
             "aria-keyshortcuts"];
 
         let parentValue = "";
-        let parent = element.parentElement;
-        const parentNode = element.parentNode;//possible shadow root
-        if (parentNode && parentNode instanceof ShadowRoot) {
-            //this.logger.trace(`Parent node of current element is a shadow root, so getting host of shadow root as the real parent of current element; inner html of parent node which is a shadow-root: ${parentNode.innerHTML}`)
-            parent = parentNode.host as HTMLElement;
-            //this.logger.trace(`inner html of parent of shadow root: ${parent.innerHTML}`);
-        }
+        const parent = this.getRealParentElement(element);
         //it's awkward that this 'first line' sometimes includes the innerText of elements below the main element (shown in a test case)
         // could get around that with parent.textContent and removing up to 1 linefeed at the start of it, for the
         // scenario where a label was the first child and there was a linefeed before the label element's text
@@ -285,7 +279,10 @@ export class BrowserHelper {
      */
     getElementData = (element: HTMLElementWithDocumentHost): ElementData | null => {
         const description = this.getElementDescription(element);
-        if (!description) return null;
+        if (!description) {
+            this.logger.trace(`unable to generate description for element, so skipping it; outerHTML: ${element.outerHTML.slice(0,100)}; parent outerHTML: ${this.getRealParentElement(element)?.outerHTML.slice(0,100)}`);
+            return null;
+        }
 
         const tagName = element.tagName.toLowerCase();
         const roleValue = element.getAttribute("role");
@@ -438,6 +435,11 @@ export class BrowserHelper {
         const initialComputedOutline = this.domHelper.getComputedStyle(element).outline;
         //const initialBackgroundColor = elemStyle.backgroundColor;
 
+        //todo https://developer.mozilla.org/en-US/docs/Web/CSS/filter
+        // https://developer.mozilla.org/en-US/docs/Web/CSS/filter-function/hue-rotate
+        // https://developer.mozilla.org/en-US/docs/Web/CSS/filter-function/brightness (only 1.25, higher risks white-out and unreadability)
+        // https://developer.mozilla.org/en-US/docs/Web/CSS/filter-function/contrast
+
         elementStyle.outline = "3px solid red";
 
         await sleep(elementHighlightRenderDelay);
@@ -555,7 +557,7 @@ export class BrowserHelper {
                 continue;
             }
             if (shouldIgnoreHidden && this.calcIsHidden(childIframeElem)) {
-                this.logger.debug("Ignoring hidden iframe element");
+                this.logger.trace(`Ignoring hidden iframe element ${childIframeElem.outerHTML.slice(0, 100)}`);
                 continue;
             }
 
@@ -581,7 +583,7 @@ export class BrowserHelper {
                 resultsForSelector.forEach(elem => {
                     if (!shouldIgnoreHidden || !this.calcIsHidden(elem)) {
                         currScopeResults.add(elem);
-                    }
+                    } else {this.logger.trace(`Ignoring hidden element ${elem.outerHTML.slice(0, 100)}`);}
                 });
             })
         //todo search for scrollable elements and add them to the results
@@ -746,5 +748,21 @@ export class BrowserHelper {
         if (numPointsWhereElem1IsForeground === 0) {this.logger.info(`No query points where ${elem1Data.description} was in the foreground, when evaluating its overlap with ${elem2Data.description}`);}
         if (numPointsWhereElem2IsForeground === 0) {this.logger.info(`No query points where ${elem2Data.description} was in the foreground, when evaluating its overlap with ${elem1Data.description}`);}
         return numPointsWhereElem1IsForeground - numPointsWhereElem2IsForeground;
+    }
+
+    /**
+     * works even when the given element is at the top of a shadow DOM or an iframe's document
+     * @param element element whose parent should be retrieved
+     */
+    getRealParentElement = (element: HTMLElement): HTMLElement | null => {
+        let parentElement: HTMLElement | null;
+        if (element.parentNode instanceof ShadowRoot) {
+            parentElement = element.parentNode.host as HTMLElement;
+        } else if (element.parentNode instanceof Document && element.parentNode.defaultView?.frameElement) {
+            parentElement = element.parentNode.defaultView.frameElement as HTMLElement
+        } else {
+            parentElement = element.parentElement;
+        }
+        return parentElement;
     }
 }
