@@ -4,7 +4,7 @@ import {ChromeWrapper} from "./ChromeWrapper";
 import {Logger} from "loglevel";
 import {createNamedLogger} from "./shared_logging_setup";
 import {
-    AnnotationCoordinator2PagePortMsgType, ElementData,
+    AnnotationCoordinator2PagePortMsgType, BoundingBox, ElementData,
     Page2AnnotationCoordinatorPortMsgType,
     renderUnknownValue,
     SerializableElementData
@@ -49,11 +49,24 @@ export class PageDataCollector {
             const currMouseX = this.mouseClientX;
             const currMouseY = this.mouseClientY;
             const foremostElementAtPoint = this.browserHelper.actualElementFromPoint(currMouseX, currMouseY);
+            let mousePosElemBoundingBox: BoundingBox | undefined = undefined;
+            if (foremostElementAtPoint) {
+                const mousePosElemBoundingRect = foremostElementAtPoint.getBoundingClientRect();
+                mousePosElemBoundingBox = {
+                    tLx: mousePosElemBoundingRect.left,
+                    tLy: mousePosElemBoundingRect.top,
+                    bRx: mousePosElemBoundingRect.right,
+                    bRy: mousePosElemBoundingRect.bottom
+                };
+            }
+
             const candidateTargetElementsData = interactiveElementsData.filter(
                 (elementData) => elementData.element.contains(foremostElementAtPoint));
             candidateTargetElementsData.sort(this.sortBestTargetElemFirst(currMouseX, currMouseY))
             if (candidateTargetElementsData.length > 0) {
-                await this.browserHelper.highlightElement(candidateTargetElementsData[0].element);
+                if (foremostElementAtPoint) {
+                    await this.browserHelper.highlightElement(foremostElementAtPoint as HTMLElement);
+                } else {await this.browserHelper.highlightElement(candidateTargetElementsData[0].element);}
                 targetElementData = makeElementDataSerializable(candidateTargetElementsData[0]);
             } else {
                 const activeElem = this.browserHelper.findRealActiveElement();
@@ -69,6 +82,7 @@ export class PageDataCollector {
                         //todo this highlighting doesn't show up in some sites where the focused element already has a pronounced border, maybe add additional logic?
                         await this.browserHelper.highlightElement(activeHtmlElement);
                         targetElementData = makeElementDataSerializable(relevantInteractiveElementsEntry);
+                        mousePosElemBoundingBox = undefined;
                     } else {
                         this.logger.warn(`no interactive elements found at mouse coordinates ${currMouseX}, ${currMouseY}; active element was defined but wasn't recognized as an interactive element: ${activeElementHtmlSample}`);
                     }
@@ -87,7 +101,7 @@ export class PageDataCollector {
                     interactiveElements: elementsDataInSerializableForm, mouseX: currMouseX, mouseY: currMouseY,
                     viewportInfo: this.domWrapper.getViewportInfo(), userMessage: userMessage,
                     userMessageDetails: userMessageDetails, htmlDump: this.domWrapper.getDocumentElement().outerHTML,
-                    url: this.domWrapper.getUrl()
+                    url: this.domWrapper.getUrl(), mousePosElemBoundingBox: mousePosElemBoundingBox
                 });
             } catch (error: any) {
                 this.logger.error(`error in content script while sending interactive elements to annotation coordinator; error: ${renderUnknownValue(error)}`);

@@ -185,19 +185,22 @@ export interface HTMLElementWithDocumentHost extends HTMLElement {
     documentHostChain?: HTMLIFrameElement[];
 }
 
+/**
+ * tL: top-left corner and bR: bottom-right corner
+ */
+export type BoundingBox = {
+    tLx: number;
+    tLy: number;
+    bRx: number;
+    bRy: number
+}
+
 export type ElementData = {
     centerCoords: readonly [number, number],
     description: string,
     tagHead: string,
-    /**
-     * tL: top-left corner and bR: bottom-right corner
-     */
-    boundingBox: {
-        tLx: number;
-        tLy: number;
-        bRx: number;
-        bRy: number
-    },
+
+    boundingBox: BoundingBox,
     /**
      * index/identifier relative to the other interactable elements on the page
      */
@@ -212,6 +215,10 @@ export type SerializableElementData = Omit<ElementData, 'element'>;
 export const exampleSerializableElemData: SerializableElementData = {
     centerCoords: [0, 0], description: "example element", tagHead: "div", boundingBox: {tLx: 0, tLy: 0, bRx: 0, bRy: 0},
     width: 0, height: 0, tagName: "div", xpath: "example xpath", interactivesIndex: -1
+}
+
+export function isValidBoundingBox(boxVal: unknown): boxVal is BoundingBox {
+    return typeof boxVal === "object" && boxVal !== null && "tLx" in boxVal && "tLy" in boxVal && "bRx" in boxVal && "bRy" in boxVal;
 }
 
 /**

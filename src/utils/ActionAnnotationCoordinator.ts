@@ -7,8 +7,8 @@ import {
     ActionStateChangeSeverity,
     AnnotationCoordinator2PagePortMsgType,
     AnnotationCoordinator2PanelPortMsgType,
-    base64ToByteArray,
-    defaultIsAnnotatorMode, exampleSerializableElemData, exampleViewportDetails, notSameKeys,
+    base64ToByteArray, BoundingBox,
+    defaultIsAnnotatorMode, exampleSerializableElemData, exampleViewportDetails, isValidBoundingBox, notSameKeys,
     Page2AnnotationCoordinatorPortMsgType,
     PanelToAnnotationCoordinatorPortMsgType,
     renderUnknownValue, SerializableElementData,
@@ -61,6 +61,7 @@ export class ActionAnnotationCoordinator {
     currActionTargetElement: SerializableElementData | undefined;
     currActionViewportInfo: ViewportDetails | undefined;
     currActionMouseCoords: { x: number, y: number } | undefined;
+    mousePosElemBoundingBox: BoundingBox | undefined;
 
     currActionContextScreenshotBase64: string | undefined;
 
@@ -321,6 +322,13 @@ export class ActionAnnotationCoordinator {
         if (typeof urlVal !== "string") {
             return `invalid URL value ${renderUnknownValue(urlVal)} in PAGE_INFO message from content script`;
         } else { this.currActionUrl = urlVal; }
+
+        const mousePosElemBoundingBoxVal: unknown = message.mousePosElemBoundingBox;
+        if (mousePosElemBoundingBoxVal !== undefined) {
+            if (!isValidBoundingBox(mousePosElemBoundingBoxVal)) {
+                return `invalid mouse position element bounding box value ${renderUnknownValue(mousePosElemBoundingBoxVal)} in PAGE_INFO message from content script`;
+            } else { this.mousePosElemBoundingBox = mousePosElemBoundingBoxVal; }
+        }
 
         return undefined;//i.e. no validation errors, all data stored successfully
     }
