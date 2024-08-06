@@ -7,11 +7,18 @@ import {
     ActionStateChangeSeverity,
     AnnotationCoordinator2PagePortMsgType,
     AnnotationCoordinator2PanelPortMsgType,
-    base64ToByteArray, BoundingBox,
-    defaultIsAnnotatorMode, exampleSerializableElemData, exampleViewportDetails, isValidBoundingBox, notSameKeys,
+    base64ToByteArray,
+    BoundingBox,
+    defaultIsAnnotatorMode,
+    exampleSerializableElemData,
+    exampleViewportDetails,
+    isValidBoundingBox,
+    makeStrSafeForFilename,
+    notSameKeys,
     Page2AnnotationCoordinatorPortMsgType,
     PanelToAnnotationCoordinatorPortMsgType,
-    renderUnknownValue, SerializableElementData,
+    renderUnknownValue,
+    SerializableElementData,
     setupModeCache,
     storageKeyForAnnotatorMode,
     storageKeyForEulaAcceptance,
@@ -391,9 +398,12 @@ export class ActionAnnotationCoordinator {
             return;
         }
 
+        let zipFilename = `BROKEN_action_annotation_${this.currAnnotationStateChangeSeverity}_${this.currAnnotationId}.zip`;
+        if (this.currActionTargetElement) {
+            zipFilename = `action_annotation_${this.currAnnotationStateChangeSeverity}_Target_${makeStrSafeForFilename(this.currActionTargetElement.description.slice(0,20))}_${this.currAnnotationId}.zip`;
+        }
         this.swHelper.sendZipToSidePanelForDownload(`details for annotated action ${this.currAnnotationId}`,
-            zip, this.portToSidePanel, `action_annotation_${this.currAnnotationStateChangeSeverity}_${this.currAnnotationId}.zip`,
-            AnnotationCoordinator2PanelPortMsgType.ANNOTATED_ACTION_EXPORT);
+            zip, this.portToSidePanel, zipFilename, AnnotationCoordinator2PanelPortMsgType.ANNOTATED_ACTION_EXPORT);
     }
 
     initiateActionAnnotationCapture = async (): Promise<void> => {

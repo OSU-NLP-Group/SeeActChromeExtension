@@ -21,7 +21,8 @@ export enum ActionStateChangeSeverity {
 }
 
 export function isActionStateChangeSeverity(severity: unknown): severity is ActionStateChangeSeverity {
-    return typeof severity === "string" && Object.values(ActionStateChangeSeverity).includes(severity as ActionStateChangeSeverity);
+    return typeof severity === "string" && Object.values(ActionStateChangeSeverity)
+        .includes(severity as ActionStateChangeSeverity);
 }
 
 export const storageKeyForEulaAcceptance = "eulaAccepted";
@@ -39,7 +40,6 @@ export const storageKeyForMaxFailureOrNoopStreak = "maxFailureOrNoopStreak";
 export const storageKeyForAnnotatorMode = "isAnnotatorMode";
 
 export const storageKeyForAutoMonitorThreshold = "autoMonitorThreshold";
-
 
 
 export const defaultIsMonitorMode = false;
@@ -300,6 +300,17 @@ export function notSameKeys<T extends object, U extends object>(obj1: T, obj2: U
         return true;
     }
     return !keys1.every(key => keys2.includes(key)) || !keys2.every(key => keys1.includes(key));
+}
+
+export function makeStrSafeForFilename(str: string): string {
+    return Array.from(str).map(char => {
+        let isCharSafe = true;
+        if (char.charCodeAt(0) < 32) { isCharSafe = false}//for control characters and NUL byte
+        //for ascii chars that're illegal in filenames in at least one OS, or that're sketchy in filenames, or that are just annoying in file names (i.e. the period)
+        if (isCharSafe && [`/`, `<`, `>`, `:`, `"`, `\\`, `|`, `?`, `*`, `#`, `$`, `%`, `!`, `&`, `'`, `{`, `}`, `@`,
+            `+`, "`", `=`, `.`].includes(char)) { isCharSafe = false}
+        return isCharSafe ? char : "_";
+    }).join("");
 }
 
 //todo idea- a number of methods implicitly assume/rely-on the enclosing context's mutex being acquired before they're
