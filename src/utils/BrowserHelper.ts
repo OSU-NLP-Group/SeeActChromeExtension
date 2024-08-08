@@ -34,6 +34,7 @@ export class BrowserHelper {
     private highlightedElementStyle: CSSStyleDeclaration | undefined;
 
     private cachedIframeTree: IframeTree | undefined;
+    private cachedShadowRootHostChildrenOfMainDoc: HTMLElement[] | undefined;
 
     constructor(domHelper?: DomWrapper, loggerToUse?: log.Logger) {
         this.domHelper = domHelper ?? new DomWrapper(window);
@@ -43,6 +44,18 @@ export class BrowserHelper {
 
     resetElementAnalysis() {
         this.cachedIframeTree = undefined;
+        if (this.cachedShadowRootHostChildrenOfMainDoc !== undefined) {
+            this.logger.debug(`clearing cached list of children of main document which are hosts of shadow roots; that list had ${this.cachedShadowRootHostChildrenOfMainDoc.length} elements`);
+            this.cachedShadowRootHostChildrenOfMainDoc = undefined;
+        }
+    }
+
+    initializeCacheOfShadowRootHostChildrenOfMainDoc = (): HTMLElement[] => {
+        this.logger.debug("initializing cache of children of main document which are hosts of shadow roots");
+        const childrenOfMainDocumentWhichHostShadowRoots = this.domHelper.fetchElementsByCss('*')
+            .filter(elem => elem.shadowRoot !== null);
+        this.logger.debug(`found ${childrenOfMainDocumentWhichHostShadowRoots.length} elements which are hosts of shadow roots`);
+        return childrenOfMainDocumentWhichHostShadowRoots;
     }
 
     /**
@@ -143,7 +156,12 @@ export class BrowserHelper {
         //it's awkward that this 'first line' sometimes includes the innerText of elements below the main element (shown in a test case)
         // could get around that with parent.textContent and removing up to 1 linefeed at the start of it, for the
         // scenario where a label was the first child and there was a linefeed before the label element's text
-        const parentText = parent ? this.domHelper.getInnerText(parent) : "";
+        let parentText = parent ? this.domHelper.getInnerText(parent) : "";
+        //todo remove this once I figure out what went wrong here a couple times
+        if (parentText === undefined || parentText === null) {
+            this.logger.error(`parent text was null or undefined for element ${parent?.outerHTML.slice(0,100)}`);
+            parentText = "";
+        }
         const parentFirstLine = this.removeEolAndCollapseWhitespace(this.getFirstLine(parentText)).trim();
         if (parentFirstLine) {
             parentValue = "parent_node: [<" + parentFirstLine + ">] ";
@@ -240,13 +258,7 @@ export class BrowserHelper {
      */
     getFullXpath = (element: HTMLElement): string => {
         let overallXpath = this.getFullXpathHelper(element);
-        const topWindow = (this.domHelper.window as Window).top;
-        if (!topWindow) {
-            this.logger.warn("unable to access window.top, so unable to access the top-level document's iframe tree; cannot provide xpath analysis which takes iframes into account");
-            return overallXpath;
-        }
-
-        if (!this.cachedIframeTree) {this.cachedIframeTree = new IframeTree(topWindow, this.logger);}
+        if (!this.cachedIframeTree) {this.cachedIframeTree = new IframeTree(this.domHelper.window as Window, this.logger);}
         const nestedIframesPathToElem = this.cachedIframeTree.getIframePathForElement(element);
         if (nestedIframesPathToElem) {
             for (let nestedIframeIdx = nestedIframesPathToElem.length - 1; nestedIframeIdx >= 0; nestedIframeIdx--) {
@@ -280,7 +292,8 @@ export class BrowserHelper {
     getElementData = (element: HTMLElementWithDocumentHost): ElementData | null => {
         const description = this.getElementDescription(element);
         if (!description) {
-            this.logger.trace(`unable to generate description for element, so skipping it; outerHTML: ${element.outerHTML.slice(0,100)}; parent outerHTML: ${this.getRealParentElement(element)?.outerHTML.slice(0,100)}`);
+            this.logger.trace(`unable to generate description for element, so skipping it; outerHTML: ${element.outerHTML.slice(0, 100)}; parent outerHTML: ${this.getRealParentElement(element)
+                ?.outerHTML.slice(0, 100)}`);
             return null;
         }
 
@@ -321,33 +334,55 @@ export class BrowserHelper {
     /**
      * @description Determine whether an element is hidden, based on its CSS properties and the hidden attribute
      * @param element the element which might be hidden
+     * @param iframeNode context of the element, if it is inside an iframe
+     * @param isDocHostElem whether the element whose visibility is being tested is just a container for another DOM of elements (i.e. shadow root host or iframe element)
+     *                          e.g. a container element isn't necessarily expected to be in the foreground (because the interactive elements we care about would typically render on top of it)
+     * @param shouldDebug whether to, if the element is hidden, print detailed debugging information about why this element is considered hidden
      * @return true if the element is hidden, false if it is visible
      */
-    calcIsHidden = (element: HTMLElement): boolean => {
+    calcIsHidden = (element: HTMLElement, iframeNode: IframeNode, isDocHostElem: boolean = false,
+                    shouldDebug: boolean = false): boolean => {
         const elementComputedStyle = this.domHelper.getComputedStyle(element);
         const isElementHiddenForOverflow = elementComputedStyle.overflow === "hidden" &&
             (element.scrollHeight > element.clientHeight || element.scrollWidth > element.clientWidth);//thanks to https://stackoverflow.com/a/9541579/10808625
 
+        let isElemBuried: boolean | undefined = undefined;
         let doesElemSeemInvisible = elementComputedStyle.display === "none" || elementComputedStyle.visibility === "hidden"
             || element.hidden || isElementHiddenForOverflow || elementComputedStyle.opacity === "0"
-            || elementComputedStyle.height === "0px" || elementComputedStyle.width === "0px"
-            || this.isBuriedInBackground(element);
+            || elementComputedStyle.height === "0px" || elementComputedStyle.width === "0px";
 
         if (element.tagName.toLowerCase() !== "input") {
             //1x1 px elements are generally a css hack to make an element temporarily ~invisible, but sometimes there are
             // weird shenanigans with things like checkbox inputs being 1x1 but somehow hooked up to a larger clickable span
             doesElemSeemInvisible = doesElemSeemInvisible || elementComputedStyle.height === "1px" || elementComputedStyle.width === "1px";
         }
+        if (!doesElemSeemInvisible && !isDocHostElem) {
+            //skipping this for elements that are fully outside the viewport
+            const elemRect = this.domHelper.grabClientBoundingRect(element);
+            const elemXRelToViewport = elemRect.x + iframeNode.coordsOffsetFromViewport.x;
+            const elemYRelToViewport = elemRect.y + iframeNode.coordsOffsetFromViewport.y;
+            const {width, height} = this.domHelper.getViewportInfo();
+            if (elemXRelToViewport + elemRect.width > 0 && elemYRelToViewport + elemRect.height > 0
+                && elemXRelToViewport < width && elemYRelToViewport < height) {
+                isElemBuried = this.isBuriedInBackground(element);
+                doesElemSeemInvisible = isElemBuried;
+            }
+        }
 
         //if an element is inline and non-childless, its own width and height may not actually be meaningful (since its children
         // can have non-zero width/height and bubble events like clicks up to this element)
         if (doesElemSeemInvisible && elementComputedStyle.display.indexOf("inline") !== -1) {
             for (const child of element.children) {
-                if (!this.calcIsHidden(child as HTMLElement)) {
-                    this.logger.info(`FOUND A WEIRD ELEMENT ${element.outerHTML.slice(0,100)}... which itself seemed invisible but which had some kind of 'inline' display status and which had a visible child ${child.outerHTML.slice(0,100)}...`)
-                    return false;
+                if (!this.calcIsHidden(child as HTMLElement, iframeNode, false, shouldDebug)) {
+                    this.logger.info(`FOUND A WEIRD ELEMENT ${element.outerHTML.slice(0, 100)}... which itself seemed invisible but which had some kind of 'inline' display status and which had a visible child ${child.outerHTML.slice(0, 100)}...`)
+                    doesElemSeemInvisible = false;
+                    break;
                 }
             }
+        }
+
+        if (doesElemSeemInvisible && shouldDebug) {
+            this.logger.trace(`Element with tag name ${element.tagName} and description: ${this.getElementDescription(element)} was determined to be hidden; isHiddenForOverflow: ${isElementHiddenForOverflow}, is buried in background: ${isElemBuried}; computed style properties: width=${elementComputedStyle.width}, height=${elementComputedStyle.height}, display=${elementComputedStyle.display}, visibility=${elementComputedStyle.visibility}, opacity=${elementComputedStyle.opacity}`);
         }
 
         return doesElemSeemInvisible;
@@ -360,6 +395,8 @@ export class BrowserHelper {
 
     isBuriedInBackground = (element: HTMLElement): boolean => {
         const boundRect = this.domHelper.grabClientBoundingRect(element);
+        //todo experiment with whether there are problems from restricting this to solely the center point
+        // maybe make that a toggleable option to boost performance
         const queryPoints: [number, number][] = [[boundRect.x, boundRect.y], [boundRect.x + boundRect.width, boundRect.y],
             [boundRect.x, boundRect.y + boundRect.height], [boundRect.x + boundRect.width, boundRect.y + boundRect.height],
             [boundRect.x + boundRect.width / 2, boundRect.y + boundRect.height / 2]];
@@ -369,7 +406,7 @@ export class BrowserHelper {
         // similar problem with checkbox input elements
         const tag = element.tagName.toLowerCase();
         if (tag === "select" || tag === "input") { isBuried = false;}
-        for (let i = 0; i < queryPoints.length && isBuried; i++){
+        for (let i = 0; i < queryPoints.length && isBuried; i++) {
             const queryPoint = queryPoints[i];
             const foregroundElemAtQueryPoint = this.actualElementFromPoint(queryPoint[0], queryPoint[1]);
             if (element.contains(foregroundElemAtQueryPoint)) {
@@ -411,10 +448,13 @@ export class BrowserHelper {
             '[onkeypress]', '[onkeyup]', "[checkbox]", '[aria-disabled="false"]', '[data-link]'];
 
         const elemsFetchStartTs = performance.now();
+        //todo somehow want to also grab elements which are scrollable (i.e. they have overflow auto and there're
+        // scrollbar(s) on the right and/or bottom sides of the element)
         const uniqueInteractiveElements = this.enhancedQuerySelectorAll(interactiveElementSelectors,
             this.domHelper.window as Window, elem => !this.calcIsDisabled(elem), true);
         const elemFetchDuration = performance.now() - elemsFetchStartTs;//ms
         //todo move this threshold to 250 or 500 ms after there's time to investigate/remediate the recent jump in fetch time
+        // this isn't a perf bottleneck in agent use case, but it is in the action annotation/data-collection use case
         (elemFetchDuration < 1000 ? this.logger.debug : this.logger.info)(`TIME TO FETCH INTERACTIVE ELEMENTS: ${elemFetchDuration} ms`);
 
         const interactiveElementsData = Array.from(uniqueInteractiveElements)
@@ -530,21 +570,24 @@ export class BrowserHelper {
                                 elemFilter: (elem: HTMLElement) => boolean, shouldIgnoreHidden: boolean = true
     ): Array<HTMLElementWithDocumentHost> => {
         if (!this.cachedIframeTree) {this.cachedIframeTree = new IframeTree(topWindow, this.logger);}
+        if (this.cachedShadowRootHostChildrenOfMainDoc === undefined) {this.cachedShadowRootHostChildrenOfMainDoc = this.initializeCacheOfShadowRootHostChildrenOfMainDoc();}
+
         //todo measure which operations in this recursive stack are taking up the most time in total
         // I suspect the elementFromPoint() calls, since fetch time seemed to have shot up recently from 10-20ms to 60-130ms
         // Since this is single-threaded, can use instance vars to accumulate time spent on different things
         //  (as long as those instance vars are reset at the start of each call of this method)
         return this.enhancedQuerySelectorAllHelper(cssSelectors, topWindow.document, this.cachedIframeTree.root,
-            elemFilter, shouldIgnoreHidden);
+            elemFilter, this.cachedShadowRootHostChildrenOfMainDoc, shouldIgnoreHidden);
     }
 
     enhancedQuerySelectorAllHelper = (cssSelectors: string[], root: ShadowRoot | Document, iframeContextNode: IframeNode,
-                                      elemFilter: (elem: HTMLElement) => boolean, shouldIgnoreHidden: boolean = true
+                                      elemFilter: (elem: HTMLElement) => boolean,
+                                      cachedShadowRootHostChildren?: HTMLElement[], shouldIgnoreHidden: boolean = true
     ): Array<HTMLElementWithDocumentHost> => {
-        let possibleShadowRootHosts = Array.from(root.querySelectorAll('*')) as HTMLElement[];
-        if (shouldIgnoreHidden) { possibleShadowRootHosts = possibleShadowRootHosts.filter(elem => !this.calcIsHidden(elem)); }
-        const shadowRootsOfChildren = possibleShadowRootHosts.map(elem => elem.shadowRoot)
-            .filter(Boolean) as ShadowRoot[];//TS compiler doesn't know that filter(Boolean) removes nulls
+        let possibleShadowRootHosts = cachedShadowRootHostChildren ?? this.domHelper.fetchElementsByCss('*', root);
+        if (shouldIgnoreHidden) { possibleShadowRootHosts = possibleShadowRootHosts.filter(elem => !this.calcIsHidden(elem, iframeContextNode, true)); }
+        let shadowRootsOfChildren = possibleShadowRootHosts.map(elem => elem.shadowRoot) as ShadowRoot[];
+        if (!cachedShadowRootHostChildren) { shadowRootsOfChildren = shadowRootsOfChildren.filter(Boolean);}
 
         const iframeNodes = iframeContextNode.children;
         //+1 is for the current scope results array, in case none of the child iframes get disqualified for being hidden
@@ -556,14 +599,14 @@ export class BrowserHelper {
                 this.logger.warn("iframeNode had null iframe element, so skipping it");
                 continue;
             }
-            if (shouldIgnoreHidden && this.calcIsHidden(childIframeElem)) {
+            if (shouldIgnoreHidden && this.calcIsHidden(childIframeElem, iframeContextNode, true)) {
                 this.logger.trace(`Ignoring hidden iframe element ${childIframeElem.outerHTML.slice(0, 100)}`);
                 continue;
             }
 
             const iframeContent = this.getIframeContent(childIframeElem);
             if (iframeContent) {
-                const resultsForIframe = this.enhancedQuerySelectorAllHelper(cssSelectors, iframeContent, childIframeNode, elemFilter, shouldIgnoreHidden);
+                const resultsForIframe = this.enhancedQuerySelectorAllHelper(cssSelectors, iframeContent, childIframeNode, elemFilter, undefined, shouldIgnoreHidden);
                 resultsForIframe.forEach(elem => {
                     if (elem.documentHostChain === undefined) {elem.documentHostChain = [];}
                     elem.documentHostChain.push(childIframeElem);
@@ -572,7 +615,7 @@ export class BrowserHelper {
             }
         }
 
-        shadowRootsOfChildren.map(childShadowRoot => this.enhancedQuerySelectorAllHelper(cssSelectors, childShadowRoot, iframeContextNode, elemFilter, shouldIgnoreHidden))
+        shadowRootsOfChildren.map(childShadowRoot => this.enhancedQuerySelectorAllHelper(cssSelectors, childShadowRoot, iframeContextNode, elemFilter, undefined, shouldIgnoreHidden))
             .forEach(resultsForShadowRoot => resultArrays.push(resultsForShadowRoot));
 
         //based on https://developer.mozilla.org/en-US/docs/Web/API/Node/isSameNode, I'm pretty confident that simple
@@ -581,7 +624,7 @@ export class BrowserHelper {
         cssSelectors.map(selector => Array.from(root.querySelectorAll<HTMLElement>(selector)).filter(elemFilter))
             .forEach(resultsForSelector => {
                 resultsForSelector.forEach(elem => {
-                    if (!shouldIgnoreHidden || !this.calcIsHidden(elem)) {
+                    if (!shouldIgnoreHidden || !this.calcIsHidden(elem, iframeContextNode)) {
                         currScopeResults.add(elem);
                     } else {this.logger.trace(`Ignoring hidden element ${elem.outerHTML.slice(0, 100)}`);}
                 });
@@ -597,37 +640,6 @@ export class BrowserHelper {
         return resultArrays.flat();
     }
 
-    enhancedQuerySelector(cssSelector: string, root: ShadowRoot | Document | HTMLIFrameElement,
-                          elemFilter: (elem: HTMLElement) => boolean, shouldIgnoreHidden: boolean = true): HTMLElement | null {
-        const currScopeResult = root.querySelector(cssSelector) as HTMLElement | null;
-        if (currScopeResult && elemFilter(currScopeResult) && !(shouldIgnoreHidden && this.calcIsHidden(currScopeResult))) {
-            return currScopeResult;
-        }
-        let possibleShadowRootHosts = Array.from(root.querySelectorAll('*')) as HTMLElement[];
-        if (shouldIgnoreHidden) {
-            possibleShadowRootHosts = possibleShadowRootHosts.filter(elem => !this.calcIsHidden(elem));
-        }
-        const shadowRootsOfChildren = possibleShadowRootHosts.map(elem => elem.shadowRoot)
-            .filter(Boolean) as ShadowRoot[];//filter(Boolean) removes nulls
-        for (const shadowRoot of shadowRootsOfChildren) {
-            const shadowResult = this.enhancedQuerySelector(cssSelector, shadowRoot, elemFilter, shouldIgnoreHidden);
-            if (shadowResult) {
-                return shadowResult;
-            }
-        }
-        let iframes = Array.from(root.querySelectorAll('iframe'));
-        if (shouldIgnoreHidden) { iframes = iframes.filter(iframe => !this.calcIsHidden(iframe)); }
-        for (const iframe of iframes) {
-            const iframeContent = this.getIframeContent(iframe);
-            if (iframeContent) {
-                const iframeResult = this.enhancedQuerySelector(cssSelector, iframeContent, elemFilter, shouldIgnoreHidden);
-                if (iframeResult) {
-                    return iframeResult;
-                }
-            }
-        }
-        return null;
-    }
 
     /**
      * this tries to tunnel through shadow roots and iframes to find the actual active/focused element
@@ -641,9 +653,8 @@ export class BrowserHelper {
             if (activeElem.tagName.toLowerCase() === "body") {
                 return null;
             }
-            if (this.calcIsHidden(activeElem)) {
-                this.logger.warn(`Active element is hidden, so it's likely not the intended target: ${activeElem.outerHTML.slice(0, 300)}`);
-            }
+            if (this.calcIsHidden(activeElem, new IframeNode(null, this.domHelper.window as Window), false, true)
+            ) {this.logger.warn(`Active element is hidden, so it's likely not the intended target: ${activeElem.outerHTML.slice(0, 300)}`);}
         }
         return activeElem;
     }
@@ -693,6 +704,7 @@ export class BrowserHelper {
         }
     }
 
+    //todo evaluate whether this is still needed, now that buried elements are eliminated as candidates for interactive elements list
     findQueryPointsInOverlap = (elem1Data: ElementData, elem2Data: ElementData): Array<readonly [number, number]> => {
         const overlapLeftX = Math.max(elem1Data.boundingBox.tLx, elem2Data.boundingBox.tLx);
         const overlapRightX = Math.min(elem1Data.boundingBox.bRx, elem2Data.boundingBox.bRx);
@@ -700,7 +712,7 @@ export class BrowserHelper {
         const overlapBottomY = Math.min(elem1Data.boundingBox.bRy, elem2Data.boundingBox.bRy);
         const queryPoints: Array<readonly [number, number]> = [];
         if (overlapLeftX >= overlapRightX || overlapTopY >= overlapBottomY) {
-            this.logger.warn(`No overlap between elements ${elem1Data.description} and ${elem2Data.description}`);
+            this.logger.debug(`No overlap between elements ${elem1Data.description} and ${elem2Data.description}`);
             return queryPoints;
         }
         queryPoints.push([overlapLeftX, overlapTopY], [overlapRightX, overlapTopY], [overlapLeftX, overlapBottomY],
@@ -715,21 +727,46 @@ export class BrowserHelper {
         return queryPoints;
     }
 
-    actualElementFromPoint(x: number, y: number, doc?: Document): Element | null {
+    actualElementFromPoint(x: number, y: number, doc?: Document | ShadowRoot): Element | null {
+        const {width, height} = this.domHelper.getViewportInfo();
+        if (x < 0 || y < 0 || x >= width || y >= height) {
+            this.logger.trace(`Attempted to find element at point ${x}, ${y} which is outside the viewport`);
+            return null;
+        }
         let foremostElemAtPoint = this.domHelper.elementFromPoint(x, y, doc);
 
-        if (foremostElemAtPoint && foremostElemAtPoint instanceof HTMLIFrameElement) {
-            const topWindow = (this.domHelper.window as Window).top;
-            if (topWindow) {
-                if (!this.cachedIframeTree) {this.cachedIframeTree = new IframeTree(topWindow, this.logger);}
-                const iframeNode = this.cachedIframeTree.findIframeNodeForIframeElement(foremostElemAtPoint);
-                if (iframeNode) {
-                    const iframeContent = this.getIframeContent(foremostElemAtPoint);
-                    if (iframeContent) {
-                         foremostElemAtPoint = this.actualElementFromPoint(x - iframeNode.coordsOffsetFromViewport.x, y - iframeNode.coordsOffsetFromViewport.y, iframeContent);
-                    } else {this.logger.info("unable to access iframe content, so unable to access the actual element at point which takes iframes into account");}
-                } else {this.logger.info("unable to find iframe node for iframe element, so unable to access the actual element at point which takes iframes into account");}
-            } else { this.logger.warn("unable to access window.top, so unable to access the top-level document's iframe tree; cannot provide actual element at point which takes iframes into account"); }
+        if (!foremostElemAtPoint) {
+            //was this section added based on a misunderstanding or an anomaly in browser dev tools behavior?
+            // I'd thought I'd seen document.elementFromPoint() return null when I was hovering over a shadow root element (a couple times),
+            // but today I can't reproduce that behavior
+            //todo remove this section after committing it once (so it can be retrieved from version control if it later proves actually needed)
+            this.logger.trace(`NO ELEMENT FOUND AT POINT ${x}, ${y}; checking${doc? " relative to a surrounding context":""} for shadow roots that overlap that point`);
+            //deal with shadow root possibility
+            let currScopeShadowRootHostAtMousePos = undefined;
+            if (doc === undefined) {
+                if (this.cachedShadowRootHostChildrenOfMainDoc === undefined) {this.cachedShadowRootHostChildrenOfMainDoc = this.initializeCacheOfShadowRootHostChildrenOfMainDoc();}
+                currScopeShadowRootHostAtMousePos = this.findShadowRootHostAtPos(x, y, this.cachedShadowRootHostChildrenOfMainDoc);
+            } else {
+                const childrenOfCurrShadowRootWhichHostShadowRoots = this.domHelper.fetchElementsByCss('*', doc)
+                    .filter(elem => elem.shadowRoot !== null);
+                currScopeShadowRootHostAtMousePos = this.findShadowRootHostAtPos(x, y, childrenOfCurrShadowRootWhichHostShadowRoots);
+            }
+            if (currScopeShadowRootHostAtMousePos && currScopeShadowRootHostAtMousePos.shadowRoot) {
+                this.logger.trace(`RECURSING INTO SHADOW DOM to find element at position ${x}, ${y}`);
+                foremostElemAtPoint = this.actualElementFromPoint(x, y, currScopeShadowRootHostAtMousePos.shadowRoot);
+            }
+        } else if (foremostElemAtPoint instanceof HTMLIFrameElement) {
+            if (!this.cachedIframeTree) {this.cachedIframeTree = new IframeTree(this.domHelper.window as Window, this.logger);}
+            const iframeNode = this.cachedIframeTree.findIframeNodeForIframeElement(foremostElemAtPoint);
+            if (iframeNode) {
+                const iframeContent = this.getIframeContent(foremostElemAtPoint);
+                if (iframeContent) {
+                    foremostElemAtPoint = this.actualElementFromPoint(x - iframeNode.coordsOffsetFromViewport.x, y - iframeNode.coordsOffsetFromViewport.y, iframeContent);
+                } else {this.logger.info("unable to access iframe content, so unable to access the actual element at point which takes iframes into account");}
+            } else {this.logger.info("unable to find iframe node for iframe element, so unable to access the actual element at point which takes iframes into account");}
+        } else if (foremostElemAtPoint.shadowRoot) {
+            this.logger.trace(`RECURSING INTO SHADOW DOM to find element at position ${x}, ${y}, from host element at that point ${foremostElemAtPoint.outerHTML.slice(0,200)}`);
+            foremostElemAtPoint = this.actualElementFromPoint(x, y, foremostElemAtPoint.shadowRoot);
         }
         return foremostElemAtPoint;
     }
@@ -755,14 +792,43 @@ export class BrowserHelper {
      * @param element element whose parent should be retrieved
      */
     getRealParentElement = (element: HTMLElement): HTMLElement | null => {
-        let parentElement: HTMLElement | null;
+        let parentElement: HTMLElement | null = null;
         if (element.parentNode instanceof ShadowRoot) {
-            parentElement = element.parentNode.host as HTMLElement;
+            const hostElem = element.parentNode.host;
+            if (hostElem instanceof HTMLElement) {
+                parentElement = hostElem;
+            } else { this.logger.info(`ELEMENT HAD SHADOW ROOT PARENT WITH ${hostElem === null ? "null host" : "non-HTMLElement host"}; element text: ${element.outerHTML.slice(0,100)}`); }
         } else if (element.parentNode instanceof Document && element.parentNode.defaultView?.frameElement) {
-            parentElement = element.parentNode.defaultView.frameElement as HTMLElement
+            const frameElem = element.parentNode.defaultView.frameElement;
+            if (frameElem instanceof HTMLElement) {
+                parentElement = frameElem;
+            } else { this.logger.info(`ELEMENT AT TOP OF SECONDARY DOCUMENT HAD ${frameElem === null ? "null frame" : "non-HTMLElement frame"} element as the host/frame for that secondary document; element text: ${element.outerHTML.slice(0,100)}`); }
         } else {
             parentElement = element.parentElement;
         }
         return parentElement;
     }
+
+    findShadowRootHostAtPos = (xPos: number, yPos: number, shadowRootHostChildren: HTMLElement[]): HTMLElement | undefined => {
+        this.logger.trace(`finding host of shadow root at position ${xPos}, ${yPos} out of ${shadowRootHostChildren.length} options`);
+        let shadowRootHostAtPos = undefined;
+
+        const relevantShadowRootHosts = shadowRootHostChildren.filter(elem => {
+            const hostBoundRect = this.domHelper.grabClientBoundingRect(elem);
+            return xPos >= hostBoundRect.x && xPos <= hostBoundRect.x + hostBoundRect.width &&
+                yPos >= hostBoundRect.y && yPos <= hostBoundRect.y + hostBoundRect.height;
+        });
+        if (relevantShadowRootHosts.length > 0) {
+            if (relevantShadowRootHosts.length > 1) {
+                this.logger.warn(`Multiple shadow host elements (${relevantShadowRootHosts.length}) were found to contain the point ${xPos}, ${yPos}; only the first one will be considered`);
+            }
+            shadowRootHostAtPos = relevantShadowRootHosts[0];
+            const shadowRoot = relevantShadowRootHosts[0].shadowRoot;
+            if (!shadowRoot) {this.logger.warn(`shadow host element at position ${xPos}, ${yPos} had null shadow root`);}
+        } else {
+            this.logger.info(`no overlapping shadow root host found at point ${xPos}, ${yPos}`);
+        }
+        return shadowRootHostAtPos;
+    }
+
 }

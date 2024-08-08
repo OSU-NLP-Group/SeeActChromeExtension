@@ -42,7 +42,7 @@ export interface AiProviderDetails {
  */
 export const AiProviders = {
     OPEN_AI: {
-        id: "OPEN_AI", label: "OpenAI", storageKeyForApiKey: "openAiApiKey", defaultModelName: "gpt-4o-2024-05-13",
+        id: "OPEN_AI", label: "OpenAI", storageKeyForApiKey: "openAiApiKey", defaultModelName: "gpt-4o-2024-08-06",
         engineCreator: (creationOptions: AiEngineCreateOptions) => new OpenAiEngine(creationOptions),
         supportsToolUse: false//todo update this to true once OpenAiEngine is updated to support tool use
     },

@@ -106,7 +106,14 @@ Some timestamps are higher precision (5 to 100 microseconds precision rather tha
 Performance browser API. Please [beware](https://developer.mozilla.org/en-US/docs/Web/API/Performance/now#description) 
 possible confusion from system clock adjustments (e.g. DST) or clock skew when comparing high-precision vs normal timestamps.
 
+Regex for finding log messages that are trying to tell the developer about something unexpected but not necessarily bad that happened:  
+```regexp
+([A-Z]+)( [A-Z]+)+
+```
+
 ## Developer notes
+
+
 
 TODO consider replacing "utils" folder with frontend, serviceworker, and shared folders
 

@@ -73,6 +73,11 @@ export const formatChoices = (elements: Array<SerializableElementData>, candidat
             sizeInfo = `Size: ${relElemWidth.toFixed(1)}% x ${relElemHeight.toFixed(1)}%; `;
         }
 
+        //todo eventually also want to clarify if the element is inside of a scrollable context/container-element, and
+        // if so, what that container-element's interactive-element-id is, and also whether this element is currently
+        // visible inside of that context or whether the context needs to be scrolled to in order to see this element
+        // (if scrolling of that context is needed, should say which direction(s))
+
         let possiblyAbbrevDesc = description;
         const descriptionSplit: Array<string> = description.split(/\s+/);
         if ("select" !== tagName && descriptionSplit.length >= 30) {

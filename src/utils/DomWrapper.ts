@@ -23,11 +23,12 @@ export class DomWrapper {
     /**
      * primitive wrapper around querySelectorAll to find elements in the DOM (doesn't pierce shadow roots or iframes)
      * @param cssSelector The CSS selector to use to find elements
+     * @param overrideDoc the secondary document or shadow root that should be searched through (instead of the main document of the page)
      * @returns array of elements that match the CSS selector;
      *           this is a static view of the elements (not live access that would allow modification)
      */
-    fetchElementsByCss = (cssSelector: string): Array<HTMLElement> => {
-        return Array.from(this.dom.querySelectorAll(cssSelector));
+    fetchElementsByCss = (cssSelector: string, overrideDoc?: Document|ShadowRoot): Array<HTMLElement> => {
+        return Array.from((overrideDoc ?? this.dom).querySelectorAll<HTMLElement>(cssSelector));
     }
 
     /**
@@ -123,7 +124,7 @@ export class DomWrapper {
         return this.dom.URL;
     }
 
-    elementFromPoint = (x: number, y: number, overrideDoc?: Document): Element | null => {
+    elementFromPoint = (x: number, y: number, overrideDoc?: Document|ShadowRoot): Element | null => {
         return (overrideDoc ?? this.dom).elementFromPoint(x, y);
     }
 }

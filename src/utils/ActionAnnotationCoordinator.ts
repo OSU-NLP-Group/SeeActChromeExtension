@@ -234,7 +234,7 @@ export class ActionAnnotationCoordinator {
         } else if (message.type === Page2AnnotationCoordinatorPortMsgType.PAGE_INFO) {
             await this.mutex.runExclusive(() => this.processActionContextAndDetails(message));
         } else if (message.type === Page2AnnotationCoordinatorPortMsgType.TERMINAL) {
-            await this.mutex.runExclusive(() => this.resetAnnotationCaptureCoordinator(`content script encountered fatal error: ${message.error}`));
+            await this.mutex.runExclusive(() => this.resetAnnotationCaptureCoordinator(`content script encountered fatal error`, message.error));
         } else {
             this.logger.warn(`unknown message from content script:${renderUnknownValue(message).slice(0, 100)}`);
         }

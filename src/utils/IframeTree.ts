@@ -91,6 +91,7 @@ export class IframeTree {
             }
         };
 
+        const treeBuildStartTs = performance.now();
         try {
             buildNodeRecursive(this.root);
         } catch (error: any) {
@@ -99,6 +100,8 @@ export class IframeTree {
                     renderUnknownValue(error).slice(0, 100)}`);
             } else {this.logger.error(`Error building iframe tree: ${renderUnknownValue(error)}`);}
         }
+        const treeBuildDuration = performance.now() - treeBuildStartTs;
+        (treeBuildDuration > 100 ? this.logger.warn : this.logger.debug )(`Iframe tree build time: ${treeBuildDuration}ms`);
     }
 
     /**

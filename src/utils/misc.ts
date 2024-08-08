@@ -210,6 +210,8 @@ export type ElementData = {
     height: number,
     tagName: string,
     element: HTMLElementWithDocumentHost
+    //todo if element is inside a scrollable context (e.g. a div with overflow auto), this should have info about that
+    // context
 }
 export type SerializableElementData = Omit<ElementData, 'element'>;
 export const exampleSerializableElemData: SerializableElementData = {
