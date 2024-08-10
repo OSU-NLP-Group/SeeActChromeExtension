@@ -468,7 +468,7 @@ export class SidePanelManager {
 
         if (this.cachedIsAnnotatorMode) {
             this.annotatorActionType.value = Action.CLICK;
-            this.annotatorActionStateChangeSeverity.value = ActionStateChangeSeverity.SAFE;
+            this.annotatorActionStateChangeSeverity.value = ActionStateChangeSeverity.LOW;
             this.annotatorExplanationField.value = '';
         }
     }
