@@ -352,14 +352,16 @@ export class BrowserHelper {
 
         let isElemBuried: boolean | undefined = undefined;
         let doesElemSeemInvisible = elementComputedStyle.display === "none" || elementComputedStyle.visibility === "hidden"
-            || element.hidden || isElementHiddenForOverflow || elementComputedStyle.opacity === "0"
+            || element.hidden || isElementHiddenForOverflow
             || elementComputedStyle.height === "0px" || elementComputedStyle.width === "0px" ||
             elementBoundingRect.width === 0 || elementBoundingRect.height === 0;
 
         if (element.tagName.toLowerCase() !== "input") {
-            //1x1 px elements are generally a css hack to make an element temporarily ~invisible, but sometimes there are
-            // weird shenanigans with things like checkbox inputs being 1x1 but somehow hooked up to a larger clickable span
-            doesElemSeemInvisible = doesElemSeemInvisible || elementComputedStyle.height === "1px" || elementComputedStyle.width === "1px";
+            //1x1 px or 0-opacity elements are generally a css hack to make an element temporarily ~invisible, but
+            // sometimes there are weird shenanigans with things like checkbox inputs being 1x1 or completely-transparent
+            // but somehow hooked up to a larger clickable span (the span is usually the sibling of the input)
+            doesElemSeemInvisible = doesElemSeemInvisible || elementComputedStyle.height === "1px" || elementComputedStyle.width === "1px"
+                || elementComputedStyle.opacity === "0";
         }
         if (!doesElemSeemInvisible && !isDocHostElem) {
             //skipping this for elements that are fully outside the viewport
@@ -471,7 +473,18 @@ export class BrowserHelper {
         return interactiveElementsData;
     }
 
-    highlightElement = async (element: HTMLElement, highlightDuration: number = 30000) => {
+    highlightElement = async (element: HTMLElement, highlightDuration: number = 30000): Promise<HTMLElement> => {
+        let elemToHighlight = element;
+        if (this.doesElementContainSpaceOccupyingPseudoElements(element)) {
+            this.logger.debug(`Element contains space-occupying pseudo-elements which typically throw off outline-based highlighting, so trying to highlight parent element instead; pseudoelement-containing element: ${this.getElementDescription(element)}`);
+            const parentElem = element.parentElement;
+            if (parentElem) {elemToHighlight = parentElem;}
+        }
+        return await this.highlightElementHelper(elemToHighlight, highlightDuration);
+    }
+
+    highlightElementHelper = async (element: HTMLElement, highlightDuration: number = 30000): Promise<HTMLElement> => {
+        let elementHighlighted = element;
         await this.clearElementHighlightingEarly();
         const elementStyle: CSSStyleDeclaration = element.style;
         this.logger.trace(`attempting to highlight element with tag name ${element.tagName} and description: ${this.getElementDescription(element)}`);
@@ -497,7 +510,7 @@ export class BrowserHelper {
             const parentElem = element.parentElement;
             if (parentElem) {
                 this.logger.debug("trying to highlight parent element instead");
-                await this.highlightElement(parentElem, highlightDuration);
+                elementHighlighted = await this.highlightElementHelper(parentElem, highlightDuration);
             }
         } else {
             this.logger.trace(`initialComputedOutline: ${initialComputedOutline}; computedOutlinePostStyleMod: ${computedOutlinePostStyleMod}; similarity: ${computedOutlineSimilarity}`)
@@ -520,6 +533,7 @@ export class BrowserHelper {
             // https://developer.mozilla.org/en-US/docs/Web/CSS/filter
             // https://developer.mozilla.org/en-US/docs/Web/CSS/border
         }
+        return elementHighlighted;
     }
 
     clearElementHighlightingEarly = async () => {
@@ -532,6 +546,18 @@ export class BrowserHelper {
 
             await sleep(elementHighlightRenderDelay);
         }
+    }
+
+    doesElementContainSpaceOccupyingPseudoElements = (element: HTMLElement): boolean => {
+        //included marker/placeholder/file-selector-button speculatively; open to removing them if they don't actually
+        // cause a problematic change in visually rendered element size (and so don't screw up element highlighting)
+        return ["::before", "::after", "::marker", "::placeholder", "::file-selector-button"].some(pseudoElemName => {
+            const pseudoElemStyle = this.domHelper.getComputedStyle(element, pseudoElemName);
+            const isPseudoElemPresent = pseudoElemStyle.content !== "" && pseudoElemStyle.content !== "none"
+                && pseudoElemStyle.content !== "normal";
+            if (isPseudoElemPresent) { this.logger.debug(`FOUND PSEUDO-ELEMENT ${pseudoElemName} with computed style ${JSON.stringify(pseudoElemStyle)} inside of element ${element.outerHTML.slice(0,200)}`) }
+            return isPseudoElemPresent;
+        });
     }
 
 
@@ -732,27 +758,42 @@ export class BrowserHelper {
         return queryPoints;
     }
 
-    actualElementFromPoint(x: number, y: number, doc?: Document | ShadowRoot): Element | null {
+    actualElementFromPoint(x: number, y: number, searchDom?: Document | ShadowRoot): HTMLElement | null {
         const {width, height} = this.domHelper.getViewportInfo();
         if (x < 0 || y < 0 || x >= width || y >= height) {
             this.logger.trace(`Attempted to find element at point ${x}, ${y} which is outside the viewport`);
             return null;
         }
-        let foremostElemAtPoint = this.domHelper.elementFromPoint(x, y, doc);
+        let foremostElemAtPoint: HTMLElement | null = null;
+        //for some reason, at least sometimes (e.g. BritishAirways.com Find Flights button), elementsFromPoint()[0] will actually
+        // return the real element at the point (the one inside the shadow DOM), while elementFromPoint() will return the shadow host, even when called on that shadow host's shadowRoot!
+        // even though those two expressions should theoretically always be equivalent when there's an element at that point at all
+        const elemsAtPoint = this.domHelper.elementsFromPoint(x, y, searchDom);
+        const searchContextHost: Element|null = searchDom instanceof ShadowRoot ? searchDom.host : null;
+        for (const elem of elemsAtPoint) {
+            if (elem instanceof HTMLElement) {
+                if (searchContextHost === elem) {
+                    this.logger.trace(`FOUND THE SHADOW HOST ELEMENT AT THE POINT ${x}, ${y} when searching within that host element's shadow DOM; skipping it: ${elem.outerHTML.slice(0,200)}`);
+                } else {
+                    foremostElemAtPoint = elem;
+                    break;
+                }
+            } else { this.logger.info(`FOUND A NON HTMLELEMENT ELEMENT AT THE POINT ${x}, ${y}; skipping it: ${elem.outerHTML.slice(0,200)}`); }
+        }
 
         if (!foremostElemAtPoint) {
             //was this section added based on a misunderstanding or an anomaly in browser dev tools behavior?
             // I'd thought I'd seen document.elementFromPoint() return null when I was hovering over a shadow root element (a couple times),
             // but today I can't reproduce that behavior
             //todo remove this section after committing it once (so it can be retrieved from version control if it later proves actually needed)
-            this.logger.trace(`NO ELEMENT FOUND AT POINT ${x}, ${y}; checking${doc? " relative to a surrounding context":""} for shadow roots that overlap that point`);
+            this.logger.trace(`NO ELEMENT FOUND AT POINT ${x}, ${y}; checking${searchDom? " relative to a surrounding context":""} for shadow roots that overlap that point`);
             //deal with shadow root possibility
             let currScopeShadowRootHostAtMousePos = undefined;
-            if (doc === undefined) {
+            if (searchDom === undefined) {
                 if (this.cachedShadowRootHostChildrenOfMainDoc === undefined) {this.cachedShadowRootHostChildrenOfMainDoc = this.initializeCacheOfShadowRootHostChildrenOfMainDoc();}
                 currScopeShadowRootHostAtMousePos = this.findShadowRootHostAtPos(x, y, this.cachedShadowRootHostChildrenOfMainDoc);
             } else {
-                const childrenOfCurrShadowRootWhichHostShadowRoots = this.domHelper.fetchElementsByCss('*', doc)
+                const childrenOfCurrShadowRootWhichHostShadowRoots = this.domHelper.fetchElementsByCss('*', searchDom)
                     .filter(elem => elem.shadowRoot !== null);
                 currScopeShadowRootHostAtMousePos = this.findShadowRootHostAtPos(x, y, childrenOfCurrShadowRootWhichHostShadowRoots);
             }
@@ -771,7 +812,9 @@ export class BrowserHelper {
             } else {this.logger.info("unable to find iframe node for iframe element, so unable to access the actual element at point which takes iframes into account");}
         } else if (foremostElemAtPoint.shadowRoot) {
             this.logger.trace(`RECURSING INTO SHADOW DOM to find element at position ${x}, ${y}, from host element at that point ${foremostElemAtPoint.outerHTML.slice(0,200)}`);
-            foremostElemAtPoint = this.actualElementFromPoint(x, y, foremostElemAtPoint.shadowRoot);
+            if (foremostElemAtPoint.shadowRoot !== searchDom) {
+                foremostElemAtPoint = this.actualElementFromPoint(x, y, foremostElemAtPoint.shadowRoot);
+            } else { this.logger.warn(`when searching for element at point ${x}, ${y} within a shadow root hosted by an element, the resulting element was the same as the host of the shadow root/DOM! aborting further recursion to avoid stack overflow; host element details: ${foremostElemAtPoint.outerHTML.slice(0,200)}`); }
         }
         return foremostElemAtPoint;
     }

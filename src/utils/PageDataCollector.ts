@@ -47,24 +47,15 @@ export class PageDataCollector {
                 const interactiveElementsData = this.browserHelper.getInteractiveElements();
                 const elementsDataInSerializableForm = interactiveElementsData.map(makeElementDataSerializable);
 
+                let targetElement: HTMLElement|undefined = undefined;
                 let targetElementData: SerializableElementData | undefined = undefined;
 
                 const currMouseX = this.mouseClientX;
                 const currMouseY = this.mouseClientY;
                 const foremostElementAtPoint = this.browserHelper.actualElementFromPoint(currMouseX, currMouseY);
-                let mousePosElemBoundingBox: BoundingBox | undefined = undefined;
-                let mousePosElemData: SerializableElementData | undefined = undefined;
-                if (foremostElementAtPoint) {
-                    const mousePosElemBoundingRect = this.domWrapper.grabClientBoundingRect(foremostElementAtPoint as HTMLElement);
-                    mousePosElemBoundingBox = {
-                        tLx: mousePosElemBoundingRect.left,
-                        tLy: mousePosElemBoundingRect.top,
-                        bRx: mousePosElemBoundingRect.right,
-                        bRy: mousePosElemBoundingRect.bottom
-                    };
-                    const mousePosElemFullData = this.browserHelper.getElementData(foremostElementAtPoint as HTMLElement);
-                    if (mousePosElemFullData) {mousePosElemData = makeElementDataSerializable(mousePosElemFullData);}
-                }
+
+                let shouldCaptureMousePosElemInfo = true;
+                let actuallyHighlightedElement: HTMLElement | undefined = undefined;
 
                 let candidateTargetElementsData = interactiveElementsData.filter(
                     (elementData) => elementData.element.contains(foremostElementAtPoint)
@@ -79,14 +70,17 @@ export class PageDataCollector {
                 }
                 candidateTargetElementsData.sort(this.sortBestTargetElemFirst(currMouseX, currMouseY))
                 if (candidateTargetElementsData.length > 0) {
+                    const fullTargetElemData = candidateTargetElementsData[0];
+                    targetElement = fullTargetElemData.element;
                     if (foremostElementAtPoint) {
-                        await this.browserHelper.highlightElement(foremostElementAtPoint as HTMLElement);
-                    } else {await this.browserHelper.highlightElement(candidateTargetElementsData[0].element);}
-                    targetElementData = makeElementDataSerializable(candidateTargetElementsData[0]);
+                        actuallyHighlightedElement = await this.browserHelper.highlightElement(foremostElementAtPoint);
+                    } else {actuallyHighlightedElement = await this.browserHelper.highlightElement(targetElement);}
+                    targetElementData = makeElementDataSerializable(fullTargetElemData);
+                    shouldCaptureMousePosElemInfo = foremostElementAtPoint !== targetElement;
                 } else {
                     const activeElem = this.browserHelper.findRealActiveElement();
                     if (activeElem) {
-                        const activeHtmlElement = activeElem as HTMLElement;
+                        const activeHtmlElement = activeElem;
                         const activeElementHtmlSample = activeHtmlElement.outerHTML.slice(0, 300);
 
                         const relevantInteractiveElementsEntry = interactiveElementsData.find((elementData) => elementData.element === activeHtmlElement);
@@ -95,14 +89,43 @@ export class PageDataCollector {
                             userMessage = "Target element chosen based on focus rather than mouse coordinates";
                             userMessageDetails = `Active element: ${activeElementHtmlSample}; \nmouse coordinates: (${currMouseX}, ${currMouseY})`;
                             //todo this highlighting doesn't show up in some sites where the focused element already has a pronounced border, maybe add additional logic?
-                            await this.browserHelper.highlightElement(activeHtmlElement);
+                            targetElement = activeHtmlElement;
+                            actuallyHighlightedElement = await this.browserHelper.highlightElement(targetElement);
                             targetElementData = makeElementDataSerializable(relevantInteractiveElementsEntry);
-                            mousePosElemBoundingBox = undefined;
                         } else {
                             this.logger.warn(`no interactive elements found at mouse coordinates ${currMouseX}, ${currMouseY}; active element was defined but wasn't recognized as an interactive element: ${activeElementHtmlSample}`);
                         }
                     }
                 }
+
+                let mousePosElemBoundingBox: BoundingBox | undefined = undefined;
+                let mousePosElemData: SerializableElementData | undefined = undefined;
+                if (foremostElementAtPoint && shouldCaptureMousePosElemInfo) {
+                    const mElemRect = this.domWrapper.grabClientBoundingRect(foremostElementAtPoint);
+                    mousePosElemBoundingBox =
+                        {tLx: mElemRect.left, tLy: mElemRect.top, bRx: mElemRect.right, bRy: mElemRect.bottom};
+                    const mousePosElemFullData = this.browserHelper.getElementData(foremostElementAtPoint);
+                    if (mousePosElemFullData) {
+                        mousePosElemData = makeElementDataSerializable(mousePosElemFullData);
+                        mousePosElemData.interactivesIndex= interactiveElementsData.findIndex((elementData) => elementData.element === foremostElementAtPoint);
+                    }
+                }
+
+                let actuallyHighlightedElemBoundingBox: BoundingBox | undefined = undefined;
+                let actuallyHighlightedElemData: SerializableElementData | undefined = undefined;
+                if (actuallyHighlightedElement && (
+                    (foremostElementAtPoint && actuallyHighlightedElement !== foremostElementAtPoint)
+                    || (targetElement && actuallyHighlightedElement !== targetElement))) {
+                    const highlitRect = this.domWrapper.grabClientBoundingRect(actuallyHighlightedElement);
+                    actuallyHighlightedElemBoundingBox =
+                        {tLx: highlitRect.left, tLy: highlitRect.top, bRx: highlitRect.right, bRy: highlitRect.bottom};
+                    const actualHighlitElemData = this.browserHelper.getElementData(actuallyHighlightedElement);
+                    if (actualHighlitElemData) {
+                        actuallyHighlightedElemData = makeElementDataSerializable(actualHighlitElemData);
+                        actuallyHighlightedElemData.interactivesIndex = interactiveElementsData.findIndex((elementData) => elementData.element === actuallyHighlightedElement);
+                    }
+                }
+
                 if (!targetElementData) {
                     this.logger.warn(`no interactive elements found at mouse coordinates ${currMouseX}, ${currMouseY}`);
                     userMessage = "Warning- No interactive elements found at mouse coordinates";
@@ -116,10 +139,10 @@ export class PageDataCollector {
                         interactiveElements: elementsDataInSerializableForm, mouseX: currMouseX, mouseY: currMouseY,
                         viewportInfo: this.domWrapper.getViewportInfo(), userMessage: userMessage,
                         userMessageDetails: userMessageDetails, url: this.domWrapper.getUrl(),
-                        //including mouse position element's bounding box separately in case description can't be created for it (in that case, element data would be null)
+                        //including an element's bounding box separately in case description can't be created for it (in that case, element data would be null)
                         mousePosElemBoundingBox: mousePosElemBoundingBox, mousePosElemData: mousePosElemData,
-                        htmlDump: this.domWrapper.getDocumentElement().outerHTML,
-
+                        highlitElemBoundingBox: actuallyHighlightedElemBoundingBox, highlitElemData: actuallyHighlightedElemData,
+                        htmlDump: this.domWrapper.getDocumentElement().outerHTML
                     });
                 } catch (error: any) {
                     this.logger.error(`error in content script while sending interactive elements to annotation coordinator; error: ${renderUnknownValue(error)}`);

@@ -65,10 +65,11 @@ export class DomWrapper {
     /**
      * trivial wrapper around window.getComputedStyle because jsdom doesn't support it and so it has to be mocked in unit tests
      * @param element the element whose computed style is needed
+     * @param pseudoElemName the name of the pseudo-element inside the given element whose style is needed
      * @returns the computed style of the element
      */
-    getComputedStyle = (element: HTMLElement): CSSStyleDeclaration => {
-        return this.window.getComputedStyle(element);
+    getComputedStyle = (element: HTMLElement, pseudoElemName: string|null|undefined = undefined): CSSStyleDeclaration => {
+        return this.window.getComputedStyle(element, pseudoElemName);
     }
 
     /**
@@ -124,7 +125,11 @@ export class DomWrapper {
         return this.dom.URL;
     }
 
-    elementFromPoint = (x: number, y: number, overrideDoc?: Document|ShadowRoot): Element | null => {
-        return (overrideDoc ?? this.dom).elementFromPoint(x, y);
+    elementFromPoint = (x: number, y: number, overrideDom?: Document|ShadowRoot): Element | null => {
+        return (overrideDom ?? this.dom).elementFromPoint(x, y);
+    }
+
+    elementsFromPoint = (x: number, y: number, overrideDom?: Document|ShadowRoot): Element[] => {
+        return (overrideDom ?? this.dom).elementsFromPoint(x, y);
     }
 }

@@ -70,6 +70,8 @@ export class ActionAnnotationCoordinator {
     currActionMouseCoords: { x: number, y: number } | undefined;
     mousePosElemBoundingBox: BoundingBox | undefined;
     mousePosElement: SerializableElementData | undefined;
+    highlitElemBoundingBox: BoundingBox | undefined;
+    highlitElement: SerializableElementData | undefined;
 
     currActionContextScreenshotBase64: string | undefined;
 
@@ -339,11 +341,25 @@ export class ActionAnnotationCoordinator {
         }
 
         const mousePosElemDataVal = message.mousePosElemData;
-        if (mousePosElemDataVal === undefined) {
-            this.logger.info("no mouse position element data in PAGE_INFO message from content script");
-        } else if (typeof mousePosElemDataVal !== "object" || notSameKeys(mousePosElemDataVal, exampleSerializableElemData)) {
-            return `invalid mouse position element data ${renderUnknownValue(mousePosElemDataVal)} in PAGE_INFO message from content script`;
-        } else { this.mousePosElement = mousePosElemDataVal; }
+        if (mousePosElemDataVal !== undefined) {
+            if (typeof mousePosElemDataVal !== "object" || notSameKeys(mousePosElemDataVal, exampleSerializableElemData)) {
+                return `invalid mouse position element data ${renderUnknownValue(mousePosElemDataVal)} in PAGE_INFO message from content script`;
+            } else { this.mousePosElement = mousePosElemDataVal; }
+        }
+
+        const highlitElemBoundingBoxVal: unknown = message.highlitElemBoundingBox;
+        if (highlitElemBoundingBoxVal !== undefined) {
+            if (!isValidBoundingBox(highlitElemBoundingBoxVal)) {
+                return `invalid actually-highlighted-element bounding box value ${renderUnknownValue(highlitElemBoundingBoxVal)} in PAGE_INFO message from content script`;
+            } else { this.highlitElemBoundingBox = highlitElemBoundingBoxVal; }
+        }
+
+        const highlitElemDataVal = message.highlitElemData;
+        if (highlitElemDataVal !== undefined) {
+            if (typeof highlitElemDataVal !== "object" || notSameKeys(highlitElemDataVal, exampleSerializableElemData)) {
+                return `invalid actually-highlighted-element data ${renderUnknownValue(highlitElemDataVal)} in PAGE_INFO message from content script`;
+            } else { this.highlitElement = highlitElemDataVal; }
+        }
 
         return undefined;//i.e. no validation errors, all data stored successfully
     }
@@ -372,9 +388,12 @@ export class ActionAnnotationCoordinator {
             mousePosition: this.currActionMouseCoords,
             mousePosElementData: this.mousePosElement,
             mousePosElemBoundingBox: this.mousePosElemBoundingBox,
+            actuallyHighlightedElementData: this.highlitElement,
+            actuallyHighlightedElementBoundingBox: this.highlitElemBoundingBox,
             viewportInfo: this.currActionViewportInfo
         };
-        if (annotationDtlsObj.mousePosElementData) { delete annotationDtlsObj.mousePosElemBoundingBox; }
+        if (annotationDtlsObj.mousePosElementData) {delete annotationDtlsObj.mousePosElemBoundingBox;}
+        if (annotationDtlsObj.actuallyHighlightedElementData) {delete annotationDtlsObj.actuallyHighlightedElementBoundingBox;}
         const annotationDetailsStr = JSON.stringify(annotationDtlsObj, replaceBlankWithNull, 4);
         zip.file("annotation_details.json", annotationDetailsStr);
 
@@ -487,5 +506,7 @@ export class ActionAnnotationCoordinator {
         this.currActionHtmlDump = undefined;
         this.mousePosElemBoundingBox = undefined;
         this.mousePosElement = undefined;
+        this.highlitElemBoundingBox = undefined;
+        this.highlitElement = undefined;
     }
 }
