@@ -69,6 +69,7 @@ export class ActionAnnotationCoordinator {
     currActionViewportInfo: ViewportDetails | undefined;
     currActionMouseCoords: { x: number, y: number } | undefined;
     mousePosElemBoundingBox: BoundingBox | undefined;
+    mousePosElement: SerializableElementData | undefined;
 
     currActionContextScreenshotBase64: string | undefined;
 
@@ -337,6 +338,13 @@ export class ActionAnnotationCoordinator {
             } else { this.mousePosElemBoundingBox = mousePosElemBoundingBoxVal; }
         }
 
+        const mousePosElemDataVal = message.mousePosElemData;
+        if (mousePosElemDataVal === undefined) {
+            this.logger.info("no mouse position element data in PAGE_INFO message from content script");
+        } else if (typeof mousePosElemDataVal !== "object" || notSameKeys(mousePosElemDataVal, exampleSerializableElemData)) {
+            return `invalid mouse position element data ${renderUnknownValue(mousePosElemDataVal)} in PAGE_INFO message from content script`;
+        } else { this.mousePosElement = mousePosElemDataVal; }
+
         return undefined;//i.e. no validation errors, all data stored successfully
     }
 
@@ -354,7 +362,7 @@ export class ActionAnnotationCoordinator {
 
         function replaceBlankWithNull(key: any, value: any) {return typeof value === "string" && value.trim().length === 0 ? null : value;}
 
-        const annotationDetailsStr = JSON.stringify({
+        const annotationDtlsObj = {
             annotationId: this.currAnnotationId,
             actionType: this.currAnnotationAction,
             actionStateChangeSeverity: this.currAnnotationStateChangeSeverity,
@@ -362,8 +370,12 @@ export class ActionAnnotationCoordinator {
             url: this.currActionUrl,
             targetElementData: this.currActionTargetElement,
             mousePosition: this.currActionMouseCoords,
+            mousePosElementData: this.mousePosElement,
+            mousePosElemBoundingBox: this.mousePosElemBoundingBox,
             viewportInfo: this.currActionViewportInfo
-        }, replaceBlankWithNull, 4);
+        };
+        if (annotationDtlsObj.mousePosElementData) { delete annotationDtlsObj.mousePosElemBoundingBox; }
+        const annotationDetailsStr = JSON.stringify(annotationDtlsObj, replaceBlankWithNull, 4);
         zip.file("annotation_details.json", annotationDetailsStr);
 
         if (this.currActionContextScreenshotBase64) {
@@ -473,5 +485,7 @@ export class ActionAnnotationCoordinator {
         this.currActionTargetedScreenshotBase64 = undefined;
         this.currActionInteractiveElements = undefined;
         this.currActionHtmlDump = undefined;
+        this.mousePosElemBoundingBox = undefined;
+        this.mousePosElement = undefined;
     }
 }

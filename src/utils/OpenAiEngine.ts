@@ -30,6 +30,8 @@ export class OpenAiEngine extends AiEngine {
     //todo openai finally supports function calling! should refactor this class to be like the others and not have to
     // simply use json output mode
     // also can use 'strict': 'true' https://openai.com/index/introducing-structured-outputs-in-the-api/
+    // also check for, capture, and log any refusal message, like with GoogleDeepAiEngine: https://platform.openai.com/docs/guides/structured-outputs/refusals
+    
     generate = async ({
                           prompts, generationType, imgDataUrl, planningOutput, groundingOutput,
                           maxNewTokens = 4096, temp = this.temperature, model = this.model

@@ -275,7 +275,7 @@ export class BrowserHelper {
     }
 
     private getFullXpathHelper = (element: HTMLElement): string => {
-        let xpath = getXPath(element);
+        let xpath = getXPath(element, {ignoreId: true});
         const rootElem = element.getRootNode();
         if (rootElem instanceof ShadowRoot) {
             xpath = this.getFullXpath(rootElem.host as HTMLElement) + "/shadow-root()" + xpath;
@@ -314,6 +314,9 @@ export class BrowserHelper {
                 elemY += hostBoundingRect.y;
                 //this.logger.debug(`adjusted coords to (${elemX}, ${elemY}) for host element with tag head ${host.tagName} and description: ${this.getElementDescription(host)}`);
             }
+            if (element.documentHostChain.length > 1) {
+                this.logger.warn(`SURPRISING SCENARIO: _interactive_ element with tag head ${tagHead} and description: ${description} had a document host chain with length ${element.documentHostChain.length}`);
+            }
             //otherwise, you get really bizarre behavior where position measurements for 2nd/3rd/etc. annotations on the
             // same page are increasingly wildly off (for elements inside iframes)
             delete element.documentHostChain;
@@ -343,13 +346,15 @@ export class BrowserHelper {
     calcIsHidden = (element: HTMLElement, iframeNode: IframeNode, isDocHostElem: boolean = false,
                     shouldDebug: boolean = false): boolean => {
         const elementComputedStyle = this.domHelper.getComputedStyle(element);
+        const elementBoundingRect = this.domHelper.grabClientBoundingRect(element);
         const isElementHiddenForOverflow = elementComputedStyle.overflow === "hidden" &&
             (element.scrollHeight > element.clientHeight || element.scrollWidth > element.clientWidth);//thanks to https://stackoverflow.com/a/9541579/10808625
 
         let isElemBuried: boolean | undefined = undefined;
         let doesElemSeemInvisible = elementComputedStyle.display === "none" || elementComputedStyle.visibility === "hidden"
             || element.hidden || isElementHiddenForOverflow || elementComputedStyle.opacity === "0"
-            || elementComputedStyle.height === "0px" || elementComputedStyle.width === "0px";
+            || elementComputedStyle.height === "0px" || elementComputedStyle.width === "0px" ||
+            elementBoundingRect.width === 0 || elementBoundingRect.height === 0;
 
         if (element.tagName.toLowerCase() !== "input") {
             //1x1 px elements are generally a css hack to make an element temporarily ~invisible, but sometimes there are

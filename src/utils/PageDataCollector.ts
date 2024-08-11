@@ -4,7 +4,9 @@ import {ChromeWrapper} from "./ChromeWrapper";
 import {Logger} from "loglevel";
 import {createNamedLogger} from "./shared_logging_setup";
 import {
-    AnnotationCoordinator2PagePortMsgType, BoundingBox, ElementData,
+    AnnotationCoordinator2PagePortMsgType,
+    BoundingBox,
+    ElementData,
     Page2AnnotationCoordinatorPortMsgType,
     renderUnknownValue,
     SerializableElementData
@@ -51,6 +53,7 @@ export class PageDataCollector {
                 const currMouseY = this.mouseClientY;
                 const foremostElementAtPoint = this.browserHelper.actualElementFromPoint(currMouseX, currMouseY);
                 let mousePosElemBoundingBox: BoundingBox | undefined = undefined;
+                let mousePosElemData: SerializableElementData | undefined = undefined;
                 if (foremostElementAtPoint) {
                     const mousePosElemBoundingRect = this.domWrapper.grabClientBoundingRect(foremostElementAtPoint as HTMLElement);
                     mousePosElemBoundingBox = {
@@ -59,6 +62,8 @@ export class PageDataCollector {
                         bRx: mousePosElemBoundingRect.right,
                         bRy: mousePosElemBoundingRect.bottom
                     };
+                    const mousePosElemFullData = this.browserHelper.getElementData(foremostElementAtPoint as HTMLElement);
+                    if (mousePosElemFullData) {mousePosElemData = makeElementDataSerializable(mousePosElemFullData);}
                 }
 
                 let candidateTargetElementsData = interactiveElementsData.filter(
@@ -111,7 +116,8 @@ export class PageDataCollector {
                         interactiveElements: elementsDataInSerializableForm, mouseX: currMouseX, mouseY: currMouseY,
                         viewportInfo: this.domWrapper.getViewportInfo(), userMessage: userMessage,
                         userMessageDetails: userMessageDetails, url: this.domWrapper.getUrl(),
-                        mousePosElemBoundingBox: mousePosElemBoundingBox,
+                        //including mouse position element's bounding box separately in case description can't be created for it (in that case, element data would be null)
+                        mousePosElemBoundingBox: mousePosElemBoundingBox, mousePosElemData: mousePosElemData,
                         htmlDump: this.domWrapper.getDocumentElement().outerHTML,
 
                     });
@@ -138,20 +144,34 @@ export class PageDataCollector {
         return (elementData1: ElementData, elementData2: ElementData): number => {
             //leaving this log message here because this method should be called pretty rarely
             this.logger.trace(`JUDGING ELEMENTS FOR RELEVANCE TO MOUSE CURSOR: element A ${elementData1.description.slice(0, 100)}; element B ${elementData2.description.slice(0, 100)}`);
-            const elem1Foregroundedness = this.browserHelper.judgeOverlappingElementsForForeground(elementData1, elementData2);
 
-            if (elem1Foregroundedness !== 0) {
-                //return negative if elem1 is foremost and so should be earlier in the list of target element candidates
-                return -elem1Foregroundedness;
-            } else {
-                const elem1CenterDistFromCursor = Math.sqrt(Math.pow(elementData1.centerCoords[0] - currMouseX, 2)
-                    + Math.pow(elementData1.centerCoords[1] - currMouseY, 2));
-                const elem2CenterDistFromCursor = Math.sqrt(Math.pow(elementData2.centerCoords[0] - currMouseX, 2)
-                    + Math.pow(elementData2.centerCoords[1] - currMouseY, 2));
+            const elem1Box = elementData1.boundingBox;
+            const elem2Box = elementData2.boundingBox;
+            const overlapArea = Math.max(0, Math.min(elem1Box.bRx, elem2Box.bRx) - Math.max(elem1Box.tLx, elem2Box.tLx))
+                * Math.max(0, Math.min(elem1Box.bRy, elem2Box.bRy) - Math.max(elem1Box.tLy, elem2Box.tLy));
+            const elem1AreaOverlapFraction = overlapArea / ((elem1Box.bRx - elem1Box.tLx) * (elem1Box.bRy - elem1Box.tLy))
+            const elem2AreaOverlapFraction = overlapArea / ((elem2Box.bRx - elem2Box.tLx) * (elem2Box.bRy - elem2Box.tLy));
+            const elemOverlapAreaThreshold = 0.1;
+            const shouldConsiderOverlapForegroundedness = elem1AreaOverlapFraction > elemOverlapAreaThreshold
+                || elem2AreaOverlapFraction > elemOverlapAreaThreshold;
 
-                //return negative if elem1 is closer to the cursor and so has smaller distance
-                return elem1CenterDistFromCursor - elem2CenterDistFromCursor;
-            }
+            const elem1CenterDistFromCursor = Math.sqrt(Math.pow(elementData1.centerCoords[0] - currMouseX, 2)
+                + Math.pow(elementData1.centerCoords[1] - currMouseY, 2));
+            const elem2CenterDistFromCursor = Math.sqrt(Math.pow(elementData2.centerCoords[0] - currMouseX, 2)
+                + Math.pow(elementData2.centerCoords[1] - currMouseY, 2));
+            //return negative if elem1 is closer to the cursor and so has smaller distance
+            const relativeDistFromCursor = elem1CenterDistFromCursor - elem2CenterDistFromCursor;
+
+            if (shouldConsiderOverlapForegroundedness) {
+                this.logger.trace(`considering which element is foremost in overlap area; overlap is ${elem1AreaOverlapFraction} of element A's area and ${elem2AreaOverlapFraction} of element B's area`);
+                const elem1Foregroundedness = this.browserHelper.judgeOverlappingElementsForForeground(elementData1, elementData2);
+                if (elem1Foregroundedness !== 0) {
+                    //return negative if elem1 is foremost and so should be earlier in the list of target element candidates
+                    return -elem1Foregroundedness;
+                } else {
+                    return relativeDistFromCursor;
+                }
+            } else {return relativeDistFromCursor;}
         };
     }
 
