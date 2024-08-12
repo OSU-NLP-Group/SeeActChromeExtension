@@ -403,10 +403,12 @@ export class BrowserHelper {
 
     isBuriedInBackground = (element: HTMLElement): boolean => {
         const boundRect = this.domHelper.grabClientBoundingRect(element);
+        if (boundRect.width === 0 || boundRect.height === 0) { return false; }
+
         //todo experiment with whether there are problems from restricting this to solely the center point
         // maybe make that a toggleable option to boost performance
-        const queryPoints: [number, number][] = [[boundRect.x, boundRect.y], [boundRect.x + boundRect.width, boundRect.y],
-            [boundRect.x, boundRect.y + boundRect.height], [boundRect.x + boundRect.width, boundRect.y + boundRect.height],
+        const queryPoints: [number, number][] = [[boundRect.x+1, boundRect.y+1], [boundRect.x + boundRect.width-1, boundRect.y+1],
+            [boundRect.x+1, boundRect.y + boundRect.height-1], [boundRect.x + boundRect.width-1, boundRect.y + boundRect.height-1],
             [boundRect.x + boundRect.width / 2, boundRect.y + boundRect.height / 2]];
         //can add more query points based on quarters of width and height if we ever encounter a scenario where the existing logic incorrectly dismisses an element as being fully background-hidden
         let isBuried = true;
