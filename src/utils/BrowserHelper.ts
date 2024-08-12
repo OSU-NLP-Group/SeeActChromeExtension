@@ -6,7 +6,7 @@ import * as fuzz from "fuzzball";
 import {
     ElementData,
     elementHighlightRenderDelay,
-    HTMLElementWithDocumentHost,
+    HTMLElementWithDocumentHost, isDocument, isHtmlElement, isIframeElement, isShadowRoot,
     renderUnknownValue,
     SerializableElementData,
     sleep
@@ -65,9 +65,8 @@ export class BrowserHelper {
      */
     getElementText = (elementToActOn: HTMLElement): string | null => {
         let priorElementText = elementToActOn.textContent;
-        if (elementToActOn instanceof HTMLInputElement || elementToActOn instanceof HTMLTextAreaElement
-            || ('value' in elementToActOn && typeof (elementToActOn.value) === 'string')) {
-            priorElementText = (elementToActOn.value as string | null) ?? elementToActOn.textContent;
+        if (('value' in elementToActOn && typeof (elementToActOn.value) === 'string')) {
+            priorElementText = elementToActOn.value as string | null;
         }
         return priorElementText;
     }
@@ -277,7 +276,7 @@ export class BrowserHelper {
     private getFullXpathHelper = (element: HTMLElement): string => {
         let xpath = getXPath(element, {ignoreId: true});
         const rootElem = element.getRootNode();
-        if (rootElem instanceof ShadowRoot) {
+        if (isShadowRoot(rootElem)) {
             xpath = this.getFullXpath(rootElem.host as HTMLElement) + "/shadow-root()" + xpath;
         }
         return xpath;
@@ -350,7 +349,7 @@ export class BrowserHelper {
 
         let isElemBuried: boolean | undefined = undefined;
         let doesElemSeemInvisible = element.hidden || elemComputedStyle.display === "none"
-                || elemComputedStyle.visibility === "hidden";
+            || elemComputedStyle.visibility === "hidden";
 
         if (!isDocHostElem) {
             doesElemSeemInvisible = doesElemSeemInvisible || elemComputedStyle.height === "0px"
@@ -407,8 +406,8 @@ export class BrowserHelper {
 
         //todo experiment with whether there are problems from restricting this to solely the center point
         // maybe make that a toggleable option to boost performance
-        const queryPoints: [number, number][] = [[boundRect.x+1, boundRect.y+1], [boundRect.x + boundRect.width-1, boundRect.y+1],
-            [boundRect.x+1, boundRect.y + boundRect.height-1], [boundRect.x + boundRect.width-1, boundRect.y + boundRect.height-1],
+        const queryPoints: [number, number][] = [[boundRect.x + 1, boundRect.y + 1], [boundRect.x + boundRect.width - 1, boundRect.y + 1],
+            [boundRect.x + 1, boundRect.y + boundRect.height - 1], [boundRect.x + boundRect.width - 1, boundRect.y + boundRect.height - 1],
             [boundRect.x + boundRect.width / 2, boundRect.y + boundRect.height / 2]];
         //can add more query points based on quarters of width and height if we ever encounter a scenario where the existing logic incorrectly dismisses an element as being fully background-hidden
         let isBuried = true;
@@ -426,24 +425,24 @@ export class BrowserHelper {
         return isBuried;
     }
 
+    hasDisabledProperty(element: any): element is { disabled: boolean } {
+        return 'disabled' in element && typeof element.disabled === "boolean";
+    }
+
+    hasReadOnlyProperty(element: any): element is { readOnly: boolean } {
+        return 'readOnly' in element && typeof element.readOnly === "boolean";
+    }
+
     /**
      * @description Determine whether an element is disabled, based on its attributes and properties
      * @param element the element which might be disabled
      * @return true if the element is disabled, false if it is enabled
      */
     calcIsDisabled = (element: HTMLElement): boolean => {
-        return element.ariaDisabled === "true"
-            || ((element instanceof HTMLButtonElement || element instanceof HTMLInputElement
-                    || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement
-                    || element instanceof HTMLOptGroupElement || element instanceof HTMLOptionElement
-                    || element instanceof HTMLFieldSetElement)
-                && element.disabled)
-            || ((element instanceof HTMLTextAreaElement || element instanceof HTMLInputElement) && element.readOnly)
-            || element.getAttribute("disabled") != null;
+        return element.ariaDisabled === "true" || (this.hasDisabledProperty(element) && element.disabled)
+            || (this.hasReadOnlyProperty(element) && element.readOnly) || element.getAttribute("disabled") != null;
+        //todo consider inert? https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/inert
     }
-
-    //is it possible to make this work even when there are shadow dom's?? and iframes?
-    // is it worth working on that?
 
     /**
      * @description Get interactive elements in the DOM, including links, buttons, inputs, selects, textareas, and elements with certain roles
@@ -566,7 +565,7 @@ export class BrowserHelper {
             const pseudoElemStyle = this.domHelper.getComputedStyle(element, pseudoElemName);
             const isPseudoElemPresent = pseudoElemStyle.content !== "" && pseudoElemStyle.content !== "none"
                 && pseudoElemStyle.content !== "normal";
-            if (isPseudoElemPresent) { this.logger.debug(`FOUND PSEUDO-ELEMENT ${pseudoElemName} with computed style ${JSON.stringify(pseudoElemStyle)} inside of element ${element.outerHTML.slice(0,200)}`) }
+            if (isPseudoElemPresent) { this.logger.debug(`FOUND PSEUDO-ELEMENT ${pseudoElemName} with computed style ${JSON.stringify(pseudoElemStyle)} inside of element ${element.outerHTML.slice(0, 200)}`) }
             return isPseudoElemPresent;
         });
     }
@@ -707,7 +706,7 @@ export class BrowserHelper {
         if (currContextActiveElement) {
             if (currContextActiveElement.shadowRoot) {
                 actualActiveElement = this.getRealActiveElementInContext(currContextActiveElement.shadowRoot);
-            } else if (currContextActiveElement instanceof HTMLIFrameElement) {
+            } else if (isIframeElement(currContextActiveElement)) {
                 const iframeContent = this.getIframeContent(currContextActiveElement);
                 if (iframeContent) {
                     actualActiveElement = this.getRealActiveElementInContext(iframeContent);
@@ -780,24 +779,20 @@ export class BrowserHelper {
         // return the real element at the point (the one inside the shadow DOM), while elementFromPoint() will return the shadow host, even when called on that shadow host's shadowRoot!
         // even though those two expressions should theoretically always be equivalent when there's an element at that point at all
         const elemsAtPoint = this.domHelper.elementsFromPoint(x, y, searchDom);
-        const searchContextHost: Element|null = searchDom instanceof ShadowRoot ? searchDom.host : null;
+        const searchContextHost: Element | null = isShadowRoot(searchDom) ? searchDom.host : null;
         for (const elem of elemsAtPoint) {
-            if (elem instanceof HTMLElement) {
+            if (isHtmlElement(elem)) {
                 if (searchContextHost === elem) {
-                    this.logger.trace(`FOUND THE SHADOW HOST ELEMENT AT THE POINT ${x}, ${y} when searching within that host element's shadow DOM; skipping it: ${elem.outerHTML.slice(0,200)}`);
+                    this.logger.trace(`FOUND THE SHADOW HOST ELEMENT AT THE POINT ${x}, ${y} when searching within that host element's shadow DOM; skipping it: ${elem.outerHTML.slice(0, 200)}`);
                 } else {
                     foremostElemAtPoint = elem;
                     break;
                 }
-            } else { this.logger.info(`FOUND A NON HTMLELEMENT ELEMENT AT THE POINT ${x}, ${y}; skipping it: ${elem.outerHTML.slice(0,200)}`); }
+            } else { this.logger.info(`FOUND A NON HTMLELEMENT ELEMENT AT THE POINT ${x}, ${y}; skipping it: ${elem.outerHTML.slice(0, 200)}`); }
         }
 
         if (!foremostElemAtPoint) {
-            //was this section added based on a misunderstanding or an anomaly in browser dev tools behavior?
-            // I'd thought I'd seen document.elementFromPoint() return null when I was hovering over a shadow root element (a couple times),
-            // but today I can't reproduce that behavior
-            //todo remove this section after committing it once (so it can be retrieved from version control if it later proves actually needed)
-            this.logger.trace(`NO ELEMENT FOUND AT POINT ${x}, ${y}; checking${searchDom? " relative to a surrounding context":""} for shadow roots that overlap that point`);
+            this.logger.trace(`NO ELEMENT FOUND AT POINT ${x}, ${y}; checking${searchDom ? " relative to a surrounding context" : ""} for shadow roots that overlap that point`);
             //deal with shadow root possibility
             let currScopeShadowRootHostAtMousePos = undefined;
             if (searchDom === undefined) {
@@ -812,7 +807,7 @@ export class BrowserHelper {
                 this.logger.trace(`RECURSING INTO SHADOW DOM to find element at position ${x}, ${y}`);
                 foremostElemAtPoint = this.actualElementFromPoint(x, y, currScopeShadowRootHostAtMousePos.shadowRoot);
             }
-        } else if (foremostElemAtPoint instanceof HTMLIFrameElement) {
+        } else if (isIframeElement(foremostElemAtPoint)) {
             if (!this.cachedIframeTree) {this.cachedIframeTree = new IframeTree(this.domHelper.window as Window, this.logger);}
             const iframeNode = this.cachedIframeTree.findIframeNodeForIframeElement(foremostElemAtPoint);
             if (iframeNode) {
@@ -822,10 +817,10 @@ export class BrowserHelper {
                 } else {this.logger.info("unable to access iframe content, so unable to access the actual element at point which takes iframes into account");}
             } else {this.logger.info("unable to find iframe node for iframe element, so unable to access the actual element at point which takes iframes into account");}
         } else if (foremostElemAtPoint.shadowRoot) {
-            this.logger.trace(`RECURSING INTO SHADOW DOM to find element at position ${x}, ${y}, from host element at that point ${foremostElemAtPoint.outerHTML.slice(0,200)}`);
+            this.logger.trace(`RECURSING INTO SHADOW DOM to find element at position ${x}, ${y}, from host element at that point ${foremostElemAtPoint.outerHTML.slice(0, 200)}`);
             if (foremostElemAtPoint.shadowRoot !== searchDom) {
                 foremostElemAtPoint = this.actualElementFromPoint(x, y, foremostElemAtPoint.shadowRoot);
-            } else { this.logger.warn(`when searching for element at point ${x}, ${y} within a shadow root hosted by an element, the resulting element was the same as the host of the shadow root/DOM! aborting further recursion to avoid stack overflow; host element details: ${foremostElemAtPoint.outerHTML.slice(0,200)}`); }
+            } else { this.logger.warn(`when searching for element at point ${x}, ${y} within a shadow root hosted by an element, the resulting element was the same as the host of the shadow root/DOM! aborting further recursion to avoid stack overflow; host element details: ${foremostElemAtPoint.outerHTML.slice(0, 200)}`); }
         }
         return foremostElemAtPoint;
     }
@@ -852,14 +847,14 @@ export class BrowserHelper {
      */
     getRealParentElement = (element: HTMLElement): HTMLElement | null => {
         let parentElement: HTMLElement | null = null;
-        if (element.parentNode instanceof ShadowRoot) {
+        if (isShadowRoot(element.parentNode)) {
             const hostElem = element.parentNode.host;
-            if (hostElem instanceof HTMLElement) {
+            if (isHtmlElement(hostElem)) {
                 parentElement = hostElem;
             } else { this.logger.info(`ELEMENT HAD SHADOW ROOT PARENT WITH ${hostElem === null ? "null host" : "non-HTMLElement host"}; element text: ${element.outerHTML.slice(0, 300)}`); }
-        } else if (element.parentNode instanceof Document && element.parentNode.defaultView?.frameElement) {
+        } else if (isDocument(element.parentNode) && element.parentNode.defaultView?.frameElement) {
             const frameElem = element.parentNode.defaultView.frameElement;
-            if (frameElem instanceof HTMLElement) {
+            if (isHtmlElement(frameElem)) {
                 parentElement = frameElem;
             } else { this.logger.info(`ELEMENT AT TOP OF SECONDARY DOCUMENT HAD ${frameElem === null ? "null frame" : "non-HTMLElement frame"} element as the host/frame for that secondary document; element text: ${element.outerHTML.slice(0, 300)}`); }
         } else {

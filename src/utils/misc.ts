@@ -223,6 +223,48 @@ export function isValidBoundingBox(boxVal: unknown): boxVal is BoundingBox {
     return typeof boxVal === "object" && boxVal !== null && "tLx" in boxVal && "tLy" in boxVal && "bRx" in boxVal && "bRy" in boxVal;
 }
 
+function getInternalClass(obj: any): string {return Object.prototype.toString.call(obj).slice(8, -1);}
+
+export function isDocument(node: Node | null | undefined): node is Document {
+    return node !== null && node != undefined && (
+        node instanceof Document || getInternalClass(node) === "Document"
+        || ('doctype' in node && 'implementation' in node && 'documentElement' in node)
+        || ('defaultView' in node && typeof node.defaultView === "object" && node.defaultView !== null
+            && 'document' in node.defaultView && node === node.defaultView.document));
+}
+
+export function isShadowRoot(node: Node | null | undefined): node is ShadowRoot {
+    return node !== null && node != undefined && (
+        node instanceof ShadowRoot || getInternalClass(node) === "ShadowRoot"
+        || ((node instanceof DocumentFragment || getInternalClass(node) === "DocumentFragment")
+            && 'host' in node && 'mode' in node));
+}
+
+const propsAlwaysAndOnlyInHtmlElements = ['style', 'innerText'];
+const methodsAlwaysAndOnlyInHtmlElements = ['blur', 'click', 'focus'];
+export function isHtmlElement(node: Node | null | undefined): node is HTMLElement {
+    if (node === null || node === undefined) { return false; }
+    if (node instanceof HTMLElement) { return true; }
+    const nodeType = getInternalClass(node);
+    if ((nodeType.startsWith("SVG") && nodeType.endsWith("Element")) || nodeType.startsWith("MathML")) { return false; }
+
+    return (nodeType.startsWith("HTML") && nodeType.endsWith("Element"))
+        || (propsAlwaysAndOnlyInHtmlElements.every(prop => prop in node)
+            && methodsAlwaysAndOnlyInHtmlElements.every(method => typeof (node as any)[method] === "function"));
+}
+
+export function isIframeElement(element: HTMLElement): element is HTMLIFrameElement {
+    if (element instanceof HTMLIFrameElement || element.tagName.toLowerCase() === "iframe") { return true; }
+    const elemType = getInternalClass(element).toLowerCase();
+    if (elemType.includes("iframe") && elemType.includes("element")) { return true;}
+    try {
+        //'data'/'type' checks are to rule out the element being an instance of HTMLObjectElement
+        return 'contentDocument' in element && 'contentWindow' in element && !('data' in element || 'type' in element);
+    } catch (e: any) {
+        return e.name === "SecurityError";
+    }
+}
+
 /**
  * @description Builds a description of an action (which may have been performed on an element)
  * @param action name of the action
