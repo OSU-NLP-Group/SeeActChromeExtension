@@ -422,7 +422,7 @@ export class PageActor {
             }
         }
 
-        await this.browserHelper.highlightElement(elementToActOn);
+        await this.browserHelper.highlightElement(elementToActOn, this.interactiveElements);
 
         try {
             const resp = await this.chromeWrapper.sendMessageToServiceWorker({

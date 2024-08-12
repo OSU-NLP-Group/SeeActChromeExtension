@@ -73,8 +73,8 @@ export class PageDataCollector {
                     const fullTargetElemData = candidateTargetElementsData[0];
                     targetElement = fullTargetElemData.element;
                     if (foremostElementAtPoint) {
-                        actuallyHighlightedElement = await this.browserHelper.highlightElement(foremostElementAtPoint);
-                    } else {actuallyHighlightedElement = await this.browserHelper.highlightElement(targetElement);}
+                        actuallyHighlightedElement = await this.browserHelper.highlightElement(foremostElementAtPoint, interactiveElementsData);
+                    } else {actuallyHighlightedElement = await this.browserHelper.highlightElement(targetElement, interactiveElementsData);}
                     targetElementData = makeElementDataSerializable(fullTargetElemData);
                     shouldCaptureMousePosElemInfo = foremostElementAtPoint !== targetElement;
                 } else {
@@ -90,7 +90,7 @@ export class PageDataCollector {
                             userMessageDetails = `Active element: ${activeElementHtmlSample}; \nmouse coordinates: (${currMouseX}, ${currMouseY})`;
                             //todo this highlighting doesn't show up in some sites where the focused element already has a pronounced border, maybe add additional logic?
                             targetElement = activeHtmlElement;
-                            actuallyHighlightedElement = await this.browserHelper.highlightElement(targetElement);
+                            actuallyHighlightedElement = await this.browserHelper.highlightElement(targetElement, interactiveElementsData);
                             targetElementData = makeElementDataSerializable(relevantInteractiveElementsEntry);
                         } else {
                             this.logger.warn(`no interactive elements found at mouse coordinates ${currMouseX}, ${currMouseY}; active element was defined but wasn't recognized as an interactive element: ${activeElementHtmlSample}`);

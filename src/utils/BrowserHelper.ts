@@ -159,7 +159,7 @@ export class BrowserHelper {
         let parentText = parent ? this.domHelper.getInnerText(parent) : "";
         //todo remove this once I figure out what went wrong here a couple times
         if (parentText === undefined || parentText === null) {
-            this.logger.error(`parent text was null or undefined for element ${parent?.outerHTML.slice(0,100)}`);
+            this.logger.error(`parent text was null or undefined for element ${parent?.outerHTML.slice(0, 300)}`);
             parentText = "";
         }
         const parentFirstLine = this.removeEolAndCollapseWhitespace(this.getFirstLine(parentText)).trim();
@@ -292,8 +292,8 @@ export class BrowserHelper {
     getElementData = (element: HTMLElementWithDocumentHost): ElementData | null => {
         const description = this.getElementDescription(element);
         if (!description) {
-            this.logger.trace(`unable to generate description for element, so skipping it; outerHTML: ${element.outerHTML.slice(0, 100)}; parent outerHTML: ${this.getRealParentElement(element)
-                ?.outerHTML.slice(0, 100)}`);
+            this.logger.trace(`unable to generate description for element, so skipping it; outerHTML: ${element.outerHTML.slice(0, 300)}; parent outerHTML: ${this.getRealParentElement(element)
+                ?.outerHTML.slice(0, 300)}`);
             return null;
         }
 
@@ -345,23 +345,24 @@ export class BrowserHelper {
      */
     calcIsHidden = (element: HTMLElement, iframeNode: IframeNode, isDocHostElem: boolean = false,
                     shouldDebug: boolean = false): boolean => {
-        const elementComputedStyle = this.domHelper.getComputedStyle(element);
-        const elementBoundingRect = this.domHelper.grabClientBoundingRect(element);
-        const isElementHiddenForOverflow = elementComputedStyle.overflow === "hidden" &&
-            (element.scrollHeight > element.clientHeight || element.scrollWidth > element.clientWidth);//thanks to https://stackoverflow.com/a/9541579/10808625
+        const elemComputedStyle = this.domHelper.getComputedStyle(element);
+        const elemBoundRect = this.domHelper.grabClientBoundingRect(element);
 
         let isElemBuried: boolean | undefined = undefined;
-        let doesElemSeemInvisible = elementComputedStyle.display === "none" || elementComputedStyle.visibility === "hidden"
-            || element.hidden || isElementHiddenForOverflow
-            || elementComputedStyle.height === "0px" || elementComputedStyle.width === "0px" ||
-            elementBoundingRect.width === 0 || elementBoundingRect.height === 0;
+        let doesElemSeemInvisible = element.hidden || elemComputedStyle.display === "none"
+                || elemComputedStyle.visibility === "hidden";
+
+        if (!isDocHostElem) {
+            doesElemSeemInvisible = doesElemSeemInvisible || elemComputedStyle.height === "0px"
+                || elemComputedStyle.width === "0px" || elemBoundRect.width === 0 || elemBoundRect.height === 0;
+        }
 
         if (element.tagName.toLowerCase() !== "input") {
             //1x1 px or 0-opacity elements are generally a css hack to make an element temporarily ~invisible, but
             // sometimes there are weird shenanigans with things like checkbox inputs being 1x1 or completely-transparent
             // but somehow hooked up to a larger clickable span (the span is usually the sibling of the input)
-            doesElemSeemInvisible = doesElemSeemInvisible || elementComputedStyle.height === "1px" || elementComputedStyle.width === "1px"
-                || elementComputedStyle.opacity === "0";
+            doesElemSeemInvisible = doesElemSeemInvisible || elemComputedStyle.height === "1px" || elemComputedStyle.width === "1px"
+                || elemComputedStyle.opacity === "0";
         }
         if (!doesElemSeemInvisible && !isDocHostElem) {
             //skipping this for elements that are fully outside the viewport
@@ -378,10 +379,10 @@ export class BrowserHelper {
 
         //if an element is inline and non-childless, its own width and height may not actually be meaningful (since its children
         // can have non-zero width/height and bubble events like clicks up to this element)
-        if (doesElemSeemInvisible && elementComputedStyle.display.indexOf("inline") !== -1) {
+        if (doesElemSeemInvisible && elemComputedStyle.display.indexOf("inline") !== -1) {
             for (const child of element.children) {
                 if (!this.calcIsHidden(child as HTMLElement, iframeNode, false, shouldDebug)) {
-                    this.logger.info(`FOUND A WEIRD ELEMENT ${element.outerHTML.slice(0, 100)}... which itself seemed invisible but which had some kind of 'inline' display status and which had a visible child ${child.outerHTML.slice(0, 100)}...`)
+                    this.logger.info(`FOUND A WEIRD ELEMENT ${element.outerHTML.slice(0, 300)}... which itself seemed invisible but which had some kind of 'inline' display status and which had a visible child ${child.outerHTML.slice(0, 300)}...`)
                     doesElemSeemInvisible = false;
                     break;
                 }
@@ -389,7 +390,7 @@ export class BrowserHelper {
         }
 
         if (doesElemSeemInvisible && shouldDebug) {
-            this.logger.trace(`Element with tag name ${element.tagName} and description: ${this.getElementDescription(element)} was determined to be hidden; isHiddenForOverflow: ${isElementHiddenForOverflow}, is buried in background: ${isElemBuried}; computed style properties: width=${elementComputedStyle.width}, height=${elementComputedStyle.height}, display=${elementComputedStyle.display}, visibility=${elementComputedStyle.visibility}, opacity=${elementComputedStyle.opacity}`);
+            this.logger.trace(`Element with tag name ${element.tagName} and description: ${this.getElementDescription(element)} was determined to be hidden; is buried in background: ${isElemBuried}; computed style properties: width=${elemComputedStyle.width}, height=${elemComputedStyle.height}, display=${elemComputedStyle.display}, visibility=${elemComputedStyle.visibility}, opacity=${elemComputedStyle.opacity}`);
         }
 
         return doesElemSeemInvisible;
@@ -473,17 +474,22 @@ export class BrowserHelper {
         return interactiveElementsData;
     }
 
-    highlightElement = async (element: HTMLElement, highlightDuration: number = 30000): Promise<HTMLElement> => {
+    highlightElement = async (element: HTMLElement, allInteractiveElements: ElementData[] = [], highlightDuration: number = 30000): Promise<HTMLElement> => {
         let elemToHighlight = element;
         if (this.doesElementContainSpaceOccupyingPseudoElements(element)) {
             this.logger.debug(`Element contains space-occupying pseudo-elements which typically throw off outline-based highlighting, so trying to highlight parent element instead; pseudoelement-containing element: ${this.getElementDescription(element)}`);
             const parentElem = element.parentElement;
-            if (parentElem) {elemToHighlight = parentElem;}
+            if (parentElem) {
+                const numInteractiveElementsUnderParent = allInteractiveElements.filter(interactiveElem => parentElem.contains(interactiveElem.element)).length;
+                if (numInteractiveElementsUnderParent <= 1) {
+                    elemToHighlight = parentElem;
+                }
+            }
         }
-        return await this.highlightElementHelper(elemToHighlight, highlightDuration);
+        return await this.highlightElementHelper(elemToHighlight, allInteractiveElements, highlightDuration);
     }
 
-    highlightElementHelper = async (element: HTMLElement, highlightDuration: number = 30000): Promise<HTMLElement> => {
+    highlightElementHelper = async (element: HTMLElement, allInteractiveElements: ElementData[] = [], highlightDuration: number = 30000): Promise<HTMLElement> => {
         let elementHighlighted = element;
         await this.clearElementHighlightingEarly();
         const elementStyle: CSSStyleDeclaration = element.style;
@@ -509,8 +515,11 @@ export class BrowserHelper {
             this.logger.info(`Element outline was not successfully set to red; computed outline is still the same as before (initialComputedOutline: ${initialComputedOutline}; computedOutlinePostStyleMod: ${computedOutlinePostStyleMod}; similarity ${computedOutlineSimilarity})`);
             const parentElem = element.parentElement;
             if (parentElem) {
-                this.logger.debug("trying to highlight parent element instead");
-                elementHighlighted = await this.highlightElementHelper(parentElem, highlightDuration);
+                const numInteractiveElementsUnderParent = allInteractiveElements.filter(interactiveElem => parentElem.contains(interactiveElem.element)).length;
+                if (numInteractiveElementsUnderParent <= 1) {
+                    this.logger.debug("trying to highlight parent element instead");
+                    elementHighlighted = await this.highlightElementHelper(parentElem, allInteractiveElements, highlightDuration);
+                }
             }
         } else {
             this.logger.trace(`initialComputedOutline: ${initialComputedOutline}; computedOutlinePostStyleMod: ${computedOutlinePostStyleMod}; similarity: ${computedOutlineSimilarity}`)
@@ -631,7 +640,7 @@ export class BrowserHelper {
                 continue;
             }
             if (shouldIgnoreHidden && this.calcIsHidden(childIframeElem, iframeContextNode, true)) {
-                this.logger.trace(`Ignoring hidden iframe element ${childIframeElem.outerHTML.slice(0, 100)}`);
+                this.logger.trace(`Ignoring hidden iframe element ${childIframeElem.outerHTML.slice(0, 300)}`);
                 continue;
             }
 
@@ -657,7 +666,7 @@ export class BrowserHelper {
                 resultsForSelector.forEach(elem => {
                     if (!shouldIgnoreHidden || !this.calcIsHidden(elem, iframeContextNode)) {
                         currScopeResults.add(elem);
-                    } else {this.logger.trace(`Ignoring hidden element ${elem.outerHTML.slice(0, 100)}`);}
+                    } else {this.logger.trace(`Ignoring hidden element ${elem.outerHTML.slice(0, 300)}`);}
                 });
             })
         //todo search for scrollable elements and add them to the results
@@ -845,12 +854,12 @@ export class BrowserHelper {
             const hostElem = element.parentNode.host;
             if (hostElem instanceof HTMLElement) {
                 parentElement = hostElem;
-            } else { this.logger.info(`ELEMENT HAD SHADOW ROOT PARENT WITH ${hostElem === null ? "null host" : "non-HTMLElement host"}; element text: ${element.outerHTML.slice(0,100)}`); }
+            } else { this.logger.info(`ELEMENT HAD SHADOW ROOT PARENT WITH ${hostElem === null ? "null host" : "non-HTMLElement host"}; element text: ${element.outerHTML.slice(0, 300)}`); }
         } else if (element.parentNode instanceof Document && element.parentNode.defaultView?.frameElement) {
             const frameElem = element.parentNode.defaultView.frameElement;
             if (frameElem instanceof HTMLElement) {
                 parentElement = frameElem;
-            } else { this.logger.info(`ELEMENT AT TOP OF SECONDARY DOCUMENT HAD ${frameElem === null ? "null frame" : "non-HTMLElement frame"} element as the host/frame for that secondary document; element text: ${element.outerHTML.slice(0,100)}`); }
+            } else { this.logger.info(`ELEMENT AT TOP OF SECONDARY DOCUMENT HAD ${frameElem === null ? "null frame" : "non-HTMLElement frame"} element as the host/frame for that secondary document; element text: ${element.outerHTML.slice(0, 300)}`); }
         } else {
             parentElement = element.parentElement;
         }
