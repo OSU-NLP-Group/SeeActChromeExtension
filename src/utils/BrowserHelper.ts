@@ -371,7 +371,7 @@ export class BrowserHelper {
             const {width, height} = this.domHelper.getViewportInfo();
             if (elemXRelToViewport + elemRect.width > 0 && elemYRelToViewport + elemRect.height > 0
                 && elemXRelToViewport < width && elemYRelToViewport < height) {
-                isElemBuried = this.isBuriedInBackground(element);
+                isElemBuried = this.isBuriedInBackground(element, iframeNode);
                 doesElemSeemInvisible = isElemBuried;
             }
         }
@@ -387,6 +387,7 @@ export class BrowserHelper {
                 }
             }
         }
+        //todo consider using new method https://developer.mozilla.org/en-US/docs/Web/API/Element/checkVisibility also
 
         if (doesElemSeemInvisible && shouldDebug) {
             this.logger.trace(`Element with tag name ${element.tagName} and description: ${this.getElementDescription(element)} was determined to be hidden; is buried in background: ${isElemBuried}; computed style properties: width=${elemComputedStyle.width}, height=${elemComputedStyle.height}, display=${elemComputedStyle.display}, visibility=${elemComputedStyle.visibility}, opacity=${elemComputedStyle.opacity}`);
@@ -400,24 +401,33 @@ export class BrowserHelper {
         // https://css-tricks.com/comparing-various-ways-to-hide-things-in-css/
     }
 
-    isBuriedInBackground = (element: HTMLElement): boolean => {
+    isBuriedInBackground = (element: HTMLElement, iframeNode: IframeNode): boolean => {
         const boundRect = this.domHelper.grabClientBoundingRect(element);
         if (boundRect.width === 0 || boundRect.height === 0) { return false; }
-
-        //todo experiment with whether there are problems from restricting this to solely the center point
-        // maybe make that a toggleable option to boost performance
-        const queryPoints: [number, number][] = [[boundRect.x + 1, boundRect.y + 1], [boundRect.x + boundRect.width - 1, boundRect.y + 1],
-            [boundRect.x + 1, boundRect.y + boundRect.height - 1], [boundRect.x + boundRect.width - 1, boundRect.y + boundRect.height - 1],
-            [boundRect.x + boundRect.width / 2, boundRect.y + boundRect.height / 2]];
-        //can add more query points based on quarters of width and height if we ever encounter a scenario where the existing logic incorrectly dismisses an element as being fully background-hidden
-        let isBuried = true;
         //select elements are often partially hidden behind clickable spans and yet are still entirely feasible to interact with through javascript
         // similar problem with checkbox input elements
         const tag = element.tagName.toLowerCase();
-        if (tag === "select" || tag === "input") { isBuried = false;}
+        if (tag === "select" || tag === "input") { return false;}
+
+        //todo experiment with whether there are problems from restricting this to solely the center point (There are)
+        // maybe make that a toggleable option to boost performance when dealing with elements that behave conveniently
+        const queryPoints: [number, number][] = [[boundRect.x + 1, boundRect.y + 1], [boundRect.x + boundRect.width - 1, boundRect.y + 1],
+            [boundRect.x + 1, boundRect.y + boundRect.height - 1], [boundRect.x + boundRect.width - 1, boundRect.y + boundRect.height - 1],
+            [boundRect.x + boundRect.width / 2, boundRect.y + boundRect.height / 2]
+            // , [boundRect.x + boundRect.width / 4, boundRect.y + boundRect.height / 4], [boundRect.x + boundRect.width * 3 / 4, boundRect.y + boundRect.height / 4], [boundRect.x + boundRect.width / 4, boundRect.y + boundRect.height * 3 / 4], [boundRect.x + boundRect.width * 3 / 4, boundRect.y + boundRect.height * 3 / 4]
+        ];//can add more query points based on quarters of width and height if we ever encounter a scenario where the existing logic incorrectly dismisses a weirdly-shaped element as being fully background-hidden
+        let isBuried = true;
+        let searchContext = undefined;//default to using the top-level document
+        if (iframeNode.iframe) {
+            const iframeContents = this.getIframeContent(iframeNode.iframe);
+            if (iframeContents) {
+                searchContext = iframeContents;
+            } else { this.logger.warn(`Unable to access contents of iframe (${iframeNode.iframe.outerHTML.slice(0,300)}) that element belongs to (in order to determine whether the element is buried), despite having previously obtained a reference to that element ${element.outerHTML.slice(0,300)}`); }
+        }
+
         for (let i = 0; i < queryPoints.length && isBuried; i++) {
             const queryPoint = queryPoints[i];
-            const foregroundElemAtQueryPoint = this.actualElementFromPoint(queryPoint[0], queryPoint[1]);
+            const foregroundElemAtQueryPoint = this.actualElementFromPoint(queryPoint[0], queryPoint[1], searchContext);
             if (element.contains(foregroundElemAtQueryPoint)) {
                 isBuried = false;
             }
@@ -768,7 +778,7 @@ export class BrowserHelper {
         return queryPoints;
     }
 
-    actualElementFromPoint(x: number, y: number, searchDom?: Document | ShadowRoot): HTMLElement | null {
+    actualElementFromPoint(x: number, y: number, searchDom?: Document | ShadowRoot, shouldDebug = false): HTMLElement | null {
         const {width, height} = this.domHelper.getViewportInfo();
         if (x < 0 || y < 0 || x >= width || y >= height) {
             this.logger.trace(`Attempted to find element at point ${x}, ${y} which is outside the viewport`);
@@ -779,6 +789,12 @@ export class BrowserHelper {
         // return the real element at the point (the one inside the shadow DOM), while elementFromPoint() will return the shadow host, even when called on that shadow host's shadowRoot!
         // even though those two expressions should theoretically always be equivalent when there's an element at that point at all
         const elemsAtPoint = this.domHelper.elementsFromPoint(x, y, searchDom);
+        if (shouldDebug) {
+            this.logger.debug(`Found ${elemsAtPoint.length} elements at point ${x}, ${y}; searchDom: ${searchDom ? searchDom.nodeName : "undefined"}`);
+            elemsAtPoint.forEach((elem, idx) => this.logger.debug(`${idx}th element at point: ${elem.outerHTML.slice(0, 300)}`));
+            this.logger.debug(`elementFromPoint result: ${this.domHelper.elementFromPoint(x, y, searchDom)?.outerHTML.slice(0, 300)}`);
+        }
+
         const searchContextHost: Element | null = isShadowRoot(searchDom) ? searchDom.host : null;
         for (const elem of elemsAtPoint) {
             if (isHtmlElement(elem)) {
@@ -808,11 +824,13 @@ export class BrowserHelper {
                 foremostElemAtPoint = this.actualElementFromPoint(x, y, currScopeShadowRootHostAtMousePos.shadowRoot);
             }
         } else if (isIframeElement(foremostElemAtPoint)) {
+            this.logger.trace(`going to try to recurse into iframe to find element at position ${x}, ${y}`);
             if (!this.cachedIframeTree) {this.cachedIframeTree = new IframeTree(this.domHelper.window as Window, this.logger);}
             const iframeNode = this.cachedIframeTree.findIframeNodeForIframeElement(foremostElemAtPoint);
             if (iframeNode) {
                 const iframeContent = this.getIframeContent(foremostElemAtPoint);
                 if (iframeContent) {
+                    this.logger.trace(`RECURSING INTO IFRAME to find element at position ${x}, ${y} with offsets ${iframeNode.coordsOffsetFromViewport.x}, ${iframeNode.coordsOffsetFromViewport.y}`);
                     foremostElemAtPoint = this.actualElementFromPoint(x - iframeNode.coordsOffsetFromViewport.x, y - iframeNode.coordsOffsetFromViewport.y, iframeContent);
                 } else {this.logger.info("unable to access iframe content, so unable to access the actual element at point which takes iframes into account");}
             } else {this.logger.info("unable to find iframe node for iframe element, so unable to access the actual element at point which takes iframes into account");}
