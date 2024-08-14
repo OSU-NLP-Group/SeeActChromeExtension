@@ -545,8 +545,7 @@ export class SidePanelManager {
     processAutoMonitorEscalation = (message: any): void => {
         this.isMonitorModeTempEnabled = true;
         this.handleMonitorModeCacheUpdate(true);
-        //todo revert this when judge goes back to normal (i.e. judge not blocking/escalating actions that fall below current threshold)
-        this.setAgentStatusWithDelayedClear(`Pending action judged at danger level ${message.severity} (hover for reason); please review then approve or reject`, 15, `Explanation of judgement: ${message.explanation}`);
+        this.setAgentStatusWithDelayedClear(`Pending action judged to be dangerous at level ${message.severity} (hover for reason); please review then approve or reject`, 15, `Explanation of judgement: ${message.explanation}`);
         this.monitorApproveButton.disabled = false;
         this.monitorRejectButton.disabled = false;
         this.monitorFeedbackField.disabled = false;

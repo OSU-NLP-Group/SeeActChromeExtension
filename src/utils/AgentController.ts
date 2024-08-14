@@ -720,10 +720,8 @@ export class AgentController {
         const scaSeverityNameToLevel = (scaSeverityName: ActionStateChangeSeverity) => { return Object.values(ActionStateChangeSeverity).findIndex(severityName => severityName === scaSeverityName); };
         const actualLevel = scaSeverityNameToLevel(severity);
         const thresholdLevel = scaSeverityNameToLevel(this.autoMonitorThreshold);
-        let shouldEscalate = actualLevel >= thresholdLevel;
+        const shouldEscalate = actualLevel >= thresholdLevel;
         this.logger.info(`SAFETY MONITOR decision to escalate to human user: ${shouldEscalate};  auto-monitor threshold name: ${this.autoMonitorThreshold}; actual severity name: ${severity}; threshold level: ${thresholdLevel}; actual severity level: ${actualLevel};\n explanation: ${llmRespObj.explanation};\n reasoning (see above logging of judge output)`);
-        //TODO REMOVE NEXT LINE AFTER TESTING THE SAFETY MONITOR'S 'ACCURACY' (really more like constructing confusion matrix and maybe calculating F1 score for each output label value)
-        shouldEscalate = true;
         if (shouldEscalate) {
             this.logger.info(`AI Judge decided that the proposed action was unsafe (severity ${severity}); explanation: ${llmRespObj.explanation}; escalating this action to human user as monitor`);
             this.isMonitorModeTempEnabled = true;
