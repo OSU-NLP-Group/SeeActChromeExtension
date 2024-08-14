@@ -11,9 +11,12 @@ import {
     renderUnknownValue,
     SerializableElementData
 } from "./misc";
+import {Mutex} from "async-mutex";
 
 
 export class PageDataCollector {
+    private readonly mutex = new Mutex();
+
     private browserHelper: BrowserHelper;
     private domWrapper: DomWrapper;
     private chromeWrapper: ChromeWrapper;
@@ -41,125 +44,135 @@ export class PageDataCollector {
         try {
             this.browserHelper.resetElementAnalysis();
             if (message.type === AnnotationCoordinator2PagePortMsgType.REQ_ACTION_DETAILS_AND_CONTEXT) {
-                let userMessage = "";//to be shown to the user in the status display in the side panel
-                let userMessageDetails = "";//to be shown to the user as hovertext of the status display in the side panel
-
-                const interactiveElementsData = this.browserHelper.getInteractiveElements();
-                const elementsDataInSerializableForm = interactiveElementsData.map(makeElementDataSerializable);
-
-                let targetElement: HTMLElement|undefined = undefined;
-                let targetElementData: SerializableElementData | undefined = undefined;
-
-                const currMouseX = this.mouseClientX;
-                const currMouseY = this.mouseClientY;
-                const foremostElementAtPoint = this.browserHelper.actualElementFromPoint(currMouseX, currMouseY);
-
-                let shouldCaptureMousePosElemInfo = true;
-                let actuallyHighlightedElement: HTMLElement | undefined = undefined;
-
-                let candidateTargetElementsData = interactiveElementsData.filter(
-                    (elementData) => elementData.element.contains(foremostElementAtPoint)
-                        //check the parent's contents because of things like 1x1px <input> elements with a clickable <span> sibling element
-                        || elementData.element.parentElement?.contains(foremostElementAtPoint));
-                if (candidateTargetElementsData.length === 0) {
-                    candidateTargetElementsData = interactiveElementsData.filter((elementData) => {
-                        const boundingRect = elementData.boundingBox;
-                        return boundingRect.tLx <= currMouseX && boundingRect.bRx >= currMouseX
-                            && boundingRect.tLy <= currMouseY && boundingRect.bRy >= currMouseY;
-                    });
-                }
-                candidateTargetElementsData.sort(this.sortBestTargetElemFirst(currMouseX, currMouseY))
-                if (candidateTargetElementsData.length > 0) {
-                    const fullTargetElemData = candidateTargetElementsData[0];
-                    targetElement = fullTargetElemData.element;
-                    if (foremostElementAtPoint) {
-                        actuallyHighlightedElement = await this.browserHelper.highlightElement(foremostElementAtPoint, interactiveElementsData);
-                    } else {actuallyHighlightedElement = await this.browserHelper.highlightElement(targetElement, interactiveElementsData);}
-                    targetElementData = makeElementDataSerializable(fullTargetElemData);
-                    shouldCaptureMousePosElemInfo = foremostElementAtPoint !== targetElement;
-                } else {
-                    const activeElem = this.browserHelper.findRealActiveElement();
-                    if (activeElem) {
-                        const activeHtmlElement = activeElem;
-                        const activeElementHtmlSample = activeHtmlElement.outerHTML.slice(0, 300);
-
-                        const relevantInteractiveElementsEntry = interactiveElementsData.find((elementData) => elementData.element === activeHtmlElement);
-                        if (relevantInteractiveElementsEntry) {
-                            this.logger.info(`no active element found at mouse coordinates ${currMouseX}, ${currMouseY}, but found active element: ${activeElementHtmlSample}`);
-                            userMessage = "Target element chosen based on focus rather than mouse coordinates";
-                            userMessageDetails = `Active element: ${activeElementHtmlSample}; \nmouse coordinates: (${currMouseX}, ${currMouseY})`;
-                            //todo this highlighting doesn't show up in some sites where the focused element already has a pronounced border, maybe add additional logic?
-                            targetElement = activeHtmlElement;
-                            actuallyHighlightedElement = await this.browserHelper.highlightElement(targetElement, interactiveElementsData);
-                            targetElementData = makeElementDataSerializable(relevantInteractiveElementsEntry);
-                        } else {
-                            this.logger.warn(`no interactive elements found at mouse coordinates ${currMouseX}, ${currMouseY}; active element was defined but wasn't recognized as an interactive element: ${activeElementHtmlSample}`);
-                        }
-                    }
-                }
-
-                let mousePosElemBoundingBox: BoundingBox | undefined = undefined;
-                let mousePosElemData: SerializableElementData | undefined = undefined;
-                if (foremostElementAtPoint && shouldCaptureMousePosElemInfo) {
-                    const mElemRect = this.domWrapper.grabClientBoundingRect(foremostElementAtPoint);
-                    mousePosElemBoundingBox =
-                        {tLx: mElemRect.left, tLy: mElemRect.top, bRx: mElemRect.right, bRy: mElemRect.bottom};
-                    const mousePosElemFullData = this.browserHelper.getElementData(foremostElementAtPoint);
-                    if (mousePosElemFullData) {
-                        mousePosElemData = makeElementDataSerializable(mousePosElemFullData);
-                        mousePosElemData.interactivesIndex= interactiveElementsData.findIndex((elementData) => elementData.element === foremostElementAtPoint);
-                    }
-                }
-
-                let actuallyHighlightedElemBoundingBox: BoundingBox | undefined = undefined;
-                let actuallyHighlightedElemData: SerializableElementData | undefined = undefined;
-                if (actuallyHighlightedElement && (
-                    (foremostElementAtPoint && actuallyHighlightedElement !== foremostElementAtPoint)
-                    || (targetElement && actuallyHighlightedElement !== targetElement))) {
-                    const highlitRect = this.domWrapper.grabClientBoundingRect(actuallyHighlightedElement);
-                    actuallyHighlightedElemBoundingBox =
-                        {tLx: highlitRect.left, tLy: highlitRect.top, bRx: highlitRect.right, bRy: highlitRect.bottom};
-                    const actualHighlitElemData = this.browserHelper.getElementData(actuallyHighlightedElement);
-                    if (actualHighlitElemData) {
-                        actuallyHighlightedElemData = makeElementDataSerializable(actualHighlitElemData);
-                        actuallyHighlightedElemData.interactivesIndex = interactiveElementsData.findIndex((elementData) => elementData.element === actuallyHighlightedElement);
-                    }
-                }
-
-                if (!targetElementData) {
-                    this.logger.warn(`no interactive elements found at mouse coordinates ${currMouseX}, ${currMouseY}`);
-                    userMessage = "Warning- No interactive elements found at mouse coordinates";
-                    userMessageDetails = `Mouse coordinates: (${currMouseX}, ${currMouseY}) relative to viewport: ${JSON.stringify(this.domWrapper.getViewportInfo())}`;
-                    await this.browserHelper.clearElementHighlightingEarly();
-                }
-
-                try {
-                    this.portToBackground.postMessage({
-                        type: Page2AnnotationCoordinatorPortMsgType.PAGE_INFO, targetElementData: targetElementData,
-                        interactiveElements: elementsDataInSerializableForm, mouseX: currMouseX, mouseY: currMouseY,
-                        viewportInfo: this.domWrapper.getViewportInfo(), userMessage: userMessage,
-                        userMessageDetails: userMessageDetails, url: this.domWrapper.getUrl(),
-                        //including an element's bounding box separately in case description can't be created for it (in that case, element data would be null)
-                        mousePosElemBoundingBox: mousePosElemBoundingBox, mousePosElemData: mousePosElemData,
-                        highlitElemBoundingBox: actuallyHighlightedElemBoundingBox, highlitElemData: actuallyHighlightedElemData,
-                        htmlDump: this.domWrapper.getDocumentElement().outerHTML
-                    });
-                } catch (error: any) {
-                    this.logger.error(`error in content script while sending interactive elements to annotation coordinator; error: ${renderUnknownValue(error)}`);
-                }
+                await this.mutex.runExclusive(async () => {await this.collectActionDetailsAndContext();});
             } else {
                 this.logger.warn(`unknown message from annotation coordinator: ${JSON.stringify(message)}`);
             }
         } catch (error: any) {
             this.logger.error(`error in content script while handling message from annotation coordinator: ${renderUnknownValue(error)}`);
             try {
-                this.portToBackground.postMessage({
-                    type: Page2AnnotationCoordinatorPortMsgType.TERMINAL,
-                    error: renderUnknownValue(error)
-                });
+                this.portToBackground.postMessage(
+                    {type: Page2AnnotationCoordinatorPortMsgType.TERMINAL, error: renderUnknownValue(error)});
             } catch (postingError: any) {
                 this.logger.error(`error in content script while sending message to annotation coordinator about script failure: ${renderUnknownValue(postingError)}`);
             }
+        }
+    }
+
+    collectActionDetailsAndContext = async (): Promise<void> => {
+        await this.browserHelper.clearElementHighlightingEarly();
+        let userMessage = "";//to be shown to the user in the status display in the side panel
+        let userMessageDetails = "";//to be shown to the user as hovertext of the status display in the side panel
+
+        const interactiveElementsData = this.browserHelper.getInteractiveElements();
+        const elementsDataInSerializableForm = interactiveElementsData.map(makeElementDataSerializable);
+
+        let targetElement: HTMLElement | undefined = undefined;
+        let targetElementData: SerializableElementData | undefined = undefined;
+
+        const currMouseX = this.mouseClientX;
+        const currMouseY = this.mouseClientY;
+        const foremostElementAtPoint = this.browserHelper.actualElementFromPoint(currMouseX, currMouseY);
+
+        let shouldCaptureMousePosElemInfo = true;
+        let actuallyHighlightedElement: HTMLElement | undefined = undefined;
+
+        let candidateTargetElementsData = interactiveElementsData.filter(
+            (elementData) => elementData.element.contains(foremostElementAtPoint)
+                //check the parent's contents because of things like 1x1px <input> elements with a clickable <span> sibling element
+                || elementData.element.parentElement?.contains(foremostElementAtPoint));
+        if (candidateTargetElementsData.length === 0) {
+            candidateTargetElementsData = interactiveElementsData.filter((elementData) => {
+                const boundingRect = elementData.boundingBox;
+                return boundingRect.tLx <= currMouseX && boundingRect.bRx >= currMouseX
+                    && boundingRect.tLy <= currMouseY && boundingRect.bRy >= currMouseY;
+            });
+        }
+        candidateTargetElementsData.sort(this.sortBestTargetElemFirst(currMouseX, currMouseY))
+        if (candidateTargetElementsData.length > 0) {
+            const fullTargetElemData = candidateTargetElementsData[0];
+            targetElement = fullTargetElemData.element;
+            if (foremostElementAtPoint) {
+                actuallyHighlightedElement = await this.browserHelper.highlightElement(foremostElementAtPoint, interactiveElementsData);
+            } else {actuallyHighlightedElement = await this.browserHelper.highlightElement(targetElement, interactiveElementsData);}
+            targetElementData = makeElementDataSerializable(fullTargetElemData);
+            shouldCaptureMousePosElemInfo = foremostElementAtPoint !== targetElement;
+        } else {
+            const activeElem = this.browserHelper.findRealActiveElement();
+            if (activeElem) {
+                const activeHtmlElement = activeElem;
+                const activeElementHtmlSample = activeHtmlElement.outerHTML.slice(0, 300);
+
+                const relevantInteractiveElementsEntry = interactiveElementsData.find((elementData) => elementData.element === activeHtmlElement);
+                if (relevantInteractiveElementsEntry) {
+                    this.logger.info(`no active element found at mouse coordinates ${currMouseX}, ${currMouseY}, but found active element: ${activeElementHtmlSample}`);
+                    userMessage = "Target element chosen based on focus rather than mouse coordinates";
+                    userMessageDetails = `Active element: ${activeElementHtmlSample}; \nmouse coordinates: (${currMouseX}, ${currMouseY})`;
+                    //todo this highlighting doesn't show up in some sites where the focused element already has a pronounced border, maybe add additional logic?
+                    targetElement = activeHtmlElement;
+                    actuallyHighlightedElement = await this.browserHelper.highlightElement(targetElement, interactiveElementsData);
+                    targetElementData = makeElementDataSerializable(relevantInteractiveElementsEntry);
+                } else {
+                    this.logger.warn(`no interactive elements found at mouse coordinates ${currMouseX}, ${currMouseY}; active element was defined but wasn't recognized as an interactive element: ${activeElementHtmlSample}`);
+                }
+            }
+        }
+
+        let mousePosElemBoundingBox: BoundingBox | undefined = undefined;
+        let mousePosElemData: SerializableElementData | undefined = undefined;
+        if (foremostElementAtPoint && shouldCaptureMousePosElemInfo) {
+            const mElemRect = this.domWrapper.grabClientBoundingRect(foremostElementAtPoint);
+            mousePosElemBoundingBox =
+                {tLx: mElemRect.left, tLy: mElemRect.top, bRx: mElemRect.right, bRy: mElemRect.bottom};
+            const mousePosElemFullData = this.browserHelper.getElementData(foremostElementAtPoint);
+            if (mousePosElemFullData) {
+                mousePosElemData = makeElementDataSerializable(mousePosElemFullData);
+                mousePosElemData.interactivesIndex = interactiveElementsData.findIndex((elementData) => elementData.element === foremostElementAtPoint);
+            }
+        }
+
+        let actuallyHighlightedElemBoundingBox: BoundingBox | undefined = undefined;
+        let actuallyHighlightedElemData: SerializableElementData | undefined = undefined;
+        if (actuallyHighlightedElement && (
+            (foremostElementAtPoint && actuallyHighlightedElement !== foremostElementAtPoint)
+            || (targetElement && actuallyHighlightedElement !== targetElement))) {
+            const highlitRect = this.domWrapper.grabClientBoundingRect(actuallyHighlightedElement);
+            actuallyHighlightedElemBoundingBox =
+                {tLx: highlitRect.left, tLy: highlitRect.top, bRx: highlitRect.right, bRy: highlitRect.bottom};
+            const actualHighlitElemData = this.browserHelper.getElementData(actuallyHighlightedElement);
+            if (actualHighlitElemData) {
+                actuallyHighlightedElemData = makeElementDataSerializable(actualHighlitElemData);
+                actuallyHighlightedElemData.interactivesIndex = interactiveElementsData.findIndex((elementData) => elementData.element === actuallyHighlightedElement);
+            }
+        }
+
+        if (!targetElementData) {
+            this.logger.warn(`no interactive elements found at mouse coordinates ${currMouseX}, ${currMouseY}`);
+            userMessage = "Warning- No interactive elements found at mouse coordinates";
+            userMessageDetails = `Mouse coordinates: (${currMouseX}, ${currMouseY}) relative to viewport: ${JSON.stringify(this.domWrapper.getViewportInfo())}`;
+            await this.browserHelper.clearElementHighlightingEarly();
+        }
+
+        try {
+            this.portToBackground.postMessage({
+                type: Page2AnnotationCoordinatorPortMsgType.PAGE_INFO,
+                targetElementData: targetElementData,
+                interactiveElements: elementsDataInSerializableForm,
+                mouseX: currMouseX,
+                mouseY: currMouseY,
+                viewportInfo: this.domWrapper.getViewportInfo(),
+                userMessage: userMessage,
+                userMessageDetails: userMessageDetails,
+                url: this.domWrapper.getUrl(),
+                //including an element's bounding box separately in case description can't be created for it (in that case, element data would be null)
+                mousePosElemBoundingBox: mousePosElemBoundingBox,
+                mousePosElemData: mousePosElemData,
+                highlitElemBoundingBox: actuallyHighlightedElemBoundingBox,
+                highlitElemData: actuallyHighlightedElemData,
+                htmlDump: this.domWrapper.getDocumentElement().outerHTML
+            });
+        } catch (error: any) {
+            this.logger.error(`error in content script while sending interactive elements to annotation coordinator; error: ${renderUnknownValue(error)}`);
         }
     }
 
@@ -202,6 +215,14 @@ export class PageDataCollector {
         this.browserHelper.setupMouseMovementTracking((newMouseX: number, newMouseY: number) => {
             this.mouseClientX = newMouseX;
             this.mouseClientY = newMouseY;
+        });
+    }
+
+    handleVisibleIframesChange = async () => {
+        await this.mutex.runExclusive(() => {
+            this.logger.trace('visible iframes changed, resetting element analysis (i.e. for tree of iframes in page) and setting up mouse movement tracking listeners again');
+            this.browserHelper.resetElementAnalysis();
+            this.setupMouseMovementTracking();
         });
     }
 }

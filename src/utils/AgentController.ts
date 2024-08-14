@@ -596,7 +596,11 @@ export class AgentController {
                 this.state = AgentControllerState.WAITING_FOR_MONITOR_RESPONSE;
             } else {
                 //to get high confidence that the screenshot with highlighted target element has been captured
-                if (isTargetElementHighlightingNeeded) { await sleep(40 + elementHighlightRenderDelay); }
+                // the 2/60ths of a second part is for the requestAnimationFrame part
+                //todo given observed variability of time for highlighting render to complete, consider just switching
+                // to message-passing and extra state in FSM to handle this more robustly; wait on that until 'targeted'
+                // screenshot with no outline occurs (where logs/human-oversight show that outlining did work, just too slowly)
+                if (isTargetElementHighlightingNeeded) { await sleep(40 + 2/60*100 + elementHighlightRenderDelay); }
 
                 if (this.terminationSignal) {
                     this.logger.info("received termination signal after deciding on the action but before actually committing it (possibly while waiting for a screenshot to be captured with the target element highlighted; terminating task")

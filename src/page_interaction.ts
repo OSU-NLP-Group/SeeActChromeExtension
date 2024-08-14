@@ -32,13 +32,14 @@ const mutationCallback = (mutationsList: MutationRecord[], observer: MutationObs
     pageActor.lastPageModificationTimestamp = Date.now();
 }
 
-const headMutationObserver = new MutationObserver(mutationCallback);
-headMutationObserver.observe(document.head, mutationObserverOptions);
-
 if (document.body) {
     const bodyMutationObserver = new MutationObserver(mutationCallback);
     bodyMutationObserver.observe(document.body, mutationObserverOptions);
 }
+//note for later - the above as written probably doesn't work for detecting changes inside the bodies of iframes that're
+// in the top-level document, let alone iframes that are inside other iframes
+// Maybe build an IframeTree here, then set up mutation observers on the head and body of each iframe in the tree
+//  if a given iframe has non-zero dimensions and passes _basic_ visibility checks; need to add iteration over the tree
 
 const startOfPageLoadWait = Date.now();
 let didLoadFire = false;

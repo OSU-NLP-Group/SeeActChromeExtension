@@ -4,6 +4,7 @@ import {
     pageToAnnotationCoordinatorPort, renderUnknownValue, sleep
 } from "./utils/misc";
 import {PageDataCollector} from "./utils/PageDataCollector";
+import {IframesMonitor} from "./utils/IframesMonitor";
 
 const logger = createNamedLogger('page-data-collection', false);
 logger.trace(`successfully injected page_data_collection script in browser for page ${document.URL}`);
@@ -16,6 +17,8 @@ const dataCollector = new PageDataCollector(portToBackground);
 portToBackground.onMessage.addListener(dataCollector.handleRequestFromAnnotationCoordinator);
 
 dataCollector.setupMouseMovementTracking();
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- the monitor sets up its oversight in the constructor and I want it kept in a variable in case I later want to disconnect the monitor under some conditions
+const visibleIframesMonitor = new IframesMonitor(document, dataCollector.handleVisibleIframesChange.bind(dataCollector));
 
 (async () => {
     await sleep(50);//make sure coordinator has added its listeners before sending READY message

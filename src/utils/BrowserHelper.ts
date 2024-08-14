@@ -35,6 +35,7 @@ export class BrowserHelper {
 
     private cachedIframeTree: IframeTree | undefined;
     private cachedShadowRootHostChildrenOfMainDoc: HTMLElement[] | undefined;
+    private existingMouseMovementListeners: Map<Document, (e: MouseEvent)=> void> = new Map();
 
     constructor(domHelper?: DomWrapper, loggerToUse?: log.Logger) {
         this.domHelper = domHelper ?? new DomWrapper(window);
@@ -263,7 +264,7 @@ export class BrowserHelper {
             for (let nestedIframeIdx = nestedIframesPathToElem.length - 1; nestedIframeIdx >= 0; nestedIframeIdx--) {
                 const nestedIframeElem = nestedIframesPathToElem[nestedIframeIdx].iframe;
                 if (nestedIframeElem) {
-                    overallXpath = this.getFullXpathHelper(nestedIframeElem) + "/iframe()" + overallXpath;
+                    overallXpath = this.getFullXpathHelper(nestedIframeElem) + overallXpath;
                 } else {
                     this.logger.warn("nested iframe element was null in the path to the current element; cannot provide full xpath analysis which takes iframes into account");
                     overallXpath = "/corrupted-node-in-iframe-tree()" + overallXpath;
@@ -371,6 +372,7 @@ export class BrowserHelper {
             const {width, height} = this.domHelper.getViewportInfo();
             if (elemXRelToViewport + elemRect.width > 0 && elemYRelToViewport + elemRect.height > 0
                 && elemXRelToViewport < width && elemYRelToViewport < height) {
+                this.logger.trace(`testing whether element is buried in background: ${this.getFullXpath(element)}; with iframe context ${iframeNode.iframe?.outerHTML.slice(0, 300)}`);
                 isElemBuried = this.isBuriedInBackground(element, iframeNode);
                 doesElemSeemInvisible = isElemBuried;
             }
@@ -487,14 +489,15 @@ export class BrowserHelper {
 
     highlightElement = async (element: HTMLElement, allInteractiveElements: ElementData[] = [], highlightDuration: number = 30000): Promise<HTMLElement> => {
         let elemToHighlight = element;
+        await this.clearElementHighlightingEarly();
         if (this.doesElementContainSpaceOccupyingPseudoElements(element)) {
-            this.logger.debug(`Element contains space-occupying pseudo-elements which typically throw off outline-based highlighting, so trying to highlight parent element instead; pseudoelement-containing element: ${this.getElementDescription(element)}`);
+            this.logger.debug(`Element contains space-occupying pseudo-elements which typically throw off outline-based highlighting, so trying to highlight parent element instead; pseudoelement-containing element: ${element.outerHTML.slice(0,300)}`);
             const parentElem = element.parentElement;
             if (parentElem) {
                 const numInteractiveElementsUnderParent = allInteractiveElements.filter(interactiveElem => parentElem.contains(interactiveElem.element)).length;
                 if (numInteractiveElementsUnderParent <= 1) {
                     elemToHighlight = parentElem;
-                }
+                } else { this.logger.trace(`still just trying to highlight element that contains pseudo-elements because its parent has ${numInteractiveElementsUnderParent} interactive children, so it would be ambiguous to highlight the parent as target element`); }
             }
         }
         return await this.highlightElementHelper(elemToHighlight, allInteractiveElements, highlightDuration);
@@ -502,9 +505,8 @@ export class BrowserHelper {
 
     highlightElementHelper = async (element: HTMLElement, allInteractiveElements: ElementData[] = [], highlightDuration: number = 30000): Promise<HTMLElement> => {
         let elementHighlighted = element;
-        await this.clearElementHighlightingEarly();
         const elementStyle: CSSStyleDeclaration = element.style;
-        this.logger.trace(`attempting to highlight element with tag name ${element.tagName} and description: ${this.getElementDescription(element)}`);
+        this.logger.trace(`attempting to highlight element ${element.outerHTML.slice(0,300)}`);
 
         const initialOutline = elementStyle.outline;
         const initialComputedOutline = this.domHelper.getComputedStyle(element).outline;
@@ -516,6 +518,23 @@ export class BrowserHelper {
         // https://developer.mozilla.org/en-US/docs/Web/CSS/filter-function/contrast
 
         elementStyle.outline = "3px solid red";
+
+        const animationWaitStart = performance.now();
+        await new Promise((resolve) => window.requestAnimationFrame(resolve));
+        this.logger.trace(`Time to wait for top-level animation frame after setting outline: ${performance.now() - animationWaitStart} ms`);
+        if (!this.cachedIframeTree) {this.cachedIframeTree = new IframeTree(this.domHelper.window as Window, this.logger);}
+        const iframeContextNode = this.cachedIframeTree.findIframeNodeForElement(element);
+        if (iframeContextNode) {
+            const iframeAnimationWaitStart = performance.now();
+            try {
+                await new Promise((resolve) => iframeContextNode.window.requestAnimationFrame(resolve));
+            } catch (error: any) {
+                if (error.name === "SecurityError") {
+                    this.logger.trace(`Cross-origin iframe detected while highlighting element: ${renderUnknownValue(error).slice(0, 100)}`);
+                } else {throw error;}
+            }
+            this.logger.trace(`Time to wait for animation frame in iframe context after setting outline: ${performance.now() - iframeAnimationWaitStart} ms`);
+        }
 
         await sleep(elementHighlightRenderDelay);
 
@@ -529,11 +548,12 @@ export class BrowserHelper {
                 const numInteractiveElementsUnderParent = allInteractiveElements.filter(interactiveElem => parentElem.contains(interactiveElem.element)).length;
                 if (numInteractiveElementsUnderParent <= 1) {
                     this.logger.debug("trying to highlight parent element instead");
+                    elementStyle.outline = initialOutline;
                     elementHighlighted = await this.highlightElementHelper(parentElem, allInteractiveElements, highlightDuration);
-                }
+                }else { this.logger.trace(`not trying to highlight parent because it has ${numInteractiveElementsUnderParent} interactive children, so it would be ambiguous to highlight the parent as target element`); }
             }
-        } else {
-            this.logger.trace(`initialComputedOutline: ${initialComputedOutline}; computedOutlinePostStyleMod: ${computedOutlinePostStyleMod}; similarity: ${computedOutlineSimilarity}`)
+        } else { this.logger.trace(`initialComputedOutline: ${initialComputedOutline}; computedOutlinePostStyleMod: ${computedOutlinePostStyleMod}; similarity: ${computedOutlineSimilarity}`); }
+        if (elementHighlighted === element) {
             this.highlightedElementStyle = elementStyle;
             this.highlightedElementOriginalOutline = initialOutline;
             setTimeout(() => {
@@ -559,13 +579,14 @@ export class BrowserHelper {
     clearElementHighlightingEarly = async () => {
         if (this.highlightedElementStyle) {
             if (this.highlightedElementOriginalOutline === undefined) { this.logger.error("highlightedElementOriginalOutline is undefined when resetting the outline of a highlighted element (at the start of the process for highlighting a new element"); }
+            this.logger.trace(`clearing element highlighting early, from highlit outline of ${this.highlightedElementStyle.outline} to original outline value of ${this.highlightedElementOriginalOutline}`);
             this.highlightedElementStyle.outline = this.highlightedElementOriginalOutline ?? "";
 
             this.highlightedElementStyle = undefined;
             this.highlightedElementOriginalOutline = undefined;
 
             await sleep(elementHighlightRenderDelay);
-        }
+        } else { this.logger.trace("unable to clear element highlighting because no temporary style object is stored for a highlighted element"); }
     }
 
     doesElementContainSpaceOccupyingPseudoElements = (element: HTMLElement): boolean => {
@@ -575,7 +596,7 @@ export class BrowserHelper {
             const pseudoElemStyle = this.domHelper.getComputedStyle(element, pseudoElemName);
             const isPseudoElemPresent = pseudoElemStyle.content !== "" && pseudoElemStyle.content !== "none"
                 && pseudoElemStyle.content !== "normal";
-            if (isPseudoElemPresent) { this.logger.debug(`FOUND PSEUDO-ELEMENT ${pseudoElemName} with computed style ${JSON.stringify(pseudoElemStyle)} inside of element ${element.outerHTML.slice(0, 200)}`) }
+            if (isPseudoElemPresent) { this.logger.debug(`FOUND PSEUDO-ELEMENT ${pseudoElemName} with computed style inside of element ${element.outerHTML.slice(0, 200)}`) }
             return isPseudoElemPresent;
         });
     }
@@ -746,9 +767,18 @@ export class BrowserHelper {
             }
         }
         if (currContextDocument) {
-            currContextDocument.addEventListener('mousemove', (e) => {
+            const existingMovementHandler = this.existingMouseMovementListeners.get(currContextDocument);
+            if (existingMovementHandler) {
+                currContextDocument.removeEventListener('mousemove', existingMovementHandler);
+                this.existingMouseMovementListeners.delete(currContextDocument);
+            }
+
+            const newMovementHandler = (e: MouseEvent) => {
+                //this.logger.trace(`Mouse moved to (${e.clientX}, ${e.clientY}) in iframe context which has offset-from-viewport of ${JSON.stringify(iframeContextNode.coordsOffsetFromViewport)} and iframe outerhtml ${iframeContextNode.iframe?.outerHTML.slice(0, 300)}`);
                 positionUpdater(e.clientX + iframeContextNode.coordsOffsetFromViewport.x, e.clientY + iframeContextNode.coordsOffsetFromViewport.y);
-            });
+            };
+            currContextDocument.addEventListener('mousemove', newMovementHandler);
+            this.existingMouseMovementListeners.set(currContextDocument, newMovementHandler);
         }
         for (const childIframe of iframeContextNode.children) {
             this.setupMouseMovementTrackingHelper(childIframe, positionUpdater);
