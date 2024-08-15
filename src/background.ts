@@ -240,6 +240,25 @@ function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (r
                 sendResponse({success: false, message: errMsg});
             });
         }
+    } else if (request.reqType === PageRequestType.TYPE_SEQUENTIALLY) {
+        const text: unknown = request.textToType
+        if (!agentController) {
+            sendResponse({success: false, message: "Cannot type sequentially when agent controller is not initialized"});
+        } else if (agentController.currTaskTabId === undefined) {
+            sendResponse({success: false, message: "No active tab to type sequentially into"});
+        } else if (typeof text !== "string") {
+            const errMsg = `Cannot type sequentially with invalid text input ${renderUnknownValue(text)}`;
+            centralLogger.error(errMsg);
+            sendResponse({success: false, message: errMsg});
+        } else {
+            serviceWorkerHelper.typeSequentially(agentController.currTaskTabId, text).then(() => {
+                sendResponse({success: true, message: `Typed ${text} sequentially`});
+            }, (error) => {
+                const errMsg = `error typing ${text} sequentially; error: ${renderUnknownValue(error)}`;
+                centralLogger.error(errMsg);
+                sendResponse({success: false, message: errMsg});
+            });
+        }
     } else if (request.reqType === PageRequestType.HOVER) {
         if (!agentController) {
             sendResponse({success: false, message: "Cannot hover when agent controller is not initialized"});

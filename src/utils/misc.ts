@@ -83,6 +83,7 @@ export const exampleViewportDetails: ViewportDetails =
 export enum PageRequestType {
     LOG = "log",
     PRESS_ENTER = "pressEnter",
+    TYPE_SEQUENTIALLY = "typeSequentially",
     HOVER = "hover",
     SCREENSHOT_WITH_TARGET_HIGHLIGHTED = "screenshotWithTargetElementHighlighted",
     EULA_ACCEPTANCE = "eulaAcceptance",

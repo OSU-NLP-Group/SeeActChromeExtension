@@ -98,8 +98,8 @@ export class PageActor {
      *                       performActionFromController method
      * @return the text of the field after typing, or null if the field wasn't an editable text field
      */
-    typeIntoElement = (elementToActOn: HTMLElement, valueForAction: string | undefined, actionOutcome: ActionOutcome
-    ): string | null => {
+    typeIntoElement = async (elementToActOn: HTMLElement, valueForAction: string | undefined, actionOutcome: ActionOutcome
+    ): Promise<string | null> => {
         const priorElementText = this.browserHelper.getElementText(elementToActOn);
         const tagName = elementToActOn.tagName.toLowerCase();
         let result: string | null = null;
@@ -148,17 +148,39 @@ export class PageActor {
             const postTypeElementText = this.browserHelper.getElementText(elementToActOn);
             result = postTypeElementText;
             if (postTypeElementText !== valueForAction) {
-                if (priorElementText === postTypeElementText) {
-                    this.logger.warn("text of element after typing is the same as the prior text; typing might not have worked");
-                    actionOutcome.result += `; element text [<${postTypeElementText}>] not changed by typing`;
+                this.logger.trace(`element text after typing: ${postTypeElementText} was incorrect. Trying to type sequentially with chrome debugger`);
+                //clearing existing content, since js-based typing does that inherently but sequential/realistic typing doesn't
+                if ('value' in elementToActOn) {
+                    elementToActOn.value = "";
+                } else {elementToActOn.textContent = "";}
+
+                try {
+                    const resp = await this.chromeWrapper.sendMessageToServiceWorker(
+                        {reqType: PageRequestType.TYPE_SEQUENTIALLY, textToType: valueForAction});
+                    if (resp.success) {
+                        this.logger.trace(`sequentially typed ${valueForAction} into element`);
+                        actionOutcome.success = true;
+                    } else {
+                        actionOutcome.result += "; " + resp.message;
+                        actionOutcome.success = false;
+                    }
+                } catch (error: any) {
                     actionOutcome.success = false;
-                } else {
-                    this.logger.warn("text of element after typing doesn't match the desired value");
-                    actionOutcome.result += `; after typing, element text: [<${postTypeElementText}>] still doesn't match desired value`;
-                    actionOutcome.success = false;
+                    actionOutcome.result += "; error while asking service worker to type sequentially: " + renderUnknownValue(error);
                 }
-                //todo add fall-back options here like trying to clear the field and then type again, possibly
-                // using newly-written code for turning a string into a sequence of key press events and sending those to the element
+
+                const postSecondTryTypeElementText = this.browserHelper.getElementText(elementToActOn);
+                if (postSecondTryTypeElementText !== valueForAction) {
+                    if (priorElementText === postSecondTryTypeElementText) {
+                        this.logger.warn("text of element after typing is the same as the prior text; typing might not have worked");
+                        actionOutcome.result += `; element text [<${postSecondTryTypeElementText}>] not changed by typing`;
+                        actionOutcome.success = false;
+                    } else {
+                        this.logger.warn("text of element after typing doesn't match the desired value");
+                        actionOutcome.result += `; after typing, element text: [<${postSecondTryTypeElementText}>] still doesn't match desired value`;
+                        actionOutcome.success = false;
+                    }
+                }
             }
         }
         return result;
@@ -257,7 +279,7 @@ export class PageActor {
             }
         } catch (error: any) {
             actionOutcome.success = false;
-            actionOutcome.result += "; error while asking service worker to press enter: " + error;
+            actionOutcome.result += `; error while asking service worker to press enter: ${renderUnknownValue(error)}`;
         }
     }
 
@@ -347,7 +369,7 @@ export class PageActor {
                 //  https://chromedevtools.github.io/devtools-protocol/1-2/Input/
                 actionOutcome.success = true;
             } else if (actionToPerform === Action.TYPE) {
-                this.typeIntoElement(elementToActOn, valueForAction, actionOutcome);
+                await this.typeIntoElement(elementToActOn, valueForAction, actionOutcome);
             } else if (actionToPerform === Action.PRESS_ENTER) {
                 elementToActOn.focus();
                 //if sleep proves unreliable or unacceptably slow, explore a conditional poll/wait approach to ensure
