@@ -35,7 +35,7 @@ export class BrowserHelper {
 
     private cachedIframeTree: IframeTree | undefined;
     private cachedShadowRootHostChildrenOfMainDoc: HTMLElement[] | undefined;
-    private existingMouseMovementListeners: Map<Document, (e: MouseEvent)=> void> = new Map();
+    private existingMouseMovementListeners: Map<Document, (e: MouseEvent) => void> = new Map();
 
     constructor(domHelper?: DomWrapper, loggerToUse?: log.Logger) {
         this.domHelper = domHelper ?? new DomWrapper(window);
@@ -424,7 +424,7 @@ export class BrowserHelper {
             const iframeContents = this.getIframeContent(iframeNode.iframe);
             if (iframeContents) {
                 searchContext = iframeContents;
-            } else { this.logger.warn(`Unable to access contents of iframe (${iframeNode.iframe.outerHTML.slice(0,300)}) that element belongs to (in order to determine whether the element is buried), despite having previously obtained a reference to that element ${element.outerHTML.slice(0,300)}`); }
+            } else { this.logger.warn(`Unable to access contents of iframe (${iframeNode.iframe.outerHTML.slice(0, 300)}) that element belongs to (in order to determine whether the element is buried), despite having previously obtained a reference to that element ${element.outerHTML.slice(0, 300)}`); }
         }
 
         for (let i = 0; i < queryPoints.length && isBuried; i++) {
@@ -491,7 +491,7 @@ export class BrowserHelper {
         let elemToHighlight = element;
         await this.clearElementHighlightingEarly();
         if (this.doesElementContainSpaceOccupyingPseudoElements(element)) {
-            this.logger.debug(`Element contains space-occupying pseudo-elements which typically throw off outline-based highlighting, so trying to highlight parent element instead; pseudoelement-containing element: ${element.outerHTML.slice(0,300)}`);
+            this.logger.debug(`Element contains space-occupying pseudo-elements which typically throw off outline-based highlighting, so trying to highlight parent element instead; pseudoelement-containing element: ${element.outerHTML.slice(0, 300)}`);
             const parentElem = element.parentElement;
             if (parentElem) {
                 const numInteractiveElementsUnderParent = allInteractiveElements.filter(interactiveElem => parentElem.contains(interactiveElem.element)).length;
@@ -506,7 +506,7 @@ export class BrowserHelper {
     highlightElementHelper = async (element: HTMLElement, allInteractiveElements: ElementData[] = [], highlightDuration: number = 30000): Promise<HTMLElement> => {
         let elementHighlighted = element;
         const elementStyle: CSSStyleDeclaration = element.style;
-        this.logger.trace(`attempting to highlight element ${element.outerHTML.slice(0,300)}`);
+        this.logger.trace(`attempting to highlight element ${element.outerHTML.slice(0, 300)}`);
 
         const initialOutline = elementStyle.outline;
         const initialComputedOutline = this.domHelper.getComputedStyle(element).outline;
@@ -530,7 +530,8 @@ export class BrowserHelper {
                 await new Promise((resolve) => iframeContextNode.window.requestAnimationFrame(resolve));
             } catch (error: any) {
                 if (error.name === "SecurityError") {
-                    this.logger.trace(`Cross-origin iframe detected while highlighting element: ${renderUnknownValue(error).slice(0, 100)}`);
+                    this.logger.trace(`Cross-origin iframe detected while highlighting element: ${renderUnknownValue(error)
+                        .slice(0, 100)}`);
                 } else {throw error;}
             }
             this.logger.trace(`Time to wait for animation frame in iframe context after setting outline: ${performance.now() - iframeAnimationWaitStart} ms`);
@@ -550,7 +551,7 @@ export class BrowserHelper {
                     this.logger.debug("trying to highlight parent element instead");
                     elementStyle.outline = initialOutline;
                     elementHighlighted = await this.highlightElementHelper(parentElem, allInteractiveElements, highlightDuration);
-                }else { this.logger.trace(`not trying to highlight parent because it has ${numInteractiveElementsUnderParent} interactive children, so it would be ambiguous to highlight the parent as target element`); }
+                } else { this.logger.trace(`not trying to highlight parent because it has ${numInteractiveElementsUnderParent} interactive children, so it would be ambiguous to highlight the parent as target element`); }
             }
         } else { this.logger.trace(`initialComputedOutline: ${initialComputedOutline}; computedOutlinePostStyleMod: ${computedOutlinePostStyleMod}; similarity: ${computedOutlineSimilarity}`); }
         if (elementHighlighted === element) {
@@ -785,7 +786,13 @@ export class BrowserHelper {
         }
     }
 
-    //todo evaluate whether this is still needed, now that buried elements are eliminated as candidates for interactive elements list
+    terminateMouseMovementTracking = () => {
+        this.existingMouseMovementListeners.forEach((movementHandler, doc) => {
+            doc.removeEventListener('mousemove', movementHandler);
+        });
+        this.existingMouseMovementListeners.clear();
+    }
+
     findQueryPointsInOverlap = (elem1Data: ElementData, elem2Data: ElementData): Array<readonly [number, number]> => {
         const overlapLeftX = Math.max(elem1Data.boundingBox.tLx, elem2Data.boundingBox.tLx);
         const overlapRightX = Math.min(elem1Data.boundingBox.bRx, elem2Data.boundingBox.bRx);
@@ -796,8 +803,8 @@ export class BrowserHelper {
             this.logger.debug(`No overlap between elements ${elem1Data.description} and ${elem2Data.description}`);
             return queryPoints;
         }
-        queryPoints.push([overlapLeftX, overlapTopY], [overlapRightX, overlapTopY], [overlapLeftX, overlapBottomY],
-            [overlapRightX, overlapBottomY]);
+        queryPoints.push([overlapLeftX + 1, overlapTopY + 1], [overlapRightX - 1, overlapTopY + 1],
+            [overlapLeftX + 1, overlapBottomY - 1], [overlapRightX - 1, overlapBottomY - 1]);
         if (elem1Data.centerCoords[0] >= overlapLeftX && elem1Data.centerCoords[0] <= overlapRightX &&
             elem1Data.centerCoords[1] >= overlapTopY && elem1Data.centerCoords[1] <= overlapBottomY
         ) {queryPoints.push(elem1Data.centerCoords);}
@@ -822,7 +829,8 @@ export class BrowserHelper {
         if (shouldDebug) {
             this.logger.debug(`Found ${elemsAtPoint.length} elements at point ${x}, ${y}; searchDom: ${searchDom ? searchDom.nodeName : "undefined"}`);
             elemsAtPoint.forEach((elem, idx) => this.logger.debug(`${idx}th element at point: ${elem.outerHTML.slice(0, 300)}`));
-            this.logger.debug(`elementFromPoint result: ${this.domHelper.elementFromPoint(x, y, searchDom)?.outerHTML.slice(0, 300)}`);
+            this.logger.debug(`elementFromPoint result: ${this.domHelper.elementFromPoint(x, y, searchDom)?.outerHTML
+                .slice(0, 300)}`);
         }
 
         const searchContextHost: Element | null = isShadowRoot(searchDom) ? searchDom.host : null;
@@ -880,9 +888,25 @@ export class BrowserHelper {
         let numPointsWhereElem2IsForeground = 0;
         for (const queryPoint of queryPoints) {
             const foregroundElemAtQueryPoint = this.actualElementFromPoint(queryPoint[0], queryPoint[1]);
-            if (elem1Data.element.contains(foregroundElemAtQueryPoint)) {
+            //this.logger.debug(`Element at point ${queryPoint[0]}, ${queryPoint[1]}: ${foregroundElemAtQueryPoint?.outerHTML.slice(0, 200)}; `);
+            const inElem1 = elem1Data.element.contains(foregroundElemAtQueryPoint);
+            const inElem2 = elem2Data.element.contains(foregroundElemAtQueryPoint);
+            if (inElem1 && !inElem2) {
                 numPointsWhereElem1IsForeground++;
-            } else if (elem2Data.element.contains(foregroundElemAtQueryPoint)) {numPointsWhereElem2IsForeground++;}
+            } else if (inElem2 && !inElem1) {
+                numPointsWhereElem2IsForeground++;
+            } else if (inElem1 && inElem2) {
+                if (elem1Data.element === foregroundElemAtQueryPoint) {
+                    numPointsWhereElem1IsForeground++;
+                } else if (elem2Data.element === foregroundElemAtQueryPoint) {
+                    numPointsWhereElem2IsForeground++;
+                } else {
+                    this.logger.debug(`Element at point ${queryPoint[0]}, ${queryPoint[1]} was in both ${elem1Data.description} and ${elem2Data.description} but not equal to either, relying on heuristic that the closer ancestor of the foreground element is closer to the foreground in the UI`);
+                    if (elem1Data.element.contains(elem2Data.element)) {
+                        numPointsWhereElem2IsForeground++;
+                    } else { numPointsWhereElem1IsForeground++; }
+                }
+            } else { this.logger.warn(`neither of the overlapping elements ${elem1Data.description} and ${elem2Data.description} contained the foreground element ${foregroundElemAtQueryPoint?.outerHTML.slice(0, 200)} at position ${queryPoint[0]}, ${queryPoint[1]} in their overlap region`)}
         }
         if (numPointsWhereElem1IsForeground === 0) {this.logger.info(`No query points where ${elem1Data.description} was in the foreground, when evaluating its overlap with ${elem2Data.description}`);}
         if (numPointsWhereElem2IsForeground === 0) {this.logger.info(`No query points where ${elem2Data.description} was in the foreground, when evaluating its overlap with ${elem1Data.description}`);}

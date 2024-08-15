@@ -179,7 +179,7 @@ export class PageDataCollector {
     private sortBestTargetElemFirst(currMouseX: number, currMouseY: number) {
         return (elementData1: ElementData, elementData2: ElementData): number => {
             //leaving this log message here because this method should be called pretty rarely
-            this.logger.trace(`JUDGING ELEMENTS FOR RELEVANCE TO MOUSE CURSOR: element A ${elementData1.description.slice(0, 100)}; element B ${elementData2.description.slice(0, 100)}`);
+            this.logger.trace(`JUDGING ELEMENTS FOR RELEVANCE TO MOUSE CURSOR: element A ${elementData1.element.outerHTML.slice(0, 200)}; element B ${elementData2.element.outerHTML.slice(0, 200)}`);
 
             const elem1Box = elementData1.boundingBox;
             const elem2Box = elementData2.boundingBox;
@@ -197,6 +197,7 @@ export class PageDataCollector {
                 + Math.pow(elementData2.centerCoords[1] - currMouseY, 2));
             //return negative if elem1 is closer to the cursor and so has smaller distance
             const relativeDistFromCursor = elem1CenterDistFromCursor - elem2CenterDistFromCursor;
+            this.logger.debug(`relative distance from cursor: ${relativeDistFromCursor}`);
 
             if (shouldConsiderOverlapForegroundedness) {
                 this.logger.trace(`considering which element is foremost in overlap area; overlap is ${elem1AreaOverlapFraction} of element A's area and ${elem2AreaOverlapFraction} of element B's area`);
@@ -217,6 +218,8 @@ export class PageDataCollector {
             this.mouseClientY = newMouseY;
         });
     }
+
+    stopMouseMovementTracking = () => {this.browserHelper.terminateMouseMovementTracking();}
 
     handleVisibleIframesChange = async () => {
         await this.mutex.runExclusive(() => {

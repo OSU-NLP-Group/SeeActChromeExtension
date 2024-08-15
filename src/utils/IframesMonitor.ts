@@ -109,10 +109,10 @@ export class IframesMonitor {
             const iframePositionsToCheck = new Map(this.iframePositions);
             //must do shallow copy of data structure because otherwise we'd be iterating over a data structure that
             // could be modified by observer callbacks partway through the iteration
-            iframePositionsToCheck.forEach((_, iframe) => {
-                this.checkIframePosition(iframe);
-            });
-            this.logger.debug(`Iframe positions check took ${performance.now() - iframePositionsCheckStart}ms`);
+            iframePositionsToCheck.forEach(
+                (_, iframe) => {this.checkIframePosition(iframe);});
+            const positionCheckDuration = performance.now() - iframePositionsCheckStart;
+            if (positionCheckDuration > 100) {this.logger.warn(`Iframe positions check took ${positionCheckDuration}ms`);}
         }, this.checkInterval);
     }
 

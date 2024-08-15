@@ -17,8 +17,13 @@ const dataCollector = new PageDataCollector(portToBackground);
 portToBackground.onMessage.addListener(dataCollector.handleRequestFromAnnotationCoordinator);
 
 dataCollector.setupMouseMovementTracking();
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- the monitor sets up its oversight in the constructor and I want it kept in a variable in case I later want to disconnect the monitor under some conditions
 const visibleIframesMonitor = new IframesMonitor(document, dataCollector.handleVisibleIframesChange.bind(dataCollector));
+
+portToBackground.onDisconnect.addListener(() => {
+    logger.info("annotation coordinator experienced a port disconnect, terminating ongoing monitoring processes for mouse position and visible iframes");
+    dataCollector.stopMouseMovementTracking();
+    visibleIframesMonitor.disconnect();
+});
 
 (async () => {
     await sleep(50);//make sure coordinator has added its listeners before sending READY message
