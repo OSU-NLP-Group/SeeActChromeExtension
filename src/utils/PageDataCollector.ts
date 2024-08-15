@@ -199,16 +199,41 @@ export class PageDataCollector {
             const relativeDistFromCursor = elem1CenterDistFromCursor - elem2CenterDistFromCursor;
             this.logger.debug(`relative distance from cursor: ${relativeDistFromCursor}`);
 
+            let relativeRanking = 0;
             if (shouldConsiderOverlapForegroundedness) {
                 this.logger.trace(`considering which element is foremost in overlap area; overlap is ${elem1AreaOverlapFraction} of element A's area and ${elem2AreaOverlapFraction} of element B's area`);
-                const elem1Foregroundedness = this.browserHelper.judgeOverlappingElementsForForeground(elementData1, elementData2);
-                if (elem1Foregroundedness !== 0) {
+                const elem1ForegroundednessScore = this.browserHelper.judgeOverlappingElementsForForeground(elementData1, elementData2);
+                if (elem1ForegroundednessScore === 2 || elem1ForegroundednessScore === -2) {
+                    //rely solely on foregroundedness if one element is in the foreground in zero parts of the overlap zone
                     //return negative if elem1 is foremost and so should be earlier in the list of target element candidates
-                    return -elem1Foregroundedness;
-                } else {
-                    return relativeDistFromCursor;
-                }
-            } else {return relativeDistFromCursor;}
+                    relativeRanking = -elem1ForegroundednessScore;
+                } else if (elem1ForegroundednessScore === 1 || elem1ForegroundednessScore === -1) {
+                    const marginForEquivalentMouseDistances = 10;
+                    if ((relativeDistFromCursor < -marginForEquivalentMouseDistances && elem1ForegroundednessScore === 1)
+                        || (relativeDistFromCursor > marginForEquivalentMouseDistances && elem1ForegroundednessScore === -1)) {
+                        // if foregroundedness and cursor distance agree on which element is better
+                        relativeRanking = relativeDistFromCursor;
+                    } else if (Math.abs(relativeDistFromCursor) < marginForEquivalentMouseDistances) {
+                        //if cursor distances are ~equal, rely on foregroundedness and sort things so the more foregrounded element is earlier in the list
+                        relativeRanking = -elem1ForegroundednessScore;
+                    } else {
+                        //conflict between cursor distance and foregroundedness-in-overlap heuristics
+
+                        //if one element is basically contained within the other, then pick the smaller/more specific element
+                        const containedElemMinOverlap = 0.9, containerElemMaxOverlap = 0.5;
+                        if (elem1AreaOverlapFraction > containedElemMinOverlap && elem2AreaOverlapFraction < containerElemMaxOverlap) {
+                            this.logger.debug(`element A is ~contained within element B, so A should be ranked closer to the start of the target list; element A's overlap fraction is ${elem1AreaOverlapFraction} and element B's overlap fraction is ${elem2AreaOverlapFraction}; element A: ${elementData1.element.outerHTML.slice(0, 200)}; element B: ${elementData2.element.outerHTML.slice(0, 200)}`);
+                            relativeRanking = -1;
+                        } else if (elem2AreaOverlapFraction > containedElemMinOverlap && elem1AreaOverlapFraction < containerElemMaxOverlap) {
+                            this.logger.debug(`element B is ~contained within element A, so B should be ranked closer to the start of the target list; element A's overlap fraction is ${elem1AreaOverlapFraction} and element B's overlap fraction is ${elem2AreaOverlapFraction}; element A: ${elementData1.element.outerHTML.slice(0, 200)}; element B: ${elementData2.element.outerHTML.slice(0, 200)}`);
+                            relativeRanking = 1;
+                        }
+
+                        //can add more fallback heuristics here as new cases come up which require/inspire them
+                    }
+                } else {relativeRanking = relativeDistFromCursor;}
+            } else {relativeRanking = relativeDistFromCursor;}
+            return relativeRanking;
         };
     }
 

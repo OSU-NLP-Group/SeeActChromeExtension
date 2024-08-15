@@ -881,7 +881,17 @@ export class BrowserHelper {
         return foremostElemAtPoint;
     }
 
-    judgeOverlappingElementsForForeground = (elem1Data: ElementData, elem2Data: ElementData): number => {
+    /**
+     * @description Determine which of two elements is in the foreground, based on checking various points in their area of overlap
+     * @param elem1Data info about the first element to compare
+     * @param elem2Data info about the second element to compare
+     * @return 0 if they have no overlap, if neither is in foreground at any point in the overlap region, or if they each have an equal number of points where they are in the foreground;
+     *         1 if elem1 is in the foreground at more points in the overlap region than elem2 (but elem2 is in foreground at 1 point at least);
+     *         2 if elem1 is in the foreground at any points in the overlap region and elem2 is in the foreground at 0 points
+     *         -1 if elem2 is in the foreground at more points in the overlap region than elem1 (but elem1 is in foreground at 1 point at least);
+     *         -2 if elem2 is in the foreground at any points in the overlap region and elem1 is in the foreground at 0 points
+     */
+    judgeOverlappingElementsForForeground = (elem1Data: ElementData, elem2Data: ElementData): -2 | -1 | 0 | 1 | 2 => {
         const queryPoints = this.findQueryPointsInOverlap(elem1Data, elem2Data);
         if (queryPoints.length === 0) {return 0;}
         let numPointsWhereElem1IsForeground = 0;
@@ -910,7 +920,12 @@ export class BrowserHelper {
         }
         if (numPointsWhereElem1IsForeground === 0) {this.logger.info(`No query points where ${elem1Data.description} was in the foreground, when evaluating its overlap with ${elem2Data.description}`);}
         if (numPointsWhereElem2IsForeground === 0) {this.logger.info(`No query points where ${elem2Data.description} was in the foreground, when evaluating its overlap with ${elem1Data.description}`);}
-        return numPointsWhereElem1IsForeground - numPointsWhereElem2IsForeground;
+        let comparisonVal: -2 | -1 | 0 | 2 | 1 = 0;
+        if (numPointsWhereElem1IsForeground > numPointsWhereElem2IsForeground) {
+            comparisonVal = numPointsWhereElem2IsForeground === 0 ? 2 : 1;
+        } else if (numPointsWhereElem1IsForeground < numPointsWhereElem2IsForeground
+        ) {comparisonVal = numPointsWhereElem1IsForeground === 0 ? -2 : -1;}
+        return comparisonVal;
     }
 
     /**
