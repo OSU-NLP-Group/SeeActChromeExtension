@@ -130,6 +130,7 @@ export class SidePanelManager {
 
         //have to initialize to default value this way to ensure that the monitor mode container is hidden if the default is false
         this.handleMonitorModeCacheUpdate(defaultIsMonitorMode);
+        this.handleAnnotatorModeCacheUpdate(defaultIsAnnotatorMode);
 
         setupModeCache(this.handleMonitorModeCacheUpdate, "monitor mode", storageKeyForMonitorMode, this.logger);
         setupModeCache(this.handleAnnotatorModeCacheUpdate, "annotator mode", storageKeyForAnnotatorMode, this.logger);

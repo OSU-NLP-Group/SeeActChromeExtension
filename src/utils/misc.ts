@@ -50,7 +50,7 @@ export const defaultMaxNoops = 7;
 export const defaultMaxFailures = 10;
 export const defaultMaxFailureOrNoopStreak = 4;
 
-export const defaultIsAnnotatorMode = false;
+export const defaultIsAnnotatorMode = true;
 
 export const defaultAutoMonitorThreshold = ActionStateChangeSeverity.LOW;
 

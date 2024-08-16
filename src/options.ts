@@ -206,9 +206,10 @@ saveButton.addEventListener('click', () => {
         return;
     }
 
-    if ((aiProviderSelect.value === AiProviders.OPEN_AI.id && openAiApiKeyField.value === '')
+    if (!annotatorModeToggle.checked && (
+        (aiProviderSelect.value === AiProviders.OPEN_AI.id && openAiApiKeyField.value === '')
         || (aiProviderSelect.value === AiProviders.ANTHROPIC.id && anthropicApiKeyField.value === '')
-        || (aiProviderSelect.value === AiProviders.GOOGLE_DEEPMIND.id && googleDeepmindApiKeyField.value === '')) {
+        || (aiProviderSelect.value === AiProviders.GOOGLE_DEEPMIND.id && googleDeepmindApiKeyField.value === ''))) {
         logger.info(`Options saving problem: user attempted to save '${(aiProviderSelect.selectedOptions[0].value)}' choice of provider while that provider's api key field was empty`);
         statusDisplay.textContent = `Error: API key must be provided for selected AI provider ${aiProviderSelect.selectedOptions[0].text}`;
         return;
