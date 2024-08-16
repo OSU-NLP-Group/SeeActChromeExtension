@@ -1,9 +1,15 @@
-import { Logger } from "loglevel";
+import {Logger} from "loglevel";
 import {DomWrapper} from "./DomWrapper";
 import {createNamedLogger} from "./shared_logging_setup";
 import {ElementData, elementHighlightRenderDelay, renderUnknownValue, sleep} from "./misc";
 import {IframeTree} from "./IframeTree";
 import * as fuzz from "fuzzball";
+
+type RGB = [number, number, number];
+type HSL = [number, number, number];
+
+// Define an epsilon for floating-point comparison
+const EPSILON = 0.000001;
 
 export class ElementHighlighter {
     private domHelper: DomWrapper;
@@ -21,24 +27,24 @@ export class ElementHighlighter {
     }
 
     highlightElement = async (element: HTMLElement, allInteractiveElements: ElementData[] = [], highlightDuration: number = 30000): Promise<HTMLElement> => {
-        let elemToHighlight = element;
         await this.clearElementHighlightingEarly();
-        //todo on second thought, just move the below if block to the recursive helper
+        return await this.highlightElementHelper(element, allInteractiveElements, highlightDuration);
+    }
+
+    highlightElementHelper = async (element: HTMLElement, allInteractiveElements: ElementData[] = [], highlightDuration: number = 30000): Promise<HTMLElement> => {
         if (this.doesElementContainSpaceOccupyingPseudoElements(element)) {
             this.logger.debug(`Element contains space-occupying pseudo-elements which typically throw off outline-based highlighting, so trying to highlight parent element instead; pseudoelement-containing element: ${element.outerHTML.slice(0, 300)}`);
             const parentElem = element.parentElement;
             if (parentElem) {
                 const numInteractiveElementsUnderParent = allInteractiveElements.filter(interactiveElem => parentElem.contains(interactiveElem.element)).length;
                 if (numInteractiveElementsUnderParent <= 1) {
-                    elemToHighlight = parentElem;
+                    return await this.highlightElementHelper(parentElem, allInteractiveElements, highlightDuration);
                 } else { this.logger.trace(`still just trying to highlight element that contains pseudo-elements because its parent has ${numInteractiveElementsUnderParent} interactive children, so it would be ambiguous to highlight the parent as target element`); }
             }
         }
-        return await this.highlightElementHelper(elemToHighlight, allInteractiveElements, highlightDuration);
-    }
 
-    highlightElementHelper = async (element: HTMLElement, allInteractiveElements: ElementData[] = [], highlightDuration: number = 30000): Promise<HTMLElement> => {
         let elementHighlighted = element;
+
         const elementStyle: CSSStyleDeclaration = element.style;
         this.logger.trace(`attempting to highlight element ${element.outerHTML.slice(0, 300)}`);
 
@@ -51,8 +57,7 @@ export class ElementHighlighter {
         // https://developer.mozilla.org/en-US/docs/Web/CSS/filter-function/brightness (only 1.25, higher risks white-out and unreadability)
         // https://developer.mozilla.org/en-US/docs/Web/CSS/filter-function/contrast
 
-        //todo add logic to choose an outline color that contrasts with the actual visible background color of the element (with 'red' still being the fallback)
-        elementStyle.outline = "3px solid red";
+        elementStyle.outline = `3px solid ${this.calculateOutlineColor(element)}`;
 
         const animationWaitStart = performance.now();
         await new Promise((resolve) => window.requestAnimationFrame(resolve));
@@ -141,6 +146,189 @@ export class ElementHighlighter {
         });
     }
 
+    calculateOutlineColor = (element: HTMLElement): string => {
+        let outlineColor = "red";
+        const bgColorRgb = this.findEffectiveBackgroundColor(element);
+        if (bgColorRgb) {
+            const originalColorHsl = this.rgbToHsl(bgColorRgb);
+            const distinctiveColorHsl = this.isNeutralColor(originalColorHsl) ?
+                this.adjustNeutralColor(originalColorHsl) : this.adjustNonNeutralColor(originalColorHsl);
+            const [r, g, b] = this.hslToRgb(distinctiveColorHsl);
+            outlineColor = `rgb(${r}, ${g}, ${b})`;
+        }
+        return outlineColor;
+    }
 
+    rgbToHsl(rgb: RGB): HSL {
+        // Normalize RGB values to 0-1 range
+        const [r, g, b] = rgb.map(v => v / 255);
+
+        // Find the minimum and maximum values out of R, G, and B
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+
+        // Calculate the lightness
+        const lightness = (max + min) / 2;
+
+        let hue = 0;
+        let saturation = 0;
+
+        if (Math.abs(max - min) > EPSILON) {//i.e. max !== min, but safe from floating point weirdness
+            // Calculate the saturation
+            const colorRange = max - min;
+            // Saturation formula changes based on lightness to maintain consistent
+            // perceptual saturation across different lightness levels.
+            // When lightness is very high _or_ very low, a larger color range is needed for the same
+            // perceived saturation
+            saturation = lightness > 0.5
+                ? colorRange / (2*(1-lightness))
+                : colorRange / (2*lightness);
+
+            // Calculate the hue
+            switch (true) {
+                case Math.abs(r - max) < EPSILON: {
+                    // If red is the dominant color
+                    const greenBlueDistance = g - b;
+                    const redDominantHue = greenBlueDistance / colorRange;
+                    hue = redDominantHue + (g < b ? 6 : 0);//center of red region is at the 0 point of the color wheel
+                    // Add 6 if hue is negative to keep it in 0-6 range
+                    break;
+                }
+                case Math.abs(g - max) < EPSILON: {
+                    // If green is the dominant color
+                    const blueRedDistance = b - r;
+                    const greenDominantHue = blueRedDistance / colorRange;
+                    hue = greenDominantHue + 2;//center of green region is 2/6 aka 1/3 of the way around the color wheel
+                    break;
+                }
+                case Math.abs(b - max) < EPSILON: {
+                    // If blue is the dominant color
+                    const redGreenDistance = r - g;
+                    const blueDominantHue = redGreenDistance / colorRange;
+                    hue = blueDominantHue + 4;//center of blue region is 4/6 aka 2/3 of the way around the color wheel
+                    break;
+                }
+            }
+            // Normalize hue to 0-1 range
+            hue /= 6;
+        }
+
+        // Convert hue to degrees, and saturation and lightness to percentages
+        return [hue * 360, saturation * 100, lightness * 100];
+    }
+
+    /**
+     * Helper function to calculate one of the RGB component values for a given color
+     * @param baseComponent - The base RGB component value for the color (in 0-1 range)
+     * @param saturationAdjustment the amount to adjust the rgb component based on the saturation of that color (in 0-1 range)
+     * @param hueOffset the angle on the hue color wheel to use for this rgb component (in 0-1 range)
+     * @returns The calculated RGB component value (in 0-1 range)
+     */
+    calculateRgbComponent = (baseComponent: number, saturationAdjustment: number, hueOffset: number): number => {
+        // Adjust hue offset to be within 0-1 range
+        let adjustedHue = hueOffset;
+        if (adjustedHue < 0) adjustedHue += 1;
+        if (adjustedHue > 1) adjustedHue -= 1;
+
+        // Calculate RGB value based on which sixth of the color wheel the hue falls in
+        if (adjustedHue < 1/6) {
+            // Hue is in the first sixth: linear interpolation from baseComponent to saturationAdjustment
+            return baseComponent + (saturationAdjustment - baseComponent) * 6 * adjustedHue;
+        } else if (adjustedHue < 1/2) {
+            // Hue is in the second or third sixth: flat at saturationAdjustment
+            return saturationAdjustment;
+        } else if (adjustedHue < 2/3) {
+            // Hue is in the fourth sixth: linear interpolation from saturationAdjustment back to baseComponent
+            return baseComponent + (saturationAdjustment - baseComponent) * (2/3 - adjustedHue) * 6;
+        } else {
+            // Hue is in the fifth or sixth sixth: flat at baseComponent
+            return baseComponent;
+        }
+    }
+
+    hslToRgb(hsl: HSL): RGB {
+        let [hue, saturation, lightness] = hsl;
+
+        // Normalize HSL values
+        hue /= 360; // Convert hue to 0-1 range
+        saturation /= 100; // Convert saturation to 0-1 range
+        lightness /= 100; // Convert lightness to 0-1 range
+
+        let red, green, blue;
+
+        if (saturation < EPSILON) {
+            // If saturation is 0, the color is a shade of gray
+            red = green = blue = lightness;
+        } else {
+            // Calculate color components based on lightness
+            // This formula adjusts the range of the color components based on lightness
+            // to maintain consistent perceived saturation across different lightness levels
+            const saturationAdjustment = lightness < 0.5
+                ? lightness * (1 + saturation) : lightness + saturation - lightness * saturation;
+            const baseComponent = 2 * lightness - saturationAdjustment;
+
+            // Calculate RGB values
+            red = this.calculateRgbComponent(baseComponent, saturationAdjustment, hue + 1/3);
+            green = this.calculateRgbComponent(baseComponent, saturationAdjustment, hue);
+            blue = this.calculateRgbComponent(baseComponent, saturationAdjustment, hue - 1/3);
+        }
+
+        const denormalize = (x: number) => Math.round(x * 255); // expand rgb component from 0-1 range to 0-255 range and force it to be an integer
+        return [denormalize(red), denormalize(green), denormalize(blue)];
+    }
+    isNeutralColor(hsl: HSL): boolean {return hsl[1] < 10;} // Consider colors with saturation < 10% as neutral
+
+    adjustNeutralColor(hsl: HSL): HSL {
+        let lightness = hsl[2];
+        lightness = lightness > 50 ? Math.max(0, lightness - 50) : Math.min(100, lightness + 50);
+        return [hsl[0], hsl[1], lightness];
+    }
+
+    adjustNonNeutralColor(hsl: HSL): HSL {
+        // eslint-disable-next-line prefer-const -- destructuring operation
+        let [hue, saturation, lightness] = hsl;
+        hue = (hue + 180) % 360;
+        lightness = lightness > 50 ? Math.max(0, lightness - 30) : Math.min(100, lightness + 30);
+        return [hue, saturation, lightness];
+    }
+
+    //this is imperfect- it neglects how, say, an element with a 30% alpha background color will have an actually
+    // rendered background color that's a combination of its own (partly-transparent) background color choice and the
+    // background color choice(s) of its ancestor(s); however, it should be sufficient for this purpose of finding a
+    // good outline color for highlighting
+    findEffectiveBackgroundColor(element: HTMLElement, alphaThreshold: number = 0.1): RGB | null {
+        let currentElement: HTMLElement | null = element;
+        while (currentElement) {
+            const bgColor: string = this.domHelper.getComputedStyle(currentElement).backgroundColor;
+            const [r, g, b, alpha] = this.parseRGBA(bgColor);
+            if (alpha > alphaThreshold) {return [r, g, b];}
+            currentElement = currentElement.parentElement;
+        }
+        // If no element with alpha > threshold is found, return null
+        return null;
+    }
+
+    parseRGBA(color: string): [number, number, number, number] {
+        let r = 0, g = 0, b = 0, a = 1;  // Default to opaque black
+        if (color === 'transparent') {
+            a = 0;  // Fully transparent
+        } else if (color.startsWith('rgb(')) {
+            const match = color.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+            if (match) {
+                r = parseInt(match[1], 10);
+                g = parseInt(match[2], 10);
+                b = parseInt(match[3], 10);
+            }
+        } else if (color.startsWith('rgba(')) {
+            const match = color.match(/rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/);
+            if (match) {
+                r = parseInt(match[1], 10);
+                g = parseInt(match[2], 10);
+                b = parseInt(match[3], 10);
+                a = parseFloat(match[4]);
+            }
+        }
+        return [r, g, b, a];
+    }
 
 }
