@@ -1,17 +1,16 @@
 import getXPath from "get-xpath";
 import {createNamedLogger} from "./shared_logging_setup";
 import {DomWrapper} from "./DomWrapper";
-import log from "loglevel";
+import log, {Logger} from "loglevel";
 import * as fuzz from "fuzzball";
 import {
     ElementData,
-    elementHighlightRenderDelay,
     HTMLElementWithDocumentHost, isDocument, isHtmlElement, isIframeElement, isShadowRoot,
     renderUnknownValue,
     SerializableElementData,
-    sleep
 } from "./misc";
 import {IframeNode, IframeTree} from "./IframeTree";
+import {ElementHighlighter} from "./ElementHighlighter";
 
 export function makeElementDataSerializable(elementData: ElementData): SerializableElementData {
     const serializableElementData: SerializableElementData = {...elementData};
@@ -28,19 +27,23 @@ export class BrowserHelper {
     //for dependency injection in unit tests
     private domHelper: DomWrapper;
 
-    readonly logger;
-
-    private highlightedElementOriginalOutline: string | undefined;
-    private highlightedElementStyle: CSSStyleDeclaration | undefined;
+    readonly logger: Logger;
+    private elementHighlighter: ElementHighlighter;
 
     private cachedIframeTree: IframeTree | undefined;
     private cachedShadowRootHostChildrenOfMainDoc: HTMLElement[] | undefined;
     private existingMouseMovementListeners: Map<Document, (e: MouseEvent) => void> = new Map();
 
-    constructor(domHelper?: DomWrapper, loggerToUse?: log.Logger) {
+    constructor(domHelper?: DomWrapper, loggerToUse?: log.Logger, elementHighlighter?: ElementHighlighter) {
         this.domHelper = domHelper ?? new DomWrapper(window);
 
         this.logger = loggerToUse ?? createNamedLogger('browser-helper', false);
+        this.elementHighlighter = elementHighlighter ?? new ElementHighlighter(this.fetchAndCacheIframeTree.bind(this));
+    }
+
+    fetchAndCacheIframeTree = (): IframeTree => {
+        if (!this.cachedIframeTree) {this.cachedIframeTree = new IframeTree(this.domHelper.window as Window);}
+        return this.cachedIframeTree;
     }
 
     resetElementAnalysis() {
@@ -258,8 +261,7 @@ export class BrowserHelper {
      */
     getFullXpath = (element: HTMLElement): string => {
         let overallXpath = this.getFullXpathHelper(element);
-        if (!this.cachedIframeTree) {this.cachedIframeTree = new IframeTree(this.domHelper.window as Window, this.logger);}
-        const nestedIframesPathToElem = this.cachedIframeTree.getIframePathForElement(element);
+        const nestedIframesPathToElem = this.fetchAndCacheIframeTree().getIframePathForElement(element);
         if (nestedIframesPathToElem) {
             for (let nestedIframeIdx = nestedIframesPathToElem.length - 1; nestedIframeIdx >= 0; nestedIframeIdx--) {
                 const nestedIframeElem = nestedIframesPathToElem[nestedIframeIdx].iframe;
@@ -472,7 +474,7 @@ export class BrowserHelper {
         //todo somehow want to also grab elements which are scrollable (i.e. they have overflow auto and there're
         // scrollbar(s) on the right and/or bottom sides of the element)
         const uniqueInteractiveElements = this.enhancedQuerySelectorAll(interactiveElementSelectors,
-            this.domHelper.window as Window, elem => !this.calcIsDisabled(elem), true);
+            elem => !this.calcIsDisabled(elem), true);
         const elemFetchDuration = performance.now() - elemsFetchStartTs;//ms
         //todo move this threshold to 250 or 500 ms after there's time to investigate/remediate the recent jump in fetch time
         // this isn't a perf bottleneck in agent use case, but it is in the action annotation/data-collection use case
@@ -488,118 +490,11 @@ export class BrowserHelper {
     }
 
     highlightElement = async (element: HTMLElement, allInteractiveElements: ElementData[] = [], highlightDuration: number = 30000): Promise<HTMLElement> => {
-        let elemToHighlight = element;
-        await this.clearElementHighlightingEarly();
-        if (this.doesElementContainSpaceOccupyingPseudoElements(element)) {
-            this.logger.debug(`Element contains space-occupying pseudo-elements which typically throw off outline-based highlighting, so trying to highlight parent element instead; pseudoelement-containing element: ${element.outerHTML.slice(0, 300)}`);
-            const parentElem = element.parentElement;
-            if (parentElem) {
-                const numInteractiveElementsUnderParent = allInteractiveElements.filter(interactiveElem => parentElem.contains(interactiveElem.element)).length;
-                if (numInteractiveElementsUnderParent <= 1) {
-                    elemToHighlight = parentElem;
-                } else { this.logger.trace(`still just trying to highlight element that contains pseudo-elements because its parent has ${numInteractiveElementsUnderParent} interactive children, so it would be ambiguous to highlight the parent as target element`); }
-            }
-        }
-        return await this.highlightElementHelper(elemToHighlight, allInteractiveElements, highlightDuration);
-    }
-
-    highlightElementHelper = async (element: HTMLElement, allInteractiveElements: ElementData[] = [], highlightDuration: number = 30000): Promise<HTMLElement> => {
-        let elementHighlighted = element;
-        const elementStyle: CSSStyleDeclaration = element.style;
-        this.logger.trace(`attempting to highlight element ${element.outerHTML.slice(0, 300)}`);
-
-        const initialOutline = elementStyle.outline;
-        const initialComputedOutline = this.domHelper.getComputedStyle(element).outline;
-        //const initialBackgroundColor = elemStyle.backgroundColor;
-
-        //todo https://developer.mozilla.org/en-US/docs/Web/CSS/filter
-        // https://developer.mozilla.org/en-US/docs/Web/CSS/filter-function/hue-rotate
-        // https://developer.mozilla.org/en-US/docs/Web/CSS/filter-function/brightness (only 1.25, higher risks white-out and unreadability)
-        // https://developer.mozilla.org/en-US/docs/Web/CSS/filter-function/contrast
-
-        elementStyle.outline = "3px solid red";
-
-        const animationWaitStart = performance.now();
-        await new Promise((resolve) => window.requestAnimationFrame(resolve));
-        this.logger.trace(`Time to wait for top-level animation frame after setting outline: ${performance.now() - animationWaitStart} ms`);
-        if (!this.cachedIframeTree) {this.cachedIframeTree = new IframeTree(this.domHelper.window as Window, this.logger);}
-        const iframeContextNode = this.cachedIframeTree.findIframeNodeForElement(element);
-        if (iframeContextNode) {
-            const iframeAnimationWaitStart = performance.now();
-            try {
-                await new Promise((resolve) => iframeContextNode.window.requestAnimationFrame(resolve));
-            } catch (error: any) {
-                if (error.name === "SecurityError") {
-                    this.logger.trace(`Cross-origin iframe detected while highlighting element: ${renderUnknownValue(error)
-                        .slice(0, 100)}`);
-                } else {throw error;}
-            }
-            this.logger.trace(`Time to wait for animation frame in iframe context after setting outline: ${performance.now() - iframeAnimationWaitStart} ms`);
-        }
-
-        await sleep(elementHighlightRenderDelay);
-
-        const computedStyleSimilarityThreshold = 0.8;
-        const computedOutlinePostStyleMod = this.domHelper.getComputedStyle(element).outline;
-        const computedOutlineSimilarity = fuzz.ratio(initialComputedOutline, computedOutlinePostStyleMod) / 100;
-        if (computedOutlineSimilarity > computedStyleSimilarityThreshold) {
-            this.logger.info(`Element outline was not successfully set to red; computed outline is still the same as before (initialComputedOutline: ${initialComputedOutline}; computedOutlinePostStyleMod: ${computedOutlinePostStyleMod}; similarity ${computedOutlineSimilarity})`);
-            const parentElem = element.parentElement;
-            if (parentElem) {
-                const numInteractiveElementsUnderParent = allInteractiveElements.filter(interactiveElem => parentElem.contains(interactiveElem.element)).length;
-                if (numInteractiveElementsUnderParent <= 1) {
-                    this.logger.debug("trying to highlight parent element instead");
-                    elementStyle.outline = initialOutline;
-                    elementHighlighted = await this.highlightElementHelper(parentElem, allInteractiveElements, highlightDuration);
-                } else { this.logger.trace(`not trying to highlight parent because it has ${numInteractiveElementsUnderParent} interactive children, so it would be ambiguous to highlight the parent as target element`); }
-            }
-        } else { this.logger.trace(`initialComputedOutline: ${initialComputedOutline}; computedOutlinePostStyleMod: ${computedOutlinePostStyleMod}; similarity: ${computedOutlineSimilarity}`); }
-        if (elementHighlighted === element) {
-            this.highlightedElementStyle = elementStyle;
-            this.highlightedElementOriginalOutline = initialOutline;
-            setTimeout(() => {
-                if (this.highlightedElementStyle === elementStyle) {
-                    elementStyle.outline = initialOutline;
-                    this.highlightedElementStyle = undefined;
-                    this.highlightedElementOriginalOutline = undefined;
-                }//otherwise the highlighting of the element was already reset by a later call of this method
-            }, highlightDuration);
-
-            //elemStyle.filter = "brightness(1.5)";
-
-            // https://stackoverflow.com/questions/1389609/plain-javascript-code-to-highlight-an-html-element
-            // meddling with element.style properties like backgroundColor, outline, filter, (border?)
-            // https://developer.mozilla.org/en-US/docs/Web/CSS/background-color
-            // https://developer.mozilla.org/en-US/docs/Web/CSS/outline
-            // https://developer.mozilla.org/en-US/docs/Web/CSS/filter
-            // https://developer.mozilla.org/en-US/docs/Web/CSS/border
-        }
-        return elementHighlighted;
+        return this.elementHighlighter.highlightElement(element, allInteractiveElements, highlightDuration);
     }
 
     clearElementHighlightingEarly = async () => {
-        if (this.highlightedElementStyle) {
-            if (this.highlightedElementOriginalOutline === undefined) { this.logger.error("highlightedElementOriginalOutline is undefined when resetting the outline of a highlighted element (at the start of the process for highlighting a new element"); }
-            this.logger.trace(`clearing element highlighting early, from highlit outline of ${this.highlightedElementStyle.outline} to original outline value of ${this.highlightedElementOriginalOutline}`);
-            this.highlightedElementStyle.outline = this.highlightedElementOriginalOutline ?? "";
-
-            this.highlightedElementStyle = undefined;
-            this.highlightedElementOriginalOutline = undefined;
-
-            await sleep(elementHighlightRenderDelay);
-        } else { this.logger.trace("unable to clear element highlighting because no temporary style object is stored for a highlighted element"); }
-    }
-
-    doesElementContainSpaceOccupyingPseudoElements = (element: HTMLElement): boolean => {
-        //included marker/placeholder/file-selector-button speculatively; open to removing them if they don't actually
-        // cause a problematic change in visually rendered element size (and so don't screw up element highlighting)
-        return ["::before", "::after", "::marker", "::placeholder", "::file-selector-button"].some(pseudoElemName => {
-            const pseudoElemStyle = this.domHelper.getComputedStyle(element, pseudoElemName);
-            const isPseudoElemPresent = pseudoElemStyle.content !== "" && pseudoElemStyle.content !== "none"
-                && pseudoElemStyle.content !== "normal";
-            if (isPseudoElemPresent) { this.logger.debug(`FOUND PSEUDO-ELEMENT ${pseudoElemName} with computed style inside of element ${element.outerHTML.slice(0, 200)}`) }
-            return isPseudoElemPresent;
-        });
+        await this.elementHighlighter.clearElementHighlightingEarly();
     }
 
 
@@ -632,24 +527,23 @@ export class BrowserHelper {
      * protection against duplicates across different scopes (since intuitively it shouldn't be possible for an element
      * to be in both a shadow DOM and the main document)
      * @param cssSelectors The CSS selectors to use to find elements
-     * @param topWindow the window that the search should happen in; this should be the top window of the page
      * @param elemFilter predicate to immediately eliminate irrelevant elements before they slow down the
      *                      array-combining operations
      * @param shouldIgnoreHidden whether to ignore hidden/not-displayed elements
      * @returns array of elements that match any of the CSS selectors;
      *          this is a static view of the elements (not live access that would allow modification)
      */
-    enhancedQuerySelectorAll = (cssSelectors: string[], topWindow: Window,
+    enhancedQuerySelectorAll = (cssSelectors: string[],
                                 elemFilter: (elem: HTMLElement) => boolean, shouldIgnoreHidden: boolean = true
     ): Array<HTMLElementWithDocumentHost> => {
-        if (!this.cachedIframeTree) {this.cachedIframeTree = new IframeTree(topWindow, this.logger);}
+        const topWindow = this.domHelper.window as Window;
         if (this.cachedShadowRootHostChildrenOfMainDoc === undefined) {this.cachedShadowRootHostChildrenOfMainDoc = this.initializeCacheOfShadowRootHostChildrenOfMainDoc();}
 
         //todo measure which operations in this recursive stack are taking up the most time in total
         // I suspect the elementFromPoint() calls, since fetch time seemed to have shot up recently from 10-20ms to 60-130ms
         // Since this is single-threaded, can use instance vars to accumulate time spent on different things
         //  (as long as those instance vars are reset at the start of each call of this method)
-        return this.enhancedQuerySelectorAllHelper(cssSelectors, topWindow.document, this.cachedIframeTree.root,
+        return this.enhancedQuerySelectorAllHelper(cssSelectors, topWindow.document, this.fetchAndCacheIframeTree().root,
             elemFilter, this.cachedShadowRootHostChildrenOfMainDoc, shouldIgnoreHidden);
     }
 
@@ -781,8 +675,7 @@ export class BrowserHelper {
     }
 
     setupMouseMovementTracking = (positionUpdater: (x: number, y: number) => void) => {
-        if (!this.cachedIframeTree) {this.cachedIframeTree = new IframeTree(this.domHelper.window as Window, this.logger);}
-        this.setupMouseMovementTrackingHelper(this.cachedIframeTree.root, positionUpdater);
+        this.setupMouseMovementTrackingHelper(this.fetchAndCacheIframeTree().root, positionUpdater);
     }
 
     setupMouseMovementTrackingHelper = (iframeContextNode: IframeNode, positionUpdater: (x: number, y: number) => void) => {
@@ -893,8 +786,7 @@ export class BrowserHelper {
             }
         } else if (isIframeElement(foremostElemAtPoint)) {
             this.logger.trace(`going to try to recurse into iframe to find element at position ${x}, ${y}`);
-            if (!this.cachedIframeTree) {this.cachedIframeTree = new IframeTree(this.domHelper.window as Window, this.logger);}
-            const iframeNode = this.cachedIframeTree.findIframeNodeForIframeElement(foremostElemAtPoint);
+            const iframeNode = this.fetchAndCacheIframeTree().findIframeNodeForIframeElement(foremostElemAtPoint);
             if (iframeNode) {
                 const iframeContent = this.getIframeContent(foremostElemAtPoint);
                 if (iframeContent) {

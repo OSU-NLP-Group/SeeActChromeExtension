@@ -1,5 +1,6 @@
 import {Logger} from "loglevel";
 import {renderUnknownValue} from "./misc";
+import {createNamedLogger} from "./shared_logging_setup";
 
 /**
  * Represents a node in the iframe tree structure.
@@ -57,8 +58,8 @@ export class IframeTree {
     /**
      * Creates an instance of IframeTree and builds the tree structure.
      */
-    constructor(topWindow: Window, logger: Logger) {
-        this.logger = logger;
+    constructor(topWindow: Window, logger?: Logger) {
+        this.logger = logger ?? createNamedLogger('iframe-tree', false);
         this.root = new IframeNode(null, topWindow);
         this.nodeMap = new Map([[topWindow, this.root]]);
         this.buildTree();
