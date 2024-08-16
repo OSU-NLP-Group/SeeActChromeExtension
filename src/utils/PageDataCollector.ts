@@ -121,6 +121,7 @@ export class PageDataCollector {
         let mousePosElemBoundingBox: BoundingBox | undefined = undefined;
         let mousePosElemData: SerializableElementData | undefined = undefined;
         if (foremostElementAtPoint && shouldCaptureMousePosElemInfo) {
+            this.logger.debug(`element found at mouse coordinates ${currMouseX}, ${currMouseY}: ${foremostElementAtPoint.outerHTML.slice(0, 200)}; has onclick property?: ${Boolean(foremostElementAtPoint.onclick)}`);
             const mElemRect = this.domWrapper.grabClientBoundingRect(foremostElementAtPoint);
             mousePosElemBoundingBox =
                 {tLx: mElemRect.left, tLy: mElemRect.top, bRx: mElemRect.right, bRy: mElemRect.bottom};

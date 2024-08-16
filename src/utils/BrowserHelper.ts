@@ -290,11 +290,11 @@ export class BrowserHelper {
      * @return data about the element
      */
     getElementData = (element: HTMLElementWithDocumentHost): ElementData | null => {
-        const description = this.getElementDescription(element);
+        let description = this.getElementDescription(element);
         if (!description) {
-            this.logger.trace(`unable to generate description for element, so skipping it; outerHTML: ${element.outerHTML.slice(0, 300)}; parent outerHTML: ${this.getRealParentElement(element)
+            this.logger.trace(`UNABLE TO GENERATE DESCRIPTION FOR ELEMENT; outerHTML: ${element.outerHTML.slice(0, 300)}; parent outerHTML: ${this.getRealParentElement(element)
                 ?.outerHTML.slice(0, 300)}`);
-            return null;
+            description = "description_unavailable";
         }
 
         const tagName = element.tagName.toLowerCase();
@@ -657,6 +657,17 @@ export class BrowserHelper {
                                       elemFilter: (elem: HTMLElement) => boolean,
                                       cachedShadowRootHostChildren?: HTMLElement[], shouldIgnoreHidden: boolean = true
     ): Array<HTMLElementWithDocumentHost> => {
+        let callIdentifier = '';
+        if (iframeContextNode.iframe) {
+            callIdentifier = `iframe with src ${iframeContextNode.iframe.src} and iframe path ${this.getFullXpath(iframeContextNode.iframe)}`;
+        }
+        if (isShadowRoot(root)) {
+            if (callIdentifier.length !== 0) { callIdentifier += "; within that, "; }
+            callIdentifier += `shadow root of host element with xpath ${this.getFullXpath(root.host as HTMLElement)}`;
+        }
+        if (callIdentifier.length === 0) { callIdentifier = "top-level document"; }
+
+        this.logger.trace(`Starting enhancedQuerySelectorAllHelper call within context: ${callIdentifier}`);
         let possibleShadowRootHosts = cachedShadowRootHostChildren ?? this.domHelper.fetchElementsByCss('*', root);
         if (shouldIgnoreHidden) { possibleShadowRootHosts = possibleShadowRootHosts.filter(elem => !this.calcIsHidden(elem, iframeContextNode, true)); }
         let shadowRootsOfChildren = possibleShadowRootHosts.map(elem => elem.shadowRoot) as ShadowRoot[];
@@ -666,6 +677,7 @@ export class BrowserHelper {
         //+1 is for the current scope results array, in case none of the child iframes get disqualified for being hidden
         const resultArrays: HTMLElement[][] = new Array<Array<HTMLElement>>(shadowRootsOfChildren.length + iframeNodes.length + 1);
 
+        this.logger.trace(`Starting recursive calls into up to ${iframeNodes.length} iframes within context: ${callIdentifier}`);
         for (const childIframeNode of iframeNodes) {
             const childIframeElem = childIframeNode.iframe;
             if (!childIframeElem) {
@@ -688,20 +700,36 @@ export class BrowserHelper {
             }
         }
 
+        this.logger.trace(`Finished recursive calls into iframes and starting recursive calls into ${shadowRootsOfChildren.length} shadow roots within context: ${callIdentifier}`);
         shadowRootsOfChildren.map(childShadowRoot => this.enhancedQuerySelectorAllHelper(cssSelectors, childShadowRoot, iframeContextNode, elemFilter, undefined, shouldIgnoreHidden))
             .forEach(resultsForShadowRoot => resultArrays.push(resultsForShadowRoot));
+        this.logger.trace(`Finished recursive calls into shadow roots and starting search for regular elements within context: ${callIdentifier}`);
 
         //based on https://developer.mozilla.org/en-US/docs/Web/API/Node/isSameNode, I'm pretty confident that simple
         // element === element checks by the Set class will prevent duplicates
         const currScopeResults: Set<HTMLElement> = new Set();
-        cssSelectors.map(selector => Array.from(root.querySelectorAll<HTMLElement>(selector)).filter(elemFilter))
-            .forEach(resultsForSelector => {
-                resultsForSelector.forEach(elem => {
-                    if (!shouldIgnoreHidden || !this.calcIsHidden(elem, iframeContextNode)) {
-                        currScopeResults.add(elem);
-                    } else {this.logger.trace(`Ignoring hidden element ${elem.outerHTML.slice(0, 300)}`);}
-                });
-            })
+        cssSelectors.forEach(selector => this.domHelper.fetchElementsByCss(selector, root).filter(elemFilter)
+            .forEach(elem => {
+                if (!shouldIgnoreHidden || !this.calcIsHidden(elem, iframeContextNode)) {
+                    currScopeResults.add(elem);
+                } else {this.logger.trace(`Ignoring hidden element ${elem.outerHTML.slice(0, 300)} that was found with css selector ${selector}`);}
+            }));
+        const clickableElementsBasedOnProperty = this.domHelper.fetchElementsByCss('*', root)
+            .filter(elem => Boolean(elem.onclick)).filter(elemFilter);
+        if (clickableElementsBasedOnProperty.length > 0) { this.logger.debug(`Found ${clickableElementsBasedOnProperty.length} clickable elements based on the onclick property within context: ${callIdentifier}`); }
+        clickableElementsBasedOnProperty.forEach(elem => {
+            if (!shouldIgnoreHidden || !this.calcIsHidden(elem, iframeContextNode)) {
+                currScopeResults.add(elem);
+            } else {this.logger.trace(`Ignoring hidden element ${elem.outerHTML.slice(0, 300)} that was found because it had the onclick property defined`);}
+        });
+        //it would be far more complex to detect elements that are clickable only because a handler was attached to them
+        // with `addEventListener('click', ...)`; that would require complex and potentially very slow code that
+        // collaborated with the service worker to find all elements with event listeners attached to them using
+        // chrome.debugger and then figuring out which ones were for click events; that would be even more complicated
+        // if this helper was being called for an iframe's document (the chrome.debugger.attach() call couldn't simply
+        // target the tabId but would need to do weird things https://developer.chrome.com/docs/extensions/reference/api/debugger#work_with_frames )
+
+
         //todo search for scrollable elements and add them to the results
         // https://developer.mozilla.org/en-US/docs/Web/API/Element/scrollHeight
         // then need to modify getElementData to check for whether the element is scrollable and if so add a flag (and possibly more details like scrollHeight relative to client height and offsetTop/(scrollHeight-clientHeight)
@@ -710,7 +738,9 @@ export class BrowserHelper {
 
         //todo consider implementing custom array merging logic instead of HTML[][].flat() if this method is proving to be a noticeable performance bottleneck even sometimes
         // e.g. look at this source: https://dev.to/uilicious/javascript-array-push-is-945x-faster-than-array-concat-1oki
-        return resultArrays.flat();
+        const htmlElements = resultArrays.flat();
+        this.logger.trace(`Finished search for regular elements and returning combined results (${htmlElements.length} elements) within context: ${callIdentifier}`);
+        return htmlElements;
     }
 
 
