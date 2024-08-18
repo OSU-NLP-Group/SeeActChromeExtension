@@ -59,6 +59,13 @@ export class PageDataCollector {
         }
     }
 
+    //todo method for start-of-batch data collection process
+    // scroll to top
+    // collect interactive elements and html dump
+    // capture/store screenshot and viewport details, then scroll down
+    // repeat prior step until bottom of page is reached and screen-capped
+    // scroll back to top and send all data to coordinator
+
     collectActionDetailsAndContext = async (): Promise<void> => {
         await this.browserHelper.clearElementHighlightingEarly();
         let userMessage = "";//to be shown to the user in the status display in the side panel

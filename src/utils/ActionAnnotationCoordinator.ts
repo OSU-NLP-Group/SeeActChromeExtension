@@ -37,6 +37,7 @@ export enum AnnotationCoordinatorState {
     WAITING_FOR_ANNOTATION_DETAILS,//waiting for annotation details from the side panel
     WAITING_FOR_CONTENT_SCRIPT_INIT,//injected content script hasn't notified coordinator of readiness yet
     WAITING_FOR_PAGE_INFO,// waiting for content script to retrieve page state (e.g. interactive elements) from page
+    //todo state for 'waiting for start-of-batch data collection process to complete'
 }
 
 export class ActionAnnotationCoordinator {
@@ -56,6 +57,17 @@ export class ActionAnnotationCoordinator {
 
     idOfTabWithCapturer: number | undefined;
 
+    //todo batch id and start-timestamp
+
+    //todo fields for start-of-batch data
+    // interactive elements and html dump before any actions (when already scrolled to top)
+    // list of screenshots of the page at different scroll positions
+    // list of viewport details for the different screenshots
+
+    //todo list of completed annotation ids in batch
+    //todo list for in-progress batch of completed annotation actions, severities, descriptions, url's, target
+    // element's, viewport info's, mouse coords, mouse elem bounding box's, mouse elem's, highlighted element bounding
+    // boxes, highlighted elements, context screenshots, targeted screenshots, interactive elements, html dumps
 
     currAnnotationId: string | undefined;
     //when adding support for more actions, don't forget to update input validation in handleMessageFromSidePanel()
@@ -100,8 +112,6 @@ export class ActionAnnotationCoordinator {
 
     validateAndApplyAnnotatorOptions = (initOrUpdate: boolean, eulaAcceptance: unknown): void => {
         const contextStr = initOrUpdate ? "when loading options from storage" : "when processing an update from storage";
-
-
         if (typeof eulaAcceptance === "boolean") {
             this.logger.debug(`EULA acceptance value from storage: ${eulaAcceptance}`);
             this.isDisabledUntilEulaAcceptance = !eulaAcceptance;
@@ -121,10 +131,8 @@ export class ActionAnnotationCoordinator {
                 this.portToSidePanel.disconnect();
                 this.resetAnnotationCaptureCoordinator(errMsg);
             }
-
             this.portToSidePanel = port;
             this.portToSidePanel.onMessage.addListener((message) => this.handleMessageFromSidePanel(message, port));
-            //other needed stuff?
         });
     }
 
@@ -139,12 +147,14 @@ export class ActionAnnotationCoordinator {
                 this.resetAnnotationCaptureCoordinator(errMsg);
             }
         });
-
     }
 
     handleMessageFromSidePanel = async (message: any, sidePanelPort: Port): Promise<void> => {
         if (message.type === PanelToAnnotationCoordinatorPortMsgType.START_CAPTURER) {
+            //todo this if body should be in its own method, and the call to that method should be wrapped with mutex
+            //todo double check that batch id is undefined and that state is idle
             const currTabInfo = await this.swHelper.getActiveTab();
+            //todo revise this to inject the capturer if it isn't there already, otherwise proceed
             if (currTabInfo.id !== undefined && currTabInfo.id === this.idOfTabWithCapturer) {
                 this.resetAnnotationCaptureCoordinator(`capturer already started in current tab`, `current tab id: ${currTabInfo.id}`);
                 return;
@@ -165,6 +175,8 @@ export class ActionAnnotationCoordinator {
                 this.resetAnnotationCaptureCoordinator(`ERROR while injecting content script for annotation capture`, injectionErrMsg)
                 return;
             }
+            //todo if script was already injected, call method for start of batch data collection
+
         } else if (message.type === PanelToAnnotationCoordinatorPortMsgType.ANNOTATION_DETAILS) {
             await this.mutex.runExclusive(async () => {
                 if (this.state !== AnnotationCoordinatorState.WAITING_FOR_ANNOTATION_DETAILS) {
@@ -250,9 +262,15 @@ export class ActionAnnotationCoordinator {
             this.resetAnnotationCaptureCoordinator(errMsg);
             return;
         }
+        //todo if batch id _not_ defined, call method for start of batch data collection (including a bunch of screenshots)
+        // otherwise log warning about unexpected page reconnection (since eventually I should probably implement
+        // automatic re-inject on connection loss like what agentController does)
         this.state = AnnotationCoordinatorState.IDLE;
         this.logger.info(`content script connection ${pagePort.name} is initialized and ready for action annotation`);
     }
+
+    //todo method for start of batch data collection (including generation/storage of batch id and sending message to
+    // page to request the several-step start-of-batch data collection process)
 
     private async processActionContextAndDetails(message: any) {
         let preconditionErrMsg: string | undefined;
@@ -293,10 +311,15 @@ export class ActionAnnotationCoordinator {
             }
             this.currActionTargetedScreenshotBase64 = screenshotCapture.screenshotBase64;
         }
+        //todo store current annotation id through HTML dump in corresponding lists for the current batch
+        // and move to IDLE state
 
+        //todo delete the next two lines
         await this.exportActionAnnotation();
         this.resetAnnotationCaptureCoordinator("action annotation successfully exported");
     }
+
+    //todo have handler method for end-batch command which exports the collected data and resets the coordinator
 
     validateAndStoreActionContextAndDetails = (message: any): string|undefined => {
         const targetElemDataVal = message.targetElementData;
@@ -378,6 +401,11 @@ export class ActionAnnotationCoordinator {
 
         function replaceBlankWithNull(key: any, value: any) {return typeof value === "string" && value.trim().length === 0 ? null : value;}
 
+        //todo add files in the zip (in their own folder) for the start-of-batch data collection
+
+        //todo everything from here down to the part that adds the html dump should all be in the body of a for loop
+        // and the loop should iterate over the lists of data for the completed annotations in the current batch,
+        // putting each completed annotation's data into a separate folder inside the zip
         const annotationDtlsObj = {
             annotationId: this.currAnnotationId,
             actionType: this.currAnnotationAction,
@@ -451,6 +479,7 @@ export class ActionAnnotationCoordinator {
                 this.logger.info(`asked to initiate annotation capture while in state ${this.state}; ignoring`);
                 return;
             }
+            //todo check that batch id is defined, error if not
 
             if (!this.portToSidePanel) {
                 const errMsg = `asked to initiate annotation capture without a side panel port`;

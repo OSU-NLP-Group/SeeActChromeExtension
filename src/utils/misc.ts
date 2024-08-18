@@ -132,11 +132,14 @@ export enum Page2AgentControllerPortMsgType {
 
 export enum PanelToAnnotationCoordinatorPortMsgType {
     ANNOTATION_DETAILS = "annotationDetails",
+    //todo rename to START_ANNOTATION_BATCH
     START_CAPTURER = "startCapturer",
+    END_ANNOTATION_BATCH = "endAnnotationBatch",
 }
 
 export enum AnnotationCoordinator2PanelPortMsgType {
     REQ_ANNOTATION_DETAILS = "annotationDetailsRequest",
+    //todo rename to refer to export of batch of annotated actions
     ANNOTATED_ACTION_EXPORT = "annotatedActionExport",
     NOTIFICATION = "annotationNotification",
 }
@@ -145,10 +148,14 @@ export enum Page2AnnotationCoordinatorPortMsgType {
     READY = "dataCollectorContentScriptInitializedAndReady",
     TERMINAL = "dataCollectorTerminalPageSideError",
     PAGE_INFO = "sendingActionInfoAndContext",
+    //todo entry for the start-of-batch dump of data
 }
 
 export enum AnnotationCoordinator2PagePortMsgType {
     REQ_ACTION_DETAILS_AND_CONTEXT = "requestActionDetailsAndContext",
+    //todo action to request heading to top of page, then grabbing interactive elements list, then iteratively
+    // taking screenshot and scrolling down; then scrolling back to top once bottom has been screen-capped and
+    // sending all collected info to coordinator
 }
 
 /**
