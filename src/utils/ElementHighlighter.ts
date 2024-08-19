@@ -27,12 +27,12 @@ export class ElementHighlighter {
         this.cachedIframeTreeGetter = getterForCachedIframeTree;
     }
 
-    highlightElement = async (element: HTMLElement, allInteractiveElements: ElementData[] = [], highlightDuration: number = 30000): Promise<HTMLElement> => {
+    highlightElement = async (element: HTMLElement, allInteractiveElements: ElementData[] = [], highlightDuration: number = 30000): Promise<HTMLElement|undefined> => {
         await this.clearElementHighlightingEarly();
         return await this.highlightElementHelper(element, allInteractiveElements, highlightDuration);
     }
 
-    highlightElementHelper = async (element: HTMLElement, allInteractiveElements: ElementData[] = [], highlightDuration: number = 30000): Promise<HTMLElement> => {
+    highlightElementHelper = async (element: HTMLElement, allInteractiveElements: ElementData[] = [], highlightDuration: number = 30000): Promise<HTMLElement|undefined> => {
         if (this.doesElementContainSpaceOccupyingPseudoElements(element)) {
             this.logger.debug(`Element contains space-occupying pseudo-elements which typically throw off outline-based highlighting, so trying to highlight parent element instead; pseudoelement-containing element: ${element.outerHTML.slice(0, 300)}`);
             const parentElem = element.parentElement;
@@ -44,7 +44,7 @@ export class ElementHighlighter {
             }
         }
 
-        let elementHighlighted = element;
+        let elementHighlighted: HTMLElement|undefined = element;
 
         const elementStyle: CSSStyleDeclaration = element.style;
         this.logger.trace(`attempting to highlight element ${element.outerHTML.slice(0, 300)}`);
@@ -60,6 +60,54 @@ export class ElementHighlighter {
 
         elementStyle.outline = `3px solid ${this.calculateOutlineColor(element)}`;
 
+        await this.waitForElemHighlightChangeAnimation(element);
+
+        const computedStyleSimilarityThreshold = 0.8;
+        const computedOutlinePostStyleMod = this.domHelper.getComputedStyle(element).outline;
+        const computedOutlineSimilarity = fuzz.ratio(initialComputedOutline, computedOutlinePostStyleMod) / 100;
+        if (computedOutlineSimilarity <= computedStyleSimilarityThreshold) {
+            this.logger.trace(`initialComputedOutline: ${initialComputedOutline}; computedOutlinePostStyleMod: ${computedOutlinePostStyleMod}; similarity: ${computedOutlineSimilarity}`);
+            //todo eventually explore using htmlcanvas and pixelmatch libraries to do more reliable check of whether the outline change was actually rendered
+        } else {
+            elementHighlighted = undefined;
+            this.logger.info(`Element outline was not successfully set to red; computed outline is still the same as before (initialComputedOutline: ${initialComputedOutline}; computedOutlinePostStyleMod: ${computedOutlinePostStyleMod}; similarity ${computedOutlineSimilarity})`);
+            const parentElem = element.parentElement;
+            if (parentElem) {
+                const numInteractiveElementsUnderParent = allInteractiveElements.filter(interactiveElem => parentElem.contains(interactiveElem.element)).length;
+                if (numInteractiveElementsUnderParent <= 1) {
+                    this.logger.debug("trying to highlight parent element instead");
+                    elementStyle.outline = initialOutline;
+                    elementHighlighted = await this.highlightElementHelper(parentElem, allInteractiveElements, highlightDuration);
+                } else { this.logger.trace(`not trying to highlight parent because it has ${numInteractiveElementsUnderParent} interactive children, so it would be ambiguous to highlight the parent as target element`); }
+            }
+        }
+
+        if (elementHighlighted === element) {
+            this.highlightedElement = element;
+            this.highlightedElementStyle = elementStyle;
+            this.highlightedElementOriginalOutline = initialOutline;
+            setTimeout(() => {
+                if (this.highlightedElementStyle === elementStyle) {
+                    elementStyle.outline = initialOutline;
+                    this.highlightedElement = undefined;
+                    this.highlightedElementStyle = undefined;
+                    this.highlightedElementOriginalOutline = undefined;
+                }//otherwise the highlighting of the element was already reset by a later call of this method
+            }, highlightDuration);
+
+            //elemStyle.filter = "brightness(1.5)";
+
+            // https://stackoverflow.com/questions/1389609/plain-javascript-code-to-highlight-an-html-element
+            // meddling with element.style properties like backgroundColor, outline, filter, (border?)
+            // https://developer.mozilla.org/en-US/docs/Web/CSS/background-color
+            // https://developer.mozilla.org/en-US/docs/Web/CSS/outline
+            // https://developer.mozilla.org/en-US/docs/Web/CSS/filter
+            // https://developer.mozilla.org/en-US/docs/Web/CSS/border
+        }
+        return elementHighlighted;
+    }
+
+    private async waitForElemHighlightChangeAnimation(element: HTMLElement) {
         const animationWaitStart = performance.now();
         await new Promise((resolve) => window.requestAnimationFrame(resolve));
         this.logger.trace(`Time to wait for top-level animation frame after setting outline: ${performance.now() - animationWaitStart} ms`);
@@ -79,47 +127,6 @@ export class ElementHighlighter {
         }
 
         await sleep(elementHighlightRenderDelay);
-
-        const computedStyleSimilarityThreshold = 0.8;
-        const computedOutlinePostStyleMod = this.domHelper.getComputedStyle(element).outline;
-        const computedOutlineSimilarity = fuzz.ratio(initialComputedOutline, computedOutlinePostStyleMod) / 100;
-        if (computedOutlineSimilarity <= computedStyleSimilarityThreshold) {
-            this.logger.trace(`initialComputedOutline: ${initialComputedOutline}; computedOutlinePostStyleMod: ${computedOutlinePostStyleMod}; similarity: ${computedOutlineSimilarity}`);
-            //todo eventually explore using htmlcanvas and pixelmatch libraries to do more reliable check of whether the outline change was actually rendered
-        } else {
-            this.logger.info(`Element outline was not successfully set to red; computed outline is still the same as before (initialComputedOutline: ${initialComputedOutline}; computedOutlinePostStyleMod: ${computedOutlinePostStyleMod}; similarity ${computedOutlineSimilarity})`);
-            const parentElem = element.parentElement;
-            if (parentElem) {
-                const numInteractiveElementsUnderParent = allInteractiveElements.filter(interactiveElem => parentElem.contains(interactiveElem.element)).length;
-                if (numInteractiveElementsUnderParent <= 1) {
-                    this.logger.debug("trying to highlight parent element instead");
-                    elementStyle.outline = initialOutline;
-                    elementHighlighted = await this.highlightElementHelper(parentElem, allInteractiveElements, highlightDuration);
-                } else { this.logger.trace(`not trying to highlight parent because it has ${numInteractiveElementsUnderParent} interactive children, so it would be ambiguous to highlight the parent as target element`); }
-            }
-        }
-
-        if (elementHighlighted === element) {
-            this.highlightedElementStyle = elementStyle;
-            this.highlightedElementOriginalOutline = initialOutline;
-            setTimeout(() => {
-                if (this.highlightedElementStyle === elementStyle) {
-                    elementStyle.outline = initialOutline;
-                    this.highlightedElementStyle = undefined;
-                    this.highlightedElementOriginalOutline = undefined;
-                }//otherwise the highlighting of the element was already reset by a later call of this method
-            }, highlightDuration);
-
-            //elemStyle.filter = "brightness(1.5)";
-
-            // https://stackoverflow.com/questions/1389609/plain-javascript-code-to-highlight-an-html-element
-            // meddling with element.style properties like backgroundColor, outline, filter, (border?)
-            // https://developer.mozilla.org/en-US/docs/Web/CSS/background-color
-            // https://developer.mozilla.org/en-US/docs/Web/CSS/outline
-            // https://developer.mozilla.org/en-US/docs/Web/CSS/filter
-            // https://developer.mozilla.org/en-US/docs/Web/CSS/border
-        }
-        return elementHighlighted;
     }
 
     clearElementHighlightingEarly = async () => {
@@ -128,7 +135,9 @@ export class ElementHighlighter {
             this.logger.trace(`clearing element highlighting early, from highlit outline of ${this.highlightedElementStyle.outline} to original outline value of ${this.highlightedElementOriginalOutline}`);
             this.highlightedElementStyle.outline = this.highlightedElementOriginalOutline ?? "";
 
-            //todo reuse the 'wait for animation frame' logic from highlightElementHelper here
+            if (this.highlightedElement) {
+                await this.waitForElemHighlightChangeAnimation(this.highlightedElement);
+            } else { this.logger.error("highlightedElement variable is undefined when resetting the outline of a highlighted element"); }
 
             this.highlightedElement = undefined;
             this.highlightedElementStyle = undefined;

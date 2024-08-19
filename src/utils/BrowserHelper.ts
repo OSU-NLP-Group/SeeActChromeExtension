@@ -489,7 +489,7 @@ export class BrowserHelper {
         return interactiveElementsData;
     }
 
-    highlightElement = async (element: HTMLElement, allInteractiveElements: ElementData[] = [], highlightDuration: number = 30000): Promise<HTMLElement> => {
+    highlightElement = async (element: HTMLElement, allInteractiveElements: ElementData[] = [], highlightDuration: number = 30000): Promise<HTMLElement|undefined> => {
         return this.elementHighlighter.highlightElement(element, allInteractiveElements, highlightDuration);
     }
 
