@@ -22,12 +22,14 @@ import {
 import {Mutex} from "async-mutex";
 import {ServiceWorkerHelper} from "./ServiceWorkerHelper";
 import JSZip from "jszip";
-import Port = chrome.runtime.Port;
 import {
-    AnnotationCoordinator2PagePortMsgType, AnnotationCoordinator2PanelPortMsgType,
+    AnnotationCoordinator2PagePortMsgType,
+    AnnotationCoordinator2PanelPortMsgType,
     notSameKeys,
-    Page2AnnotationCoordinatorPortMsgType, PanelToAnnotationCoordinatorPortMsgType
+    Page2AnnotationCoordinatorPortMsgType,
+    PanelToAnnotationCoordinatorPortMsgType
 } from "./messaging_defs";
+import Port = chrome.runtime.Port;
 
 /**
  * states for the action annotation coordinator Finite State Machine
@@ -57,6 +59,8 @@ export class ActionAnnotationCoordinator {
 
     idOfTabWithCapturer: number | undefined;
 
+    batchId: string | undefined;
+    batchStartTimestamp: number | undefined;
     //todo batch id and start-timestamp
 
     //todo fields for start-of-batch data
@@ -120,16 +124,10 @@ export class ActionAnnotationCoordinator {
 
     addSidePanelConnection = async (port: Port): Promise<void> => {
         await this.mutex.runExclusive(() => {
-            if (this.state != AnnotationCoordinatorState.IDLE) {
-                const errMsg = `side panel connected while in state ${this.state}`;
-                this.logger.warn(`${errMsg}; resetting coordinator before accepting connection`);
-                this.resetAnnotationCaptureCoordinator(errMsg);
-            }
+            if (this.state != AnnotationCoordinatorState.IDLE) {this.resetAnnotationCaptureCoordinator(`side panel connected while in state ${this.state}; resetting coordinator before accepting connection`);}
             if (this.portToSidePanel) {
-                const errMsg = `side panel connected while a side panel port was already open`;
-                this.logger.error(`${errMsg}; disconnecting old port and resetting coordinator before accepting connection`);
                 this.portToSidePanel.disconnect();
-                this.resetAnnotationCaptureCoordinator(errMsg);
+                this.resetAnnotationCaptureCoordinator(`side panel connected while a side panel port was already open; disconnecting old port and resetting coordinator before accepting connection`);
             }
             this.portToSidePanel = port;
             this.portToSidePanel.onMessage.addListener((message) => this.handleMessageFromSidePanel(message, port));
@@ -139,73 +137,68 @@ export class ActionAnnotationCoordinator {
     handlePanelDisconnectFromCoordinator = async (port: Port): Promise<void> => {
         this.logger.info(`panel disconnected from coordinator: ${port.name}`);
         await this.mutex.runExclusive(() => {
-            //any needed stuff?
             this.portToSidePanel = undefined;
-            if (this.state !== AnnotationCoordinatorState.IDLE) {
-                const errMsg = `panel disconnected while in state ${this.state}`;
-                this.logger.warn(errMsg);
-                this.resetAnnotationCaptureCoordinator(errMsg);
-            }
+            if (this.state !== AnnotationCoordinatorState.IDLE) {this.resetAnnotationCaptureCoordinator(`panel disconnected while in state ${this.state}`);}
         });
     }
 
     handleMessageFromSidePanel = async (message: any, sidePanelPort: Port): Promise<void> => {
         if (message.type === PanelToAnnotationCoordinatorPortMsgType.START_ANNOTATION_BATCH) {
-            //todo this if body should be in its own method, and the call to that method should be wrapped with mutex
-            //todo double check that batch id is undefined and that state is idle
-            const currTabInfo = await this.swHelper.getActiveTab();
-            //todo revise this to inject the capturer if it isn't there already, otherwise proceed
-            if (currTabInfo.id !== undefined && currTabInfo.id === this.idOfTabWithCapturer) {
-                this.resetAnnotationCaptureCoordinator(`capturer already started in current tab`, `current tab id: ${currTabInfo.id}`);
-                return;
-            }
-            const preInjectStateUpdates = (tabId: number, url?: string): string | undefined => {
-                this.idOfTabWithCapturer = tabId;
-                this.currActionUrl = url;
-                if (url === undefined) {
-                    this.logger.warn(`no URL found for tab ${tabId} when starting capturer for annotation ${this.currAnnotationId}`);
-                }
-                this.state = AnnotationCoordinatorState.WAITING_FOR_CONTENT_SCRIPT_INIT;
-                return undefined;//tells the injector that there's no error that would necessitate abort of inject
-            }
-            const injectionErrMsg = await this.swHelper.injectContentScript("annotation content script", './src/page_data_collection.js', preInjectStateUpdates);
-            if (injectionErrMsg) {
-                this.logger.warn(`error injecting content script for annotation capture: ${injectionErrMsg}`);
-                this.idOfTabWithCapturer = undefined;
-                this.resetAnnotationCaptureCoordinator(`ERROR while injecting content script for annotation capture`, injectionErrMsg)
-                return;
-            }
-            //todo if script was already injected, call method for start of batch data collection
-
+            await this.mutex.runExclusive(async () => await this.ensureScriptInjectedAndStartBatch());
         } else if (message.type === PanelToAnnotationCoordinatorPortMsgType.ANNOTATION_DETAILS) {
             await this.mutex.runExclusive(async () => {
-                if (this.state !== AnnotationCoordinatorState.WAITING_FOR_ANNOTATION_DETAILS) {
-                    const errMsg = `received annotation details message while in state ${this.state}`;
-                    this.logger.error(errMsg);
-                    this.resetAnnotationCaptureCoordinator(errMsg);
-                    return;
-                }
-
-                const validationErrMsg = this.validateAndStoreAnnotationDetails(message);
-                if (validationErrMsg) {
-                    this.logger.error(validationErrMsg);
-                    this.resetAnnotationCaptureCoordinator(validationErrMsg);
-                    return;
-                }
-
-                if (!this.portToContentScript) {
-                    const errMsg = `received annotation details message without a content script port`;
-                    this.logger.error(errMsg);
-                    this.resetAnnotationCaptureCoordinator(errMsg);
-                    return;
-                }
-
-                this.state = AnnotationCoordinatorState.WAITING_FOR_PAGE_INFO;
-                this.portToContentScript.postMessage({type: AnnotationCoordinator2PagePortMsgType.REQ_ACTION_DETAILS_AND_CONTEXT});
+                this.processAnnotationDetails(message);
             });
         } else {
             this.logger.warn(`unrecognized message type from side panel: ${message.type} on port ${sidePanelPort.name}: ${JSON.stringify(message).slice(0, 100)}`);
         }
+    }
+
+    private processAnnotationDetails(message: any) {
+        if (this.state !== AnnotationCoordinatorState.WAITING_FOR_ANNOTATION_DETAILS) {
+            this.resetAnnotationCaptureCoordinator(`received annotation details message while in state ${this.state}`);
+            return;
+        }
+
+        const validationErrMsg = this.validateAndStoreAnnotationDetails(message);
+        if (validationErrMsg) {
+            this.resetAnnotationCaptureCoordinator(validationErrMsg);
+            return;
+        }
+
+        if (!this.portToContentScript) {
+            this.resetAnnotationCaptureCoordinator(`received annotation details message without a content script port`);
+            return;
+        }
+
+        this.state = AnnotationCoordinatorState.WAITING_FOR_PAGE_INFO;
+        this.portToContentScript.postMessage({type: AnnotationCoordinator2PagePortMsgType.REQ_ACTION_DETAILS_AND_CONTEXT});
+    }
+
+    private async ensureScriptInjectedAndStartBatch() {
+        //todo double check that batch id is undefined and that state is idle
+        const currTabInfo = await this.swHelper.getActiveTab();
+        //todo revise this to inject the capturer if it isn't there already, otherwise proceed
+        if (currTabInfo.id !== undefined && currTabInfo.id === this.idOfTabWithCapturer) {
+            this.resetAnnotationCaptureCoordinator(`capturer already started in current tab`, `current tab id: ${currTabInfo.id}`);
+            return;
+        }
+        const preInjectStateUpdates = (tabId: number, url?: string): string | undefined => {
+            this.idOfTabWithCapturer = tabId;
+            this.currActionUrl = url;
+            if (url === undefined) {
+                this.logger.warn(`no URL found for tab ${tabId} when starting capturer for annotation ${this.currAnnotationId}`);
+            }
+            this.state = AnnotationCoordinatorState.WAITING_FOR_CONTENT_SCRIPT_INIT;
+            return undefined;//tells the injector that there's no error that would necessitate abort of inject
+        }
+        const injectionErrMsg = await this.swHelper.injectContentScript("annotation content script", './src/page_data_collection.js', preInjectStateUpdates);
+        if (injectionErrMsg) {
+            this.idOfTabWithCapturer = undefined;
+            this.resetAnnotationCaptureCoordinator(`ERROR while injecting content script for annotation capture`, injectionErrMsg)
+            return;
+        }
+        //todo if script was already injected, call method for start of batch data collection
     }
 
     validateAndStoreAnnotationDetails = (message: any): string | undefined => {
@@ -230,9 +223,7 @@ export class ActionAnnotationCoordinator {
     addPageConnection = async (port: Port): Promise<void> => {
         await this.mutex.runExclusive(() => {
             if (this.state !== AnnotationCoordinatorState.WAITING_FOR_CONTENT_SCRIPT_INIT) {
-                const termReason = `received connection from content script while not waiting for content script initialization, but rather in state ${AnnotationCoordinatorState[this.state]}`;
-                this.logger.error(termReason);
-                this.resetAnnotationCaptureCoordinator(termReason);
+                this.resetAnnotationCaptureCoordinator(`received connection from content script while not waiting for content script initialization, but rather in state ${AnnotationCoordinatorState[this.state]}`);
                 return;
             }
             this.logger.trace("content script connected to annotation coordinator in service worker");
@@ -257,9 +248,7 @@ export class ActionAnnotationCoordinator {
 
     private respondToContentScriptInitialized(pagePort: Port) {
         if (this.state !== AnnotationCoordinatorState.WAITING_FOR_CONTENT_SCRIPT_INIT) {
-            const errMsg = `content script sent READY message while annotation coordinator is in state ${AnnotationCoordinatorState[this.state]}`;
-            this.logger.error(errMsg);
-            this.resetAnnotationCaptureCoordinator(errMsg);
+            this.resetAnnotationCaptureCoordinator(`content script sent READY message while annotation coordinator is in state ${AnnotationCoordinatorState[this.state]}`);
             return;
         }
         //todo if batch id _not_ defined, call method for start of batch data collection (including a bunch of screenshots)
@@ -281,7 +270,6 @@ export class ActionAnnotationCoordinator {
             preconditionErrMsg = `content script sent PAGE_INFO message when annotation coordinator didn't have a side panel port`;
         }
         if (preconditionErrMsg) {
-            this.logger.error(preconditionErrMsg);
             this.resetAnnotationCaptureCoordinator(preconditionErrMsg);
             return;
         }
@@ -296,7 +284,6 @@ export class ActionAnnotationCoordinator {
 
         const validationErrMsg = this.validateAndStoreActionContextAndDetails(message);
         if (validationErrMsg) {
-            this.logger.error(validationErrMsg);
             this.resetAnnotationCaptureCoordinator(validationErrMsg);
             return;
         }
@@ -305,8 +292,7 @@ export class ActionAnnotationCoordinator {
             //data collector in content script highlighted the target element before sending info back
             const screenshotCapture = await this.swHelper.captureScreenshot("annotation_action_targeted");
             if (screenshotCapture.error) {
-                this.logger.warn(`error capturing screenshot of target element for action annotation: ${screenshotCapture.error}`);
-                this.resetAnnotationCaptureCoordinator(screenshotCapture.error);
+                this.resetAnnotationCaptureCoordinator(`error capturing screenshot of target element for action annotation: ${screenshotCapture.error}`);
                 return;
             }
             this.currActionTargetedScreenshotBase64 = screenshotCapture.screenshotBase64;
@@ -316,7 +302,7 @@ export class ActionAnnotationCoordinator {
 
         //todo delete the next two lines
         await this.exportActionAnnotation();
-        this.resetAnnotationCaptureCoordinator("action annotation successfully exported");
+        this.resetAnnotationCaptureCoordinator("action annotation successfully exported", undefined, false);
     }
 
     //todo have handler method for end-batch command which exports the collected data and resets the coordinator
@@ -391,8 +377,7 @@ export class ActionAnnotationCoordinator {
         await this.mutex.runExclusive(() => {
             this.portToContentScript = undefined;
             this.idOfTabWithCapturer = undefined;
-            this.logger.info(`content script port ${port.name} disconnected from annotation coordinator in service worker`);
-            this.resetAnnotationCaptureCoordinator(`content script ${port.name} disconnected`);
+            this.resetAnnotationCaptureCoordinator(`content script ${port.name} disconnected`, undefined, false);
         });
     }
 
@@ -451,9 +436,7 @@ export class ActionAnnotationCoordinator {
         }
 
         if (!this.portToSidePanel) {
-            const errMsg = `no side panel port to send action annotation zip to for download`;
-            this.logger.error(errMsg);
-            this.resetAnnotationCaptureCoordinator(errMsg);
+            this.resetAnnotationCaptureCoordinator(`no side panel port to send action annotation zip to for download`);
             return;
         }
 
@@ -482,32 +465,25 @@ export class ActionAnnotationCoordinator {
             //todo check that batch id is defined, error if not
 
             if (!this.portToSidePanel) {
-                const errMsg = `asked to initiate annotation capture without a side panel port`;
-                this.logger.warn(errMsg);
-                this.resetAnnotationCaptureCoordinator(errMsg);
+                this.resetAnnotationCaptureCoordinator(`asked to initiate annotation capture without a side panel port`);
                 return;
             }
 
             if (!this.portToContentScript) {
-                const errMsg = `asked to initiate annotation capture when capturer hasn't been started up in the current tab yet`;
-                this.logger.warn(errMsg);
-                this.resetAnnotationCaptureCoordinator(errMsg);
+                this.resetAnnotationCaptureCoordinator(`asked to initiate annotation capture when capturer hasn't been started up in the current tab yet`);
                 return;
             }
 
             const currTabInfo = await this.swHelper.getActiveTab();
             if (currTabInfo.id !== this.idOfTabWithCapturer) {
-                const errMsg = `asked to initiate annotation capture while active tab id ${currTabInfo.id} differs from the tab id ${this.idOfTabWithCapturer} with the content script`;
-                this.logger.warn(errMsg);
-                this.resetAnnotationCaptureCoordinator(errMsg);
+                this.resetAnnotationCaptureCoordinator(`asked to initiate annotation capture while active tab id ${currTabInfo.id} differs from the tab id ${this.idOfTabWithCapturer} with the content script`);
                 return;
             }
 
             this.currAnnotationId = uuidV4();
             const screenshotCapture = await this.swHelper.captureScreenshot("annotation_action_context");
             if (screenshotCapture.error) {
-                this.logger.warn(`error capturing context screenshot for action annotation: ${screenshotCapture.error}`);
-                this.resetAnnotationCaptureCoordinator(screenshotCapture.error);
+                this.resetAnnotationCaptureCoordinator(`error capturing context screenshot for action annotation: ${screenshotCapture.error}`);
                 return;
             }
             this.currActionContextScreenshotBase64 = screenshotCapture.screenshotBase64;
@@ -517,10 +493,13 @@ export class ActionAnnotationCoordinator {
         });
     }
 
-    resetAnnotationCaptureCoordinator = (reason: string, details?: string): void => {
-        this.logger.info(`terminating the capture of action annotation ${this.currAnnotationId} for reason: ${reason} with details ${details}`);
+    resetAnnotationCaptureCoordinator = (reason: string, details?: string, wasResetFromError = true): void => {
+        (wasResetFromError ? this.logger.error : this.logger.info)(`terminating the capture of action annotation ${this.currAnnotationId} for reason: ${reason} with details ${details}`);
         this.portToSidePanel?.postMessage({type: AnnotationCoordinator2PanelPortMsgType.NOTIFICATION, msg: reason, details: details});
         this.state = AnnotationCoordinatorState.IDLE;
+        this.batchId = undefined;
+        this.batchStartTimestamp = undefined;
+
         this.currAnnotationId = undefined;
         this.currAnnotationAction = undefined;
         this.currAnnotationStateChangeSeverity = undefined;
