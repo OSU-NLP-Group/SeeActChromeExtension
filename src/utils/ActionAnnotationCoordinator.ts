@@ -554,10 +554,11 @@ export class ActionAnnotationCoordinator {
         }
 
         let zipFileName = `annotation_batch_${this.batchId}.zip`;
+        //todo instead simply rely on url provided by content script at start of batch processing
         if (this.actionUrlsInBatch && this.actionUrlsInBatch[0]) {
             zipFileName = `annotation_batch_${this.batchId}_from_${
                 makeStrSafeForFilename(this.actionUrlsInBatch[0].replace(/https?:\/\//, "").slice(0, 30))}.zip`;
-            //todo explore passing page title from content script and using it here?
+            //todo also use page title (provided by content script at start of batch processing) in file name
         }
 
         this.swHelper.sendZipToSidePanelForDownload(`annotated actions batch ${this.batchId}`, zip,

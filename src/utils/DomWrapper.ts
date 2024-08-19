@@ -27,7 +27,7 @@ export class DomWrapper {
      * @returns array of elements that match the CSS selector;
      *           this is a static view of the elements (not live access that would allow modification)
      */
-    fetchElementsByCss = (cssSelector: string, overrideDoc?: Document|ShadowRoot): Array<HTMLElement> => {
+    fetchElementsByCss = (cssSelector: string, overrideDoc?: Document | ShadowRoot): Array<HTMLElement> => {
         return Array.from((overrideDoc ?? this.dom).querySelectorAll<HTMLElement>(cssSelector));
     }
 
@@ -68,7 +68,7 @@ export class DomWrapper {
      * @param pseudoElemName the name of the pseudo-element inside the given element whose style is needed
      * @returns the computed style of the element
      */
-    getComputedStyle = (element: HTMLElement, pseudoElemName: string|null|undefined = undefined): CSSStyleDeclaration => {
+    getComputedStyle = (element: HTMLElement, pseudoElemName: string | null | undefined = undefined): CSSStyleDeclaration => {
         return this.window.getComputedStyle(element, pseudoElemName);
     }
 
@@ -125,11 +125,13 @@ export class DomWrapper {
         return this.dom.URL;
     }
 
-    elementFromPoint = (x: number, y: number, overrideDom?: Document|ShadowRoot): Element | null => {
+    elementFromPoint = (x: number, y: number, overrideDom?: Document | ShadowRoot): Element | null => {
         return (overrideDom ?? this.dom).elementFromPoint(x, y);
     }
 
-    elementsFromPoint = (x: number, y: number, overrideDom?: Document|ShadowRoot): Element[] => {
+    elementsFromPoint = (x: number, y: number, overrideDom?: Document | ShadowRoot): Element[] => {
         return (overrideDom ?? this.dom).elementsFromPoint(x, y);
     }
+
+    getPageTitle = (): string => {return this.dom.title;}
 }

@@ -65,6 +65,7 @@ export class PageDataCollector {
     // capture/store screenshot and viewport details, then scroll down
     // repeat prior step until bottom of page is reached and screen-capped
     // scroll back to top and send all data to coordinator
+    // also provide page url and title at this point
 
     collectActionDetailsAndContext = async (): Promise<void> => {
         await this.browserHelper.clearElementHighlightingEarly();
