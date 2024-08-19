@@ -31,6 +31,8 @@ import {
 export interface SidePanelElements {
     eulaComplaintContainer: HTMLDivElement,
     annotatorContainer: HTMLDivElement,
+    annotatorStartButton: HTMLButtonElement,
+    annotatorEndButton: HTMLButtonElement,
     annotatorActionType: HTMLSelectElement,
     annotatorActionStateChangeSeverity: HTMLSelectElement,
     annotatorExplanationField: HTMLTextAreaElement,
@@ -66,6 +68,8 @@ export class SidePanelManager {
     private readonly eulaComplaintContainer: HTMLDivElement;
 
     private readonly annotatorContainer: HTMLDivElement;
+    private readonly annotatorStartButton: HTMLButtonElement;
+    private readonly annotatorEndButton: HTMLButtonElement;
     private readonly annotatorActionType: HTMLSelectElement;
     private readonly annotatorActionStateChangeSeverity: HTMLSelectElement;
     private readonly annotatorExplanationField: HTMLTextAreaElement;
@@ -112,6 +116,8 @@ export class SidePanelManager {
     constructor(elements: SidePanelElements, chromeWrapper?: ChromeWrapper, logger?: Logger, overrideDoc?: Document) {
         this.eulaComplaintContainer = elements.eulaComplaintContainer;
         this.annotatorContainer = elements.annotatorContainer;
+        this.annotatorStartButton = elements.annotatorStartButton;
+        this.annotatorEndButton = elements.annotatorEndButton;
         this.annotatorActionType = elements.annotatorActionType;
         this.annotatorActionStateChangeSeverity = elements.annotatorActionStateChangeSeverity;
         this.annotatorExplanationField = elements.annotatorExplanationField;
@@ -682,10 +688,17 @@ export class SidePanelManager {
     handleMouseLeaveStatus = (elementThatWasLeft: HTMLElement): void => {
         //using referential equality intentionally here
         const otherStatusElemRect = (elementThatWasLeft == this.agentStatusDiv ? this.statusPopup : this.agentStatusDiv).getBoundingClientRect();
-        if (this.mouseClientX < otherStatusElemRect.left || this.mouseClientX > otherStatusElemRect.right
-            || this.mouseClientY < otherStatusElemRect.top || this.mouseClientY > otherStatusElemRect.bottom) {
-            this.statusPopup.style.display = 'none';
-        }
+        const mX = this.mouseClientX;
+        const mY = this.mouseClientY;
+        const isMouseOutsideOtherElem = mX < otherStatusElemRect.left || mX > otherStatusElemRect.right
+            || mY < otherStatusElemRect.top || mY > otherStatusElemRect.bottom;
+        const divRect = this.agentStatusDiv.getBoundingClientRect();
+        const popupRect = this.statusPopup.getBoundingClientRect();
+        //don't hide the popup if the mouse coords are in between the status div and the popup
+        const isMouseBetweenElems = mX > divRect.left && mX > popupRect.left && mX < divRect.right
+            && mX < popupRect.right && ((mY > divRect.bottom && mY < popupRect.top)
+                || (mY > popupRect.bottom && mY < divRect.top));
+        if (isMouseOutsideOtherElem && !isMouseBetweenElems) {this.statusPopup.style.display = 'none';}
     }
 
     handleMonitorModeCacheUpdate = (newMonitorModeVal: boolean) => {
@@ -722,6 +735,8 @@ export class SidePanelManager {
             }
         } else {
             this.annotatorContainer.style.display = "none";
+            this.annotatorStartButton.disabled = false;
+            this.annotatorEndButton.disabled = true;
         }
     }
 
@@ -734,8 +749,8 @@ export class SidePanelManager {
                 type: PanelToAnnotationCoordinatorPortMsgType.ANNOTATION_DETAILS,
                 actionType: this.annotatorActionType.value, explanation: this.annotatorExplanationField.value,
                 actionStateChangeSeverity: this.annotatorActionStateChangeSeverity.value
-            })
-        } else if (message.type === AnnotationCoordinator2PanelPortMsgType.ANNOTATED_ACTION_EXPORT) {
+            });
+        } else if (message.type === AnnotationCoordinator2PanelPortMsgType.ANNOTATED_ACTIONS_EXPORT) {
             this.processFileDownload(message);
             await this.mutex.runExclusive(() => {
                 this.reset()
@@ -756,12 +771,26 @@ export class SidePanelManager {
         });
     }
 
-    startActionAnnotationCapturer = (): void => {
+    startActionAnnotationBatch = (): void => {
         if (this.annotationCoordinatorPort) {
-            this.annotationCoordinatorPort.postMessage({type: PanelToAnnotationCoordinatorPortMsgType.START_CAPTURER});
+            this.annotationCoordinatorPort.postMessage({type: PanelToAnnotationCoordinatorPortMsgType.START_ANNOTATION_BATCH});
+            this.annotatorEndButton.disabled = false;
+            this.annotatorStartButton.disabled = true;
         } else {
             this.logger.error("annotation coordinator port doesn't exist, can't start action annotation capture");
             this.setAnnotatorStatusWithDelayedClear("Connection to annotation coordinator is missing, so cannot start action annotation capture (reopening the connection in background); please try again after this message disappears", 3);
+        }
+    }
+
+    endActionAnnotationBatch = (): void => {
+        if (this.annotationCoordinatorPort) {
+            this.annotationCoordinatorPort.postMessage(
+                {type: PanelToAnnotationCoordinatorPortMsgType.END_ANNOTATION_BATCH});
+            this.annotatorEndButton.disabled = true;
+            this.annotatorStartButton.disabled = false;
+        } else {
+            this.logger.error("annotation coordinator port doesn't exist, can't finish action annotations batch");
+            this.setAnnotatorStatusWithDelayedClear("Connection to annotation coordinator is missing, so cannot finish action annotations batch (reopening the connection in background); please try again after this message disappears", 3);
         }
     }
 

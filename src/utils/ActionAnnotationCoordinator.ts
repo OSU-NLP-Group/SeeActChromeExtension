@@ -150,7 +150,7 @@ export class ActionAnnotationCoordinator {
     }
 
     handleMessageFromSidePanel = async (message: any, sidePanelPort: Port): Promise<void> => {
-        if (message.type === PanelToAnnotationCoordinatorPortMsgType.START_CAPTURER) {
+        if (message.type === PanelToAnnotationCoordinatorPortMsgType.START_ANNOTATION_BATCH) {
             //todo this if body should be in its own method, and the call to that method should be wrapped with mutex
             //todo double check that batch id is undefined and that state is idle
             const currTabInfo = await this.swHelper.getActiveTab();
@@ -462,7 +462,7 @@ export class ActionAnnotationCoordinator {
             zipFilename = `action_annotation_${this.currAnnotationStateChangeSeverity}_Target_${makeStrSafeForFilename(this.currActionTargetElement.description.slice(0,30))}_${this.currAnnotationId}.zip`;
         }
         this.swHelper.sendZipToSidePanelForDownload(`details for annotated action ${this.currAnnotationId}`,
-            zip, this.portToSidePanel, zipFilename, AnnotationCoordinator2PanelPortMsgType.ANNOTATED_ACTION_EXPORT);
+            zip, this.portToSidePanel, zipFilename, AnnotationCoordinator2PanelPortMsgType.ANNOTATED_ACTIONS_EXPORT);
     }
 
     initiateActionAnnotationCapture = async (): Promise<void> => {

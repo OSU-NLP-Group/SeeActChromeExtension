@@ -18,6 +18,9 @@ if (!(annotatorModeContainer && annotatorModeContainer instanceof HTMLDivElement
 const annotatorStartButton = document.getElementById('action-annotator-start');
 if (!(annotatorStartButton && annotatorStartButton instanceof HTMLButtonElement)) throw new Error('valid action-annotator-start button not found');
 
+const annotatorEndButton = document.getElementById('action-annotator-end');
+if (!(annotatorEndButton && annotatorEndButton instanceof HTMLButtonElement)) throw new Error('valid action-annotator-end button not found');
+
 const annotatorActionType = document.getElementById('action-type');
 if (!(annotatorActionType && annotatorActionType instanceof HTMLSelectElement)) throw new Error('valid action-type not found');
 
@@ -77,6 +80,8 @@ if (!(monitorRejectButton && monitorRejectButton instanceof HTMLButtonElement)) 
 const manager = new SidePanelManager({
     eulaComplaintContainer: eulaComplaintElem as HTMLDivElement,
     annotatorContainer: annotatorModeContainer as HTMLDivElement,
+    annotatorStartButton: annotatorStartButton as HTMLButtonElement,
+    annotatorEndButton: annotatorEndButton as HTMLButtonElement,
     annotatorActionType: annotatorActionType as HTMLSelectElement,
     annotatorActionStateChangeSeverity: annotatorActionStateChangeSeverity as HTMLSelectElement,
     annotatorExplanationField: annotatorExplanationField as HTMLTextAreaElement,
@@ -103,9 +108,9 @@ document.addEventListener('mousemove', (e) => {
 eulaReviewButton.addEventListener('click', () => chrome.tabs.create({url: './src/installation_greeting.html'}));
 userGuideButton.addEventListener('click', () => chrome.tabs.create({url: 'user_manual.pdf'}));
 
-annotatorStartButton.addEventListener('click', manager.startActionAnnotationCapturer);
+annotatorStartButton.addEventListener('click', manager.startActionAnnotationBatch);
+annotatorEndButton.addEventListener('click', manager.endActionAnnotationBatch);
 
-//redirecting click on icon to click on button so that disabling the button effectively disables its icon as well
 startButton.addEventListener('click', manager.startTaskClickHandler);
 
 killButton.addEventListener('click', manager.killTaskClickHandler);

@@ -60,15 +60,13 @@ export enum Page2AgentControllerPortMsgType {
 
 export enum PanelToAnnotationCoordinatorPortMsgType {
     ANNOTATION_DETAILS = "annotationDetails",
-    //todo rename to START_ANNOTATION_BATCH
-    START_CAPTURER = "startCapturer",
+    START_ANNOTATION_BATCH = "startAnnotationBatch",
     END_ANNOTATION_BATCH = "endAnnotationBatch",
 }
 
 export enum AnnotationCoordinator2PanelPortMsgType {
     REQ_ANNOTATION_DETAILS = "annotationDetailsRequest",
-    //todo rename to refer to export of batch of annotated actions
-    ANNOTATED_ACTION_EXPORT = "annotatedActionExport",
+    ANNOTATED_ACTIONS_EXPORT = "annotatedActionsExport",
     NOTIFICATION = "annotationNotification",
 }
 
