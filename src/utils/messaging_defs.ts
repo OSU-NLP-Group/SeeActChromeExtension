@@ -68,6 +68,7 @@ export enum AnnotationCoordinator2PanelPortMsgType {
     REQ_ANNOTATION_DETAILS = "annotationDetailsRequest",
     ANNOTATED_ACTIONS_EXPORT = "annotatedActionsExport",
     NOTIFICATION = "annotationNotification",
+    ANNOTATION_CAPTURED_CONFIRMATION = "annotationCapturedConfirmation",
 }
 
 export enum Page2AnnotationCoordinatorPortMsgType {

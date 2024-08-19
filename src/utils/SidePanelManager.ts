@@ -478,11 +478,13 @@ export class SidePanelManager {
             this.isMonitorModeTempEnabled = false;
         }
 
-        if (this.cachedIsAnnotatorMode) {
-            this.annotatorActionType.value = Action.CLICK;
-            this.annotatorActionStateChangeSeverity.value = ActionStateChangeSeverity.LOW;
-            this.annotatorExplanationField.value = '';
-        }
+        if (this.cachedIsAnnotatorMode) {this.resetAnnotationUi();}
+    }
+
+    private resetAnnotationUi() {
+        this.annotatorActionType.value = Action.CLICK;
+        this.annotatorActionStateChangeSeverity.value = ActionStateChangeSeverity.LOW;
+        this.annotatorExplanationField.value = '';
     }
 
     processConnectionReady = (): void => {
@@ -752,11 +754,12 @@ export class SidePanelManager {
             });
         } else if (message.type === AnnotationCoordinator2PanelPortMsgType.ANNOTATED_ACTIONS_EXPORT) {
             this.processFileDownload(message);
-            await this.mutex.runExclusive(() => {
-                this.reset()
-            });
+            await this.mutex.runExclusive(() => this.reset());
         } else if (message.type === AnnotationCoordinator2PanelPortMsgType.NOTIFICATION) {
             this.setAnnotatorStatusWithDelayedClear(message.msg, 10, message.details);
+        } else if (message.type === AnnotationCoordinator2PanelPortMsgType.ANNOTATION_CAPTURED_CONFIRMATION) {
+            this.setAnnotatorStatusWithDelayedClear("Annotation successfully captured", undefined, message.summary);
+            await this.mutex.runExclusive(() => this.resetAnnotationUi());
         } else {
             this.logger.warn(`unknown type of message from annotation coordinator: ${JSON.stringify(message)}`);
         }

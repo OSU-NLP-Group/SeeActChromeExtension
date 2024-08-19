@@ -14,7 +14,6 @@ import {
     Page2AnnotationCoordinatorPortMsgType
 } from "./messaging_defs";
 
-
 export class PageDataCollector {
     private readonly mutex = new Mutex();
 
@@ -130,8 +129,11 @@ export class PageDataCollector {
         if (foremostElementAtPoint && shouldCaptureMousePosElemInfo) {
             this.logger.debug(`element found at mouse coordinates ${currMouseX}, ${currMouseY}: ${foremostElementAtPoint.outerHTML.slice(0, 200)}; has onclick property?: ${Boolean(foremostElementAtPoint.onclick)}`);
             const mousePosElemFullData = this.browserHelper.getElementData(foremostElementAtPoint);
-            mousePosElemData = makeElementDataSerializable(mousePosElemFullData);
-            mousePosElemData.interactivesIndex = interactiveElementsData.findIndex((elementData) => elementData.element === foremostElementAtPoint);
+            const mousePosElemBox = mousePosElemFullData.boundingBox;
+            if (mousePosElemBox.tLx <= currMouseX && mousePosElemBox.bRx >= currMouseX && mousePosElemBox.tLy <= currMouseY && mousePosElemBox.bRy >= currMouseY) {
+                mousePosElemData = makeElementDataSerializable(mousePosElemFullData);
+                mousePosElemData.interactivesIndex = interactiveElementsData.findIndex((elementData) => elementData.element === foremostElementAtPoint);
+            } else {this.logger.warn(`foremost element found at mouse coordinates but its bounding box doesn't contain the mouse coordinates; element bounding box: ${JSON.stringify(mousePosElemBox)}`);}
         }
 
         let actuallyHighlightedElemData: SerializableElementData | undefined = undefined;

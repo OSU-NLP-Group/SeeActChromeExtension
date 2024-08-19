@@ -402,6 +402,14 @@ export class ActionAnnotationCoordinator {
             this.targetedScreenshotsInBatch.push(this.currActionTargetedScreenshotBase64);
             this.interactiveElementsSetsForAnnotationsInBatch.push(this.currActionInteractiveElements);
             this.annotationHtmlDumpsInBatch.push(this.currActionHtmlDump);
+
+            let annotationSummary = `annotation id ${this.currAnnotationId}; mouse coords: ${JSON.stringify(this.currActionMouseCoords)}, scroll position: ${this.currActionViewportInfo.scrollX}, ${this.currActionViewportInfo.scrollY}`;
+            if (this.currActionTargetElement) {annotationSummary += `; target element: ${this.currActionTargetElement.description.slice(100)}`;}
+            if (this.currAnnotationActionDesc) {annotationSummary += `; action description: ${this.currAnnotationActionDesc.slice(100)}`;}
+            this.portToSidePanel!.postMessage({//null check was performed at top of function
+                type: AnnotationCoordinator2PanelPortMsgType.ANNOTATION_CAPTURED_CONFIRMATION, summary: annotationSummary
+            });
+            this.resetCurrAnnotationDetails();
         }
         this.state = AnnotationCoordinatorState.IDLE;
     }
@@ -549,6 +557,7 @@ export class ActionAnnotationCoordinator {
         if (this.actionUrlsInBatch && this.actionUrlsInBatch[0]) {
             zipFileName = `annotation_batch_${this.batchId}_from_${
                 makeStrSafeForFilename(this.actionUrlsInBatch[0].replace(/https?:\/\//, "").slice(0, 30))}.zip`;
+            //todo explore passing page title from content script and using it here?
         }
 
         this.swHelper.sendZipToSidePanelForDownload(`annotated actions batch ${this.batchId}`, zip,
@@ -627,6 +636,10 @@ export class ActionAnnotationCoordinator {
         this.interactiveElementsSetsForAnnotationsInBatch = [];
         this.annotationHtmlDumpsInBatch = [];
 
+        this.resetCurrAnnotationDetails();
+    }
+
+    private resetCurrAnnotationDetails() {
         this.currAnnotationId = undefined;
         this.currAnnotationAction = undefined;
         this.currAnnotationStateChangeSeverity = undefined;
@@ -635,11 +648,11 @@ export class ActionAnnotationCoordinator {
         this.currActionTargetElement = undefined;
         this.currActionViewportInfo = undefined;
         this.currActionMouseCoords = undefined;
+        this.mousePosElement = undefined;
+        this.highlitElement = undefined;
         this.currActionContextScreenshotBase64 = undefined;
         this.currActionTargetedScreenshotBase64 = undefined;
         this.currActionInteractiveElements = undefined;
         this.currActionHtmlDump = undefined;
-        this.mousePosElement = undefined;
-        this.highlitElement = undefined;
     }
 }
