@@ -1,6 +1,6 @@
 import {Logger} from "loglevel";
 
-//todo consider breaking large parts of this off into 2 separate files, for inter-component communications and for options management in storage
+//todo consider breaking large parts of this off into 2 separate files, e.g. for options management in storage
 
 //ms, how long to sleep (after editing an element for highlighting) before telling the service worker to take a
 // screenshot; i.e. longest realistic amount of time the browser might take to re-render the modified element

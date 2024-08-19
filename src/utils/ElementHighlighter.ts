@@ -17,8 +17,9 @@ export class ElementHighlighter {
     readonly logger: Logger;
     private cachedIframeTreeGetter: () => IframeTree;
 
-    private highlightedElementOriginalOutline: string | undefined;
+    private highlightedElement: HTMLElement | undefined;
     private highlightedElementStyle: CSSStyleDeclaration | undefined;
+    private highlightedElementOriginalOutline: string | undefined;
 
     constructor(getterForCachedIframeTree: () => IframeTree, domHelper?: DomWrapper, loggerToUse?: Logger) {
         this.domHelper = domHelper ?? new DomWrapper(window);
@@ -127,6 +128,9 @@ export class ElementHighlighter {
             this.logger.trace(`clearing element highlighting early, from highlit outline of ${this.highlightedElementStyle.outline} to original outline value of ${this.highlightedElementOriginalOutline}`);
             this.highlightedElementStyle.outline = this.highlightedElementOriginalOutline ?? "";
 
+            //todo reuse the 'wait for animation frame' logic from highlightElementHelper here
+
+            this.highlightedElement = undefined;
             this.highlightedElementStyle = undefined;
             this.highlightedElementOriginalOutline = undefined;
 
@@ -151,13 +155,19 @@ export class ElementHighlighter {
         const bgColorRgb = this.findEffectiveBackgroundColor(element);
         if (bgColorRgb) {
             const originalColorHsl = this.rgbToHsl(bgColorRgb);
-            const distinctiveColorHsl = this.isNeutralColor(originalColorHsl) ?
-                this.adjustNeutralColor(originalColorHsl) : this.adjustNonNeutralColor(originalColorHsl);
-            const [r, g, b] = this.hslToRgb(distinctiveColorHsl);
-            outlineColor = `rgb(${r}, ${g}, ${b})`;
+            if (!this.isNeutralColor(originalColorHsl)) {
+                const distinctiveColorHsl =  this.adjustNonNeutralColor(originalColorHsl);
+                const [r, g, b] = this.hslToRgb(distinctiveColorHsl);
+                outlineColor = `rgb(${r}, ${g}, ${b})`;
+            }
         }
         return outlineColor;
     }
+
+    //todo check for effective background color of element just to left, element just to right, element just above, and
+    // element just below (using BrowserHelper.actualElementFromPoint() somehow);
+    // then combine those with the effective background color of the element itself (maybe averaging the hue,
+    // saturation, and lightness values) to figure out what color the outline should maximally contrast with
 
     rgbToHsl(rgb: RGB): HSL {
         // Normalize RGB values to 0-1 range
@@ -277,12 +287,6 @@ export class ElementHighlighter {
         return [denormalize(red), denormalize(green), denormalize(blue)];
     }
     isNeutralColor(hsl: HSL): boolean {return hsl[1] < 10;} // Consider colors with saturation < 10% as neutral
-
-    adjustNeutralColor(hsl: HSL): HSL {
-        let lightness = hsl[2];
-        lightness = lightness > 50 ? Math.max(0, lightness - 50) : Math.min(100, lightness + 50);
-        return [hsl[0], hsl[1], lightness];
-    }
 
     adjustNonNeutralColor(hsl: HSL): HSL {
         // eslint-disable-next-line prefer-const -- destructuring operation
