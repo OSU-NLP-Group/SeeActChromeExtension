@@ -291,7 +291,7 @@ export class BrowserHelper {
      * @param element the element to get data about
      * @return data about the element
      */
-    getElementData = (element: HTMLElementWithDocumentHost): ElementData | null => {
+    getElementData = (element: HTMLElementWithDocumentHost): ElementData => {
         let description = this.getElementDescription(element);
         if (!description) {
             this.logger.trace(`UNABLE TO GENERATE DESCRIPTION FOR ELEMENT; outerHTML: ${element.outerHTML.slice(0, 300)}; parent outerHTML: ${this.getRealParentElement(element)

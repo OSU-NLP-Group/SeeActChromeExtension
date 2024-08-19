@@ -258,6 +258,11 @@ export function makeStrSafeForFilename(str: string): string {
     }).join("");
 }
 
+export function renderTs(tsVal: number|undefined|null): string {
+    if (tsVal === undefined || tsVal === null) { return "undefined/null";}
+    return new Date(tsVal).toISOString();
+}
+
 //todo idea- a number of methods implicitly assume/rely-on the enclosing context's mutex being acquired before they're
 // called; this assumption could be made explicit and enforced by a helper method that took method name and mutex, then
 // logged an error and returned true if the mutex wasn't acquired, or returned false if it was;

@@ -616,6 +616,7 @@ export class AgentController {
                 let autoMonitorAllowsProceeding = this.pendingActionInfo.action !== Action.CLICK
                     && this.pendingActionInfo.action !== Action.PRESS_ENTER;
                 if (!autoMonitorAllowsProceeding) {//if action is a type that can possibly be dangerous, actually invoke the auto-monitor
+                    //todo add this.pendingActionInfo.elementData
                     autoMonitorAllowsProceeding = await this.consultAutoMonitor(isTargetElementHighlightingNeeded,
                         screenshotDataUrl, prompts, planningOutput, groundingOutput);
                 }

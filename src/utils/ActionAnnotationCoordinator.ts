@@ -6,12 +6,11 @@ import {
     Action,
     ActionStateChangeSeverity,
     base64ToByteArray,
-    BoundingBox,
     defaultIsAnnotatorMode,
     exampleSerializableElemData,
     exampleViewportDetails,
-    isValidBoundingBox,
     makeStrSafeForFilename,
+    renderTs,
     renderUnknownValue,
     SerializableElementData,
     setupModeCache,
@@ -61,17 +60,27 @@ export class ActionAnnotationCoordinator {
 
     batchId: string | undefined;
     batchStartTimestamp: number | undefined;
-    //todo batch id and start-timestamp
 
     //todo fields for start-of-batch data
     // list of screenshots of the page at different scroll positions
     // list of viewport details for the different screenshots
     // interactive elements and html dump for each scroll position  (when already scrolled to top)
 
-    //todo list of completed annotation ids in batch
-    //todo list for in-progress batch of completed annotation actions, severities, descriptions, url's, target
-    // element's, viewport info's, mouse coords, mouse elem bounding box's, mouse elem's, highlighted element bounding
-    // boxes, highlighted elements, context screenshots, targeted screenshots, interactive elements, html dumps
+    annotationIdsInBatch: string[] = [];
+    actionTypesInBatch: Action[] = [];
+    actionSeveritiesInBatch: ActionStateChangeSeverity[] = [];
+    actionDescriptionsInBatch: string[] = [];
+    actionUrlsInBatch: Array<string | undefined> = [];
+    targetElementsInBatch: Array<SerializableElementData | undefined> = [];
+    annotationViewportInfosInBatch: ViewportDetails[] = [];
+    mouseCoordsInBatch: { x: number, y: number }[] = [];
+    mouseElemsInBatch: Array<SerializableElementData | undefined> = [];
+    highlitElemsInBatch: Array<SerializableElementData | undefined> = [];
+    contextScreenshotsInBatch: string[] = [];
+    targetedScreenshotsInBatch: Array<string | undefined> = [];
+    //each annotation in the batch has its own collection of interactive elements at that point in time
+    interactiveElementsSetsForAnnotationsInBatch: SerializableElementData[][] = [];
+    annotationHtmlDumpsInBatch: string[] = [];
 
     currAnnotationId: string | undefined;
     //when adding support for more actions, don't forget to update input validation in handleMessageFromSidePanel()
@@ -84,9 +93,7 @@ export class ActionAnnotationCoordinator {
     currActionTargetElement: SerializableElementData | undefined;
     currActionViewportInfo: ViewportDetails | undefined;
     currActionMouseCoords: { x: number, y: number } | undefined;
-    mousePosElemBoundingBox: BoundingBox | undefined;
     mousePosElement: SerializableElementData | undefined;
-    highlitElemBoundingBox: BoundingBox | undefined;
     highlitElement: SerializableElementData | undefined;
 
     currActionContextScreenshotBase64: string | undefined;
@@ -144,13 +151,14 @@ export class ActionAnnotationCoordinator {
 
     handleMessageFromSidePanel = async (message: any, sidePanelPort: Port): Promise<void> => {
         if (message.type === PanelToAnnotationCoordinatorPortMsgType.START_ANNOTATION_BATCH) {
-            await this.mutex.runExclusive(async () => await this.ensureScriptInjectedAndStartBatch());
+            await this.mutex.runExclusive(async () => await this.ensureScriptInjectedAndStartBatch(sidePanelPort));
         } else if (message.type === PanelToAnnotationCoordinatorPortMsgType.ANNOTATION_DETAILS) {
-            await this.mutex.runExclusive(async () => {
-                this.processAnnotationDetails(message);
-            });
+            await this.mutex.runExclusive(async () => this.processAnnotationDetails(message));
+        } else if (message.type === PanelToAnnotationCoordinatorPortMsgType.END_ANNOTATION_BATCH) {
+            await this.mutex.runExclusive(async () => await this.concludeAnnotationsBatch());
         } else {
-            this.logger.warn(`unrecognized message type from side panel: ${message.type} on port ${sidePanelPort.name}: ${JSON.stringify(message).slice(0, 100)}`);
+            this.logger.warn(`unrecognized message type from side panel: ${message.type} on port ${sidePanelPort.name}: ${JSON.stringify(message)
+                .slice(0, 100)}`);
         }
     }
 
@@ -175,30 +183,95 @@ export class ActionAnnotationCoordinator {
         this.portToContentScript.postMessage({type: AnnotationCoordinator2PagePortMsgType.REQ_ACTION_DETAILS_AND_CONTEXT});
     }
 
-    private async ensureScriptInjectedAndStartBatch() {
-        //todo double check that batch id is undefined and that state is idle
+    private async ensureScriptInjectedAndStartBatch(sidePanelPort: Port) {
+        if (this.batchId) {
+            this.logger.warn(`asked to start annotations batch while batch id ${this.batchId} is still defined; ignoring`);
+            sidePanelPort.postMessage({
+                type: AnnotationCoordinator2PanelPortMsgType.NOTIFICATION, msg: "Batch already in progress",
+                details: `batch id: ${this.batchId}; batch start timestamp: ${renderTs(this.batchStartTimestamp)}`
+            });
+            return;
+        }
+        if (this.state !== AnnotationCoordinatorState.IDLE) {
+            this.logger.warn(`asked to start annotations batch while in state ${AnnotationCoordinatorState[this.state]}; ignoring`);
+            sidePanelPort.postMessage({
+                type: AnnotationCoordinator2PanelPortMsgType.NOTIFICATION, msg: "Coordinator not ready",
+                details: `current state: ${AnnotationCoordinatorState[this.state]}`
+            });
+            return;
+        }
+
         const currTabInfo = await this.swHelper.getActiveTab();
-        //todo revise this to inject the capturer if it isn't there already, otherwise proceed
-        if (currTabInfo.id !== undefined && currTabInfo.id === this.idOfTabWithCapturer) {
-            this.resetAnnotationCaptureCoordinator(`capturer already started in current tab`, `current tab id: ${currTabInfo.id}`);
-            return;
-        }
-        const preInjectStateUpdates = (tabId: number, url?: string): string | undefined => {
-            this.idOfTabWithCapturer = tabId;
-            this.currActionUrl = url;
-            if (url === undefined) {
-                this.logger.warn(`no URL found for tab ${tabId} when starting capturer for annotation ${this.currAnnotationId}`);
+        if (this.idOfTabWithCapturer === undefined || currTabInfo.id !== this.idOfTabWithCapturer) {
+            this.logger.trace(`injecting content script in tab ${currTabInfo.id} for batch of annotation captures`);
+            const preInjectStateUpdates = (tabId: number, url?: string): string | undefined => {
+                this.idOfTabWithCapturer = tabId;
+                this.currActionUrl = url;
+                if (url === undefined) {this.logger.warn(`no URL found for tab ${tabId} when starting capturer for annotation ${this.currAnnotationId}`);}
+                this.state = AnnotationCoordinatorState.WAITING_FOR_CONTENT_SCRIPT_INIT;
+                return undefined;//tells the injector that there's no error that would necessitate abort of inject
             }
-            this.state = AnnotationCoordinatorState.WAITING_FOR_CONTENT_SCRIPT_INIT;
-            return undefined;//tells the injector that there's no error that would necessitate abort of inject
+            const injectionErrMsg = await this.swHelper.injectContentScript("annotation content script", './src/page_data_collection.js', preInjectStateUpdates);
+            if (injectionErrMsg) {
+                this.idOfTabWithCapturer = undefined;
+                this.resetAnnotationCaptureCoordinator(`ERROR while injecting content script for annotation capture`, injectionErrMsg)
+                return;
+            }
+        } else {
+            this.startAnnotationsBatch();
         }
-        const injectionErrMsg = await this.swHelper.injectContentScript("annotation content script", './src/page_data_collection.js', preInjectStateUpdates);
-        if (injectionErrMsg) {
-            this.idOfTabWithCapturer = undefined;
-            this.resetAnnotationCaptureCoordinator(`ERROR while injecting content script for annotation capture`, injectionErrMsg)
+    }
+
+    startAnnotationsBatch = () => {
+        if (!this.portToSidePanel) {
+            this.resetAnnotationCaptureCoordinator("no side panel port to send batch start message to");
             return;
         }
-        //todo if script was already injected, call method for start of batch data collection
+        this.batchId = uuidV4();
+        this.batchStartTimestamp = Date.now();
+        this.logger.info(`starting annotations batch ${this.batchId}`);
+        this.portToSidePanel.postMessage({
+            type: AnnotationCoordinator2PanelPortMsgType.NOTIFICATION, msg: "Batch started",
+            details: `batch id: ${this.batchId}; batch start timestamp: ${renderTs(this.batchStartTimestamp)}`
+        });
+        //todo send message to content script to start collecting data for the batch
+    }
+
+    concludeAnnotationsBatch = async () => {
+        if (this.state !== AnnotationCoordinatorState.IDLE) {
+            this.resetAnnotationCaptureCoordinator(`asked to conclude annotations batch while in state ${this.state}`);
+            return;
+        } else if (!this.batchId || this.batchStartTimestamp === undefined) {
+            this.resetAnnotationCaptureCoordinator(`asked to conclude annotations batch while batch id ${this.batchId} is not defined or batch start timestamp ${renderTs(this.batchStartTimestamp)} is undefined`);
+            return;
+        }
+        const numIds = this.annotationIdsInBatch.length, numActionTypes = this.actionTypesInBatch.length;
+        const numSeverities = this.actionSeveritiesInBatch.length;
+        const numDescriptions = this.actionDescriptionsInBatch.length, numUrls = this.actionUrlsInBatch.length;
+        const numTargetElems = this.targetElementsInBatch.length;
+        const numViewportInfos = this.annotationViewportInfosInBatch.length;
+        const numMouseCoords = this.mouseCoordsInBatch.length, numMouseElems = this.mouseElemsInBatch.length;
+        const numHighlitElems = this.highlitElemsInBatch.length;
+        const numContextScreenshots = this.contextScreenshotsInBatch.length;
+        const numTargetedScreenshots = this.targetedScreenshotsInBatch.length;
+        const numSetsOfInteractiveElements = this.interactiveElementsSetsForAnnotationsInBatch.length;
+        const numHtmlDumps = this.annotationHtmlDumpsInBatch.length;
+        if (numIds !== numActionTypes || numActionTypes !== numSeverities || numSeverities !== numDescriptions
+            || numDescriptions !== numUrls || numUrls !== numTargetElems || numTargetElems !== numViewportInfos
+            || numViewportInfos !== numMouseCoords || numMouseCoords !== numMouseElems
+            || numMouseElems !== numHighlitElems || numHighlitElems !== numContextScreenshots
+            || numContextScreenshots !== numTargetedScreenshots || numTargetedScreenshots !== numSetsOfInteractiveElements
+            || numSetsOfInteractiveElements !== numHtmlDumps) {
+            this.resetAnnotationCaptureCoordinator("at end of batch, the lists for accumulating the different parts of each annotation in the batch had different lengths!",
+                `# annotations: ${numIds}, # action types: ${numActionTypes}, # severities: ${numSeverities}, # descriptions: ${numDescriptions}, # url's: ${numUrls}, # target elements (including entries where target element is undefined): ${numTargetElems}, # viewport info's: ${numViewportInfos}, # mouse coordinates: ${numMouseCoords}, # mouse elements: ${numMouseElems}; # highlighted elements: ${numHighlitElems}, # context screenshots: ${numContextScreenshots}, # targeted screenshots: ${numTargetedScreenshots}, # sets of interactive elements: ${numSetsOfInteractiveElements}, # html dumps: ${numHtmlDumps}`);
+            return;
+        }
+
+        await this.exportActionAnnotationsBatch();
+        //todo? export all logs for this batch (would need substantial changes here; plus either substantially change 
+        // the logger/db code or adapt it to allow storing/using annotation-batch id instead of agent-task id sometimes 
+        // (they are both UUID's, but it could be quite confusing; maybe add a new field to distinguish annotation batch vs agent task))
+        this.resetAnnotationCaptureCoordinator("action annotation batch successfully exported", `batch id: ${this.batchId}; batch start timestamp: ${renderTs(this.batchStartTimestamp)}`, false);
     }
 
     validateAndStoreAnnotationDetails = (message: any): string | undefined => {
@@ -209,7 +282,7 @@ export class ActionAnnotationCoordinator {
 
         const actionStateChangeSeverityVal = message.actionStateChangeSeverity;
         if (!Object.values(ActionStateChangeSeverity).includes(actionStateChangeSeverityVal)) {
-            return`invalid action state change severity value ${renderUnknownValue(actionStateChangeSeverityVal)} in annotation details message from side panel`;
+            return `invalid action state change severity value ${renderUnknownValue(actionStateChangeSeverityVal)} in annotation details message from side panel`;
         } else { this.currAnnotationStateChangeSeverity = actionStateChangeSeverityVal; }
 
         const actionDescriptionVal = message.explanation;
@@ -251,24 +324,19 @@ export class ActionAnnotationCoordinator {
             this.resetAnnotationCaptureCoordinator(`content script sent READY message while annotation coordinator is in state ${AnnotationCoordinatorState[this.state]}`);
             return;
         }
-        //todo if batch id _not_ defined, call method for start of batch data collection (including a bunch of screenshots)
-        // otherwise log warning about unexpected page reconnection (since eventually I should probably implement
-        // automatic re-inject on connection loss like what agentController does)
+        if (this.batchId) {
+            this.logger.warn(`content script sent READY message while batch id ${this.batchId} is still defined; ignoring`);
+            //todo change above line if I eventually implement auto-recovery from losing connection to content script
+        } else {this.startAnnotationsBatch();}
+
         this.state = AnnotationCoordinatorState.IDLE;
         this.logger.info(`content script connection ${pagePort.name} is initialized and ready for action annotation`);
     }
 
-    //todo method for start of batch data collection (including generation/storage of batch id and sending message to
-    // page to request the several-step start-of-batch data collection process)
-
     private async processActionContextAndDetails(message: any) {
         let preconditionErrMsg: string | undefined;
-        if (this.state !== AnnotationCoordinatorState.WAITING_FOR_PAGE_INFO) {
-            preconditionErrMsg = `content script sent PAGE_INFO message while coordinator was in state ${AnnotationCoordinatorState[this.state]}`;
-        }
-        if (!this.portToSidePanel) {
-            preconditionErrMsg = `content script sent PAGE_INFO message when annotation coordinator didn't have a side panel port`;
-        }
+        if (this.state !== AnnotationCoordinatorState.WAITING_FOR_PAGE_INFO) {preconditionErrMsg = `content script sent PAGE_INFO message while coordinator was in state ${AnnotationCoordinatorState[this.state]}`;}
+        if (!this.portToSidePanel) {preconditionErrMsg = `content script sent PAGE_INFO message when annotation coordinator didn't have a side panel port`;}
         if (preconditionErrMsg) {
             this.resetAnnotationCaptureCoordinator(preconditionErrMsg);
             return;
@@ -297,17 +365,48 @@ export class ActionAnnotationCoordinator {
             }
             this.currActionTargetedScreenshotBase64 = screenshotCapture.screenshotBase64;
         }
-        //todo store current annotation id through HTML dump in corresponding lists for the current batch
-        // and move to IDLE state
 
-        //todo delete the next two lines
-        await this.exportActionAnnotation();
-        this.resetAnnotationCaptureCoordinator("action annotation successfully exported", undefined, false);
+        if (!this.currAnnotationId) {
+            this.logger.error("no current annotation id when storing a completed action annotation");
+        } else if (!this.currAnnotationAction) {
+            this.logger.error("no current annotation action type when storing a completed action annotation");
+        } else if (!this.currAnnotationStateChangeSeverity) {
+            this.logger.error("no current annotation state change severity when storing a completed action annotation");
+        } else if (this.currAnnotationActionDesc === undefined) {
+            this.logger.error("current annotation action description was undefined (not just empty-string) when storing a completed action annotation");
+        }//URL or target element can be undefined
+        else if (!this.currActionViewportInfo) {
+            this.logger.error("no current action viewport info when storing a completed action annotation");
+        } else if (!this.currActionMouseCoords) {
+            this.logger.error("no current action mouse coordinates when storing a completed action annotation");
+        } //mouse position element can be undefined, same with highlighted element
+        else if (!this.currActionContextScreenshotBase64) {
+            this.logger.error("no current action context screenshot when storing a completed action annotation");
+        }//targeted screenshot can be undefined
+        else if (this.currActionInteractiveElements === undefined) {
+            this.logger.error("no current action interactive elements when storing a completed action annotation");
+        } else if (!this.currActionHtmlDump) {
+            this.logger.error("no current action HTML dump when storing a completed action annotation");
+        } else {
+            this.annotationIdsInBatch.push(this.currAnnotationId);
+            this.actionTypesInBatch.push(this.currAnnotationAction);
+            this.actionSeveritiesInBatch.push(this.currAnnotationStateChangeSeverity);
+            this.actionDescriptionsInBatch.push(this.currAnnotationActionDesc);
+            this.actionUrlsInBatch.push(this.currActionUrl);
+            this.targetElementsInBatch.push(this.currActionTargetElement);
+            this.annotationViewportInfosInBatch.push(this.currActionViewportInfo);
+            this.mouseCoordsInBatch.push(this.currActionMouseCoords);
+            this.mouseElemsInBatch.push(this.mousePosElement);
+            this.highlitElemsInBatch.push(this.highlitElement);
+            this.contextScreenshotsInBatch.push(this.currActionContextScreenshotBase64);
+            this.targetedScreenshotsInBatch.push(this.currActionTargetedScreenshotBase64);
+            this.interactiveElementsSetsForAnnotationsInBatch.push(this.currActionInteractiveElements);
+            this.annotationHtmlDumpsInBatch.push(this.currActionHtmlDump);
+        }
+        this.state = AnnotationCoordinatorState.IDLE;
     }
 
-    //todo have handler method for end-batch command which exports the collected data and resets the coordinator
-
-    validateAndStoreActionContextAndDetails = (message: any): string|undefined => {
+    validateAndStoreActionContextAndDetails = (message: any): string | undefined => {
         const targetElemDataVal = message.targetElementData;
         if (targetElemDataVal === undefined) {
             this.logger.info("no target element data in PAGE_INFO message from content script");
@@ -340,13 +439,9 @@ export class ActionAnnotationCoordinator {
         const urlVal: unknown = message.url;
         if (typeof urlVal !== "string") {
             return `invalid URL value ${renderUnknownValue(urlVal)} in PAGE_INFO message from content script`;
-        } else { this.currActionUrl = urlVal; }
-
-        const mousePosElemBoundingBoxVal: unknown = message.mousePosElemBoundingBox;
-        if (mousePosElemBoundingBoxVal !== undefined) {
-            if (!isValidBoundingBox(mousePosElemBoundingBoxVal)) {
-                return `invalid mouse position element bounding box value ${renderUnknownValue(mousePosElemBoundingBoxVal)} in PAGE_INFO message from content script`;
-            } else { this.mousePosElemBoundingBox = mousePosElemBoundingBoxVal; }
+        } else if (this.currActionUrl !== urlVal) {
+            if (this.currActionUrl) {this.logger.debug(`for annotation ${this.currAnnotationId}, URL from chrome's tool for injecting content script into active tab was ${this.currActionUrl} but page URL according to content script was actually ${urlVal}`); }
+            this.currActionUrl = urlVal;
         }
 
         const mousePosElemDataVal = message.mousePosElemData;
@@ -354,13 +449,6 @@ export class ActionAnnotationCoordinator {
             if (typeof mousePosElemDataVal !== "object" || notSameKeys(mousePosElemDataVal, exampleSerializableElemData)) {
                 return `invalid mouse position element data ${renderUnknownValue(mousePosElemDataVal)} in PAGE_INFO message from content script`;
             } else { this.mousePosElement = mousePosElemDataVal; }
-        }
-
-        const highlitElemBoundingBoxVal: unknown = message.highlitElemBoundingBox;
-        if (highlitElemBoundingBoxVal !== undefined) {
-            if (!isValidBoundingBox(highlitElemBoundingBoxVal)) {
-                return `invalid actually-highlighted-element bounding box value ${renderUnknownValue(highlitElemBoundingBoxVal)} in PAGE_INFO message from content script`;
-            } else { this.highlitElemBoundingBox = highlitElemBoundingBoxVal; }
         }
 
         const highlitElemDataVal = message.highlitElemData;
@@ -381,58 +469,75 @@ export class ActionAnnotationCoordinator {
         });
     }
 
-    exportActionAnnotation = async (): Promise<void> => {
+    exportActionAnnotationsBatch = async (): Promise<void> => {
         const zip = new JSZip();
+
+        const safeElemsDataFolder = zip.folder("safe_elements_data");
+        if (safeElemsDataFolder === null) {
+            this.logger.error("while trying to make folder in zip file for data about safe elements on the page, JSZip misbehaved (returned null from zip.folder() call); cannot proceed");
+            return;
+        }
+
+        //todo store safe elements data (from the start-of-batch data collection process)
+
+        const actionAnnotationsFolder = zip.folder("manual_action_annotations");
+        if (actionAnnotationsFolder === null) {
+            this.logger.error("while trying to make folder in zip file for manual annotations of (generally unsafe) actions on the page, JSZip misbehaved (returned null from zip.folder() call); cannot proceed");
+            return;
+        }
 
         function replaceBlankWithNull(key: any, value: any) {return typeof value === "string" && value.trim().length === 0 ? null : value;}
 
-        //todo add files in the zip (in their own folder) for the start-of-batch data collection
+        //the concludeAnnotationsBatch() method (which calls this) already confirmed that all the lists for the completed
+        // annotations in the batch have the same length, so we can just iterate over the indices of one of them
+        for (let annotationIdx = 0; annotationIdx < this.annotationIdsInBatch.length; annotationIdx++) {
+            const annotationId = this.annotationIdsInBatch[annotationIdx];
+            const actionType = this.actionTypesInBatch[annotationIdx];
+            const actionStateChangeSeverity = this.actionSeveritiesInBatch[annotationIdx];
+            const actionDescription = this.actionDescriptionsInBatch[annotationIdx];
+            const annotationUrl = this.actionUrlsInBatch[annotationIdx];
+            const targetElementData = this.targetElementsInBatch[annotationIdx];
+            const viewportInfo = this.annotationViewportInfosInBatch[annotationIdx];
+            const mouseCoords = this.mouseCoordsInBatch[annotationIdx];
+            const mousePosElementData = this.mouseElemsInBatch[annotationIdx];
+            const highlitElementData = this.highlitElemsInBatch[annotationIdx];
+            const contextScreenshotBase64 = this.contextScreenshotsInBatch[annotationIdx];
+            const targetedScreenshotBase64 = this.targetedScreenshotsInBatch[annotationIdx];
+            const interactiveElements = this.interactiveElementsSetsForAnnotationsInBatch[annotationIdx];
+            const htmlDump = this.annotationHtmlDumpsInBatch[annotationIdx];
 
-        //todo everything from here down to the part that adds the html dump should all be in the body of a for loop
-        // and the loop should iterate over the lists of data for the completed annotations in the current batch,
-        // putting each completed annotation's data into a separate folder inside the zip
-        const annotationDtlsObj = {
-            annotationId: this.currAnnotationId,
-            actionType: this.currAnnotationAction,
-            actionStateChangeSeverity: this.currAnnotationStateChangeSeverity,
-            description: this.currAnnotationActionDesc,
-            url: this.currActionUrl,
-            targetElementData: this.currActionTargetElement,
-            mousePosition: this.currActionMouseCoords,
-            mousePosElementData: this.mousePosElement,
-            mousePosElemBoundingBox: this.mousePosElemBoundingBox,
-            actuallyHighlightedElementData: this.highlitElement,
-            actuallyHighlightedElementBoundingBox: this.highlitElemBoundingBox,
-            viewportInfo: this.currActionViewportInfo
-        };
-        if (annotationDtlsObj.mousePosElementData) {delete annotationDtlsObj.mousePosElemBoundingBox;}
-        if (annotationDtlsObj.actuallyHighlightedElementData) {delete annotationDtlsObj.actuallyHighlightedElementBoundingBox;}
-        const annotationDetailsStr = JSON.stringify(annotationDtlsObj, replaceBlankWithNull, 4);
-        zip.file("annotation_details.json", annotationDetailsStr);
+            let annotationFolderName = `BROKEN_action_annotation_${actionStateChangeSeverity}_${annotationId}`;
+            if (targetElementData) {annotationFolderName = `action_annotation_${actionStateChangeSeverity}_Target_${makeStrSafeForFilename(targetElementData.description.slice(0, 30))}_${annotationId}.zip`;}
+            const currAnnotationFolder = actionAnnotationsFolder.folder(annotationFolderName);
+            if (currAnnotationFolder === null) {
+                this.logger.error(`while trying to make folder in zip file for annotation ${annotationId}, JSZip misbehaved (returned null from zip.folder() call); cannot proceed`);
+                return;
+            }
+            const annotationDtlsObj = {
+                annotationId: annotationId, actionType: actionType,
+                actionStateChangeSeverity: actionStateChangeSeverity, description: actionDescription,
+                url: annotationUrl, targetElementData: targetElementData, viewportInfo: viewportInfo,
+                mousePosition: mouseCoords, mousePosElementData: mousePosElementData,
+                actuallyHighlightedElementData: highlitElementData
+            };
+            const annotationDetailsStr = JSON.stringify(annotationDtlsObj, replaceBlankWithNull, 4);
+            currAnnotationFolder.file("annotation_details.json", annotationDetailsStr);
 
-        if (this.currActionContextScreenshotBase64) {
-            zip.file("action_context_screenshot.png", base64ToByteArray(this.currActionContextScreenshotBase64))
-        } else {
-            this.logger.error(`no context screenshot found for action annotation ${this.currAnnotationId}`);
-        }
+            if (contextScreenshotBase64) {
+                currAnnotationFolder.file("action_context_screenshot.png", base64ToByteArray(contextScreenshotBase64))
+            } else {this.logger.error(`no context screenshot found for action annotation ${annotationId}`);}
 
-        if (this.currActionTargetedScreenshotBase64) {
-            zip.file("action_targeted_screenshot.png", base64ToByteArray(this.currActionTargetedScreenshotBase64))
-        } else {
-            this.logger.warn(`no targeted screenshot found for action annotation ${this.currAnnotationId}`);
-        }
+            if (targetedScreenshotBase64) {
+                currAnnotationFolder.file("action_targeted_screenshot.png", base64ToByteArray(targetedScreenshotBase64))
+            } else {this.logger.warn(`no targeted screenshot found for action annotation ${annotationId}`);}
 
+            if (interactiveElements != undefined) {
+                currAnnotationFolder.file("interactive_elements.json", JSON.stringify(interactiveElements, null, 4));
+            } else {this.logger.error(`no interactive elements found for action annotation ${annotationId}`);}
 
-        if (this.currActionInteractiveElements != undefined) {
-            zip.file("interactive_elements.json", JSON.stringify(this.currActionInteractiveElements, null, 4));
-        } else {
-            this.logger.error(`no interactive elements found for action annotation ${this.currAnnotationId}`);
-        }
-
-        if (this.currActionHtmlDump) {
-            zip.file("page_html_dump.html", this.currActionHtmlDump);
-        } else {
-            this.logger.error(`no HTML dump found for action annotation ${this.currAnnotationId}`);
+            if (this.currActionHtmlDump) {
+                currAnnotationFolder.file("page_html_dump.html", htmlDump);
+            } else {this.logger.error(`no HTML dump found for action annotation ${annotationId}`);}
         }
 
         if (!this.portToSidePanel) {
@@ -440,12 +545,14 @@ export class ActionAnnotationCoordinator {
             return;
         }
 
-        let zipFilename = `BROKEN_action_annotation_${this.currAnnotationStateChangeSeverity}_${this.currAnnotationId}.zip`;
-        if (this.currActionTargetElement) {
-            zipFilename = `action_annotation_${this.currAnnotationStateChangeSeverity}_Target_${makeStrSafeForFilename(this.currActionTargetElement.description.slice(0,30))}_${this.currAnnotationId}.zip`;
+        let zipFileName = `annotation_batch_${this.batchId}.zip`;
+        if (this.actionUrlsInBatch && this.actionUrlsInBatch[0]) {
+            zipFileName = `annotation_batch_${this.batchId}_from_${
+                makeStrSafeForFilename(this.actionUrlsInBatch[0].replace(/https?:\/\//, "").slice(0, 30))}.zip`;
         }
-        this.swHelper.sendZipToSidePanelForDownload(`details for annotated action ${this.currAnnotationId}`,
-            zip, this.portToSidePanel, zipFilename, AnnotationCoordinator2PanelPortMsgType.ANNOTATED_ACTIONS_EXPORT);
+
+        this.swHelper.sendZipToSidePanelForDownload(`annotated actions batch ${this.batchId}`, zip,
+            this.portToSidePanel, zipFileName, AnnotationCoordinator2PanelPortMsgType.ANNOTATED_ACTIONS_EXPORT);
     }
 
     initiateActionAnnotationCapture = async (): Promise<void> => {
@@ -462,15 +569,20 @@ export class ActionAnnotationCoordinator {
                 this.logger.info(`asked to initiate annotation capture while in state ${this.state}; ignoring`);
                 return;
             }
-            //todo check that batch id is defined, error if not
-
             if (!this.portToSidePanel) {
                 this.resetAnnotationCaptureCoordinator(`asked to initiate annotation capture without a side panel port`);
                 return;
             }
-
             if (!this.portToContentScript) {
                 this.resetAnnotationCaptureCoordinator(`asked to initiate annotation capture when capturer hasn't been started up in the current tab yet`);
+                return;
+            }
+            if (!this.batchId) {
+                this.logger.info(`asked to initiate annotation capture without a batch id; ignoring`);
+                this.portToSidePanel.postMessage({
+                    type: AnnotationCoordinator2PanelPortMsgType.NOTIFICATION, msg: "No batch in progress",
+                    details: "Please start a batch before capturing annotations"
+                });
                 return;
             }
 
@@ -495,10 +607,25 @@ export class ActionAnnotationCoordinator {
 
     resetAnnotationCaptureCoordinator = (reason: string, details?: string, wasResetFromError = true): void => {
         (wasResetFromError ? this.logger.error : this.logger.info)(`terminating the capture of action annotation ${this.currAnnotationId} for reason: ${reason} with details ${details}`);
-        this.portToSidePanel?.postMessage({type: AnnotationCoordinator2PanelPortMsgType.NOTIFICATION, msg: reason, details: details});
+        this.portToSidePanel?.postMessage(
+            {type: AnnotationCoordinator2PanelPortMsgType.NOTIFICATION, msg: reason, details: details});
         this.state = AnnotationCoordinatorState.IDLE;
         this.batchId = undefined;
         this.batchStartTimestamp = undefined;
+        this.annotationIdsInBatch = [];
+        this.actionTypesInBatch = [];
+        this.actionSeveritiesInBatch = [];
+        this.actionDescriptionsInBatch = [];
+        this.actionUrlsInBatch = [];
+        this.targetElementsInBatch = [];
+        this.annotationViewportInfosInBatch = [];
+        this.mouseCoordsInBatch = [];
+        this.mouseElemsInBatch = [];
+        this.highlitElemsInBatch = [];
+        this.contextScreenshotsInBatch = [];
+        this.targetedScreenshotsInBatch = [];
+        this.interactiveElementsSetsForAnnotationsInBatch = [];
+        this.annotationHtmlDumpsInBatch = [];
 
         this.currAnnotationId = undefined;
         this.currAnnotationAction = undefined;
@@ -512,9 +639,7 @@ export class ActionAnnotationCoordinator {
         this.currActionTargetedScreenshotBase64 = undefined;
         this.currActionInteractiveElements = undefined;
         this.currActionHtmlDump = undefined;
-        this.mousePosElemBoundingBox = undefined;
         this.mousePosElement = undefined;
-        this.highlitElemBoundingBox = undefined;
         this.highlitElement = undefined;
     }
 }

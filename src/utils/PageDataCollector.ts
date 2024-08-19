@@ -4,7 +4,6 @@ import {ChromeWrapper} from "./ChromeWrapper";
 import {Logger} from "loglevel";
 import {createNamedLogger} from "./shared_logging_setup";
 import {
-    BoundingBox,
     ElementData,
     renderUnknownValue,
     SerializableElementData
@@ -127,33 +126,21 @@ export class PageDataCollector {
             }
         }
 
-        let mousePosElemBoundingBox: BoundingBox | undefined = undefined;
         let mousePosElemData: SerializableElementData | undefined = undefined;
         if (foremostElementAtPoint && shouldCaptureMousePosElemInfo) {
             this.logger.debug(`element found at mouse coordinates ${currMouseX}, ${currMouseY}: ${foremostElementAtPoint.outerHTML.slice(0, 200)}; has onclick property?: ${Boolean(foremostElementAtPoint.onclick)}`);
-            const mElemRect = this.domWrapper.grabClientBoundingRect(foremostElementAtPoint);
-            mousePosElemBoundingBox =
-                {tLx: mElemRect.left, tLy: mElemRect.top, bRx: mElemRect.right, bRy: mElemRect.bottom};
             const mousePosElemFullData = this.browserHelper.getElementData(foremostElementAtPoint);
-            if (mousePosElemFullData) {
-                mousePosElemData = makeElementDataSerializable(mousePosElemFullData);
-                mousePosElemData.interactivesIndex = interactiveElementsData.findIndex((elementData) => elementData.element === foremostElementAtPoint);
-            }
+            mousePosElemData = makeElementDataSerializable(mousePosElemFullData);
+            mousePosElemData.interactivesIndex = interactiveElementsData.findIndex((elementData) => elementData.element === foremostElementAtPoint);
         }
 
-        let actuallyHighlightedElemBoundingBox: BoundingBox | undefined = undefined;
         let actuallyHighlightedElemData: SerializableElementData | undefined = undefined;
         if (actuallyHighlightedElement && (
             (foremostElementAtPoint && actuallyHighlightedElement !== foremostElementAtPoint)
             || (targetElement && actuallyHighlightedElement !== targetElement))) {
-            const highlitRect = this.domWrapper.grabClientBoundingRect(actuallyHighlightedElement);
-            actuallyHighlightedElemBoundingBox =
-                {tLx: highlitRect.left, tLy: highlitRect.top, bRx: highlitRect.right, bRy: highlitRect.bottom};
             const actualHighlitElemData = this.browserHelper.getElementData(actuallyHighlightedElement);
-            if (actualHighlitElemData) {
-                actuallyHighlightedElemData = makeElementDataSerializable(actualHighlitElemData);
-                actuallyHighlightedElemData.interactivesIndex = interactiveElementsData.findIndex((elementData) => elementData.element === actuallyHighlightedElement);
-            }
+            actuallyHighlightedElemData = makeElementDataSerializable(actualHighlitElemData);
+            actuallyHighlightedElemData.interactivesIndex = interactiveElementsData.findIndex((elementData) => elementData.element === actuallyHighlightedElement);
         }
 
         if (!targetElementData) {
@@ -174,10 +161,7 @@ export class PageDataCollector {
                 userMessage: userMessage,
                 userMessageDetails: userMessageDetails,
                 url: this.domWrapper.getUrl(),
-                //including an element's bounding box separately in case description can't be created for it (in that case, element data would be null)
-                mousePosElemBoundingBox: mousePosElemBoundingBox,
                 mousePosElemData: mousePosElemData,
-                highlitElemBoundingBox: actuallyHighlightedElemBoundingBox,
                 highlitElemData: actuallyHighlightedElemData,
                 htmlDump: this.domWrapper.getDocumentElement().outerHTML
             });
