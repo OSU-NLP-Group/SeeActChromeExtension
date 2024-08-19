@@ -16,9 +16,6 @@ import {
     AgentControllerState
 } from "./utils/AgentController";
 import {
-    PageRequestType, pageToAnnotationCoordinatorPort,
-    pageToControllerPort, panelToAnnotationCoordinatorPort,
-    panelToControllerPort,
     renderUnknownValue,
     sleep,
     storageKeyForEulaAcceptance
@@ -31,6 +28,11 @@ import {createSelectedAiEngine} from "./utils/ai_misc";
 import {ActionAnnotationCoordinator} from "./utils/ActionAnnotationCoordinator";
 import { Mutex } from "async-mutex";
 import {ServiceWorkerHelper} from "./utils/ServiceWorkerHelper";
+import {
+    PageRequestType, pageToAnnotationCoordinatorPort, pageToControllerPort,
+    panelToAnnotationCoordinatorPort,
+    panelToControllerPort
+} from "./utils/messaging_defs";
 
 
 /**

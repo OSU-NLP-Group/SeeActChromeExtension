@@ -14,8 +14,6 @@ import {
 } from "./shared_logging_setup";
 import {
     Action, ActionStateChangeSeverity,
-    AgentController2PagePortMsgType,
-    AgentController2PanelPortMsgType,
     base64ToByteArray,
     buildGenericActionDesc, defaultAutoMonitorThreshold,
     defaultIsMonitorMode,
@@ -24,9 +22,7 @@ import {
     defaultMaxNoops,
     defaultMaxOps,
     elementHighlightRenderDelay,
-    expectedMsgForPortDisconnection, isActionStateChangeSeverity,
-    Page2AgentControllerPortMsgType,
-    Panel2AgentControllerPortMsgType,
+    isActionStateChangeSeverity,
     renderUnknownValue,
     SerializableElementData,
     setupModeCache,
@@ -54,6 +50,11 @@ import {
 } from "./ai_misc";
 import {ServiceWorkerHelper} from "./ServiceWorkerHelper";
 import Port = chrome.runtime.Port;
+import {
+    AgentController2PagePortMsgType, AgentController2PanelPortMsgType, expectedMsgForPortDisconnection,
+    Page2AgentControllerPortMsgType,
+    Panel2AgentControllerPortMsgType
+} from "./messaging_defs";
 
 /**
  * states for the agent controller Finite State Machine

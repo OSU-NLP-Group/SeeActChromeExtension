@@ -1,12 +1,14 @@
 import {createNamedLogger} from "./utils/shared_logging_setup";
 import {
-    expectedMsgForPortDisconnection,
-    Page2AgentControllerPortMsgType,
-    pageToControllerPort,
     renderUnknownValue,
     sleep
 } from "./utils/misc";
 import {PageActor} from "./utils/PageActor";
+import {
+    expectedMsgForPortDisconnection,
+    Page2AgentControllerPortMsgType,
+    pageToControllerPort
+} from "./utils/messaging_defs";
 
 
 const logger = createNamedLogger('agent-page-interaction', false);

@@ -1,4 +1,5 @@
-import {expectedMsgForSendingRuntimeRequestFromDisconnectedContentScript, renderUnknownValue} from "./misc";
+import {renderUnknownValue} from "./misc";
+import {expectedMsgForSendingRuntimeRequestFromDisconnectedContentScript} from "./messaging_defs";
 
 
 /**

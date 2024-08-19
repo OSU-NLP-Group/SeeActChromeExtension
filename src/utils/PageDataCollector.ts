@@ -4,14 +4,16 @@ import {ChromeWrapper} from "./ChromeWrapper";
 import {Logger} from "loglevel";
 import {createNamedLogger} from "./shared_logging_setup";
 import {
-    AnnotationCoordinator2PagePortMsgType,
     BoundingBox,
     ElementData,
-    Page2AnnotationCoordinatorPortMsgType,
     renderUnknownValue,
     SerializableElementData
 } from "./misc";
 import {Mutex} from "async-mutex";
+import {
+    AnnotationCoordinator2PagePortMsgType,
+    Page2AnnotationCoordinatorPortMsgType
+} from "./messaging_defs";
 
 
 export class PageDataCollector {

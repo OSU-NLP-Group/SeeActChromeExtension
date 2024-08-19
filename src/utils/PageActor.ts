@@ -3,16 +3,17 @@ import {BrowserHelper, makeElementDataSerializable} from "./BrowserHelper";
 import {createNamedLogger} from "./shared_logging_setup";
 import {
     Action,
-    AgentController2PagePortMsgType,
     buildGenericActionDesc, ElementData,
-    expectedMsgForPortDisconnection,
-    Page2AgentControllerPortMsgType,
-    PageRequestType,
     renderUnknownValue,
     sleep
 } from "./misc";
 import {ChromeWrapper} from "./ChromeWrapper";
 import {DomWrapper} from "./DomWrapper";
+import {
+    AgentController2PagePortMsgType, expectedMsgForPortDisconnection,
+    Page2AgentControllerPortMsgType,
+    PageRequestType
+} from "./messaging_defs";
 
 /**
  * used to allow local variables success and result from the main action-performing method to be passed by reference

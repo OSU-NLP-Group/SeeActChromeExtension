@@ -4,13 +4,9 @@ import {Logger} from "loglevel";
 import {
     Action,
     ActionStateChangeSeverity,
-    AgentController2PanelPortMsgType, AnnotationCoordinator2PanelPortMsgType,
     buildGenericActionDesc, defaultIsAnnotatorMode,
     defaultIsMonitorMode,
     defaultShouldWipeActionHistoryOnStart,
-    expectedMsgForPortDisconnection,
-    Panel2AgentControllerPortMsgType, panelToAnnotationCoordinatorPort, PanelToAnnotationCoordinatorPortMsgType,
-    panelToControllerPort,
     renderUnknownValue,
     setupModeCache, storageKeyForAnnotatorMode,
     storageKeyForEulaAcceptance,
@@ -21,6 +17,15 @@ import {Mutex} from "async-mutex";
 import {ActionInfo} from "./AgentController";
 import saveAs from "file-saver";
 import {marked} from "marked";
+import {
+    AgentController2PanelPortMsgType,
+    AnnotationCoordinator2PanelPortMsgType,
+    expectedMsgForPortDisconnection,
+    Panel2AgentControllerPortMsgType,
+    panelToAnnotationCoordinatorPort,
+    PanelToAnnotationCoordinatorPortMsgType,
+    panelToControllerPort
+} from "./messaging_defs";
 
 
 export interface SidePanelElements {

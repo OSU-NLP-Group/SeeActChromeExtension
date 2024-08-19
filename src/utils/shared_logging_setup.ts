@@ -1,11 +1,13 @@
 import log, {LogLevel, LogLevelNames} from "loglevel";
 import {
-    expectedMsgForSendingRuntimeRequestFromDisconnectedContentScript,
-    PageRequestType,
     renderUnknownValue, storageKeyForLogLevel
 } from "./misc";
 import {DBSchema, IDBPDatabase, openDB} from 'idb';
 import {Mutex} from "async-mutex";
+import {
+    expectedMsgForSendingRuntimeRequestFromDisconnectedContentScript,
+    PageRequestType
+} from "./messaging_defs";
 
 
 // Create an object that maps the names of the log levels to their numeric values

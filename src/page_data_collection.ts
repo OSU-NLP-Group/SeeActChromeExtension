@@ -1,10 +1,14 @@
 import {createNamedLogger} from "./utils/shared_logging_setup";
 import {
-    expectedMsgForPortDisconnection, Page2AnnotationCoordinatorPortMsgType,
-    pageToAnnotationCoordinatorPort, renderUnknownValue, sleep
+    renderUnknownValue, sleep
 } from "./utils/misc";
 import {PageDataCollector} from "./utils/PageDataCollector";
 import {IframesMonitor} from "./utils/IframesMonitor";
+import {
+    expectedMsgForPortDisconnection,
+    Page2AnnotationCoordinatorPortMsgType,
+    pageToAnnotationCoordinatorPort
+} from "./utils/messaging_defs";
 
 const logger = createNamedLogger('page-data-collection', false);
 logger.trace(`successfully injected page_data_collection script in browser for page ${document.URL}`);

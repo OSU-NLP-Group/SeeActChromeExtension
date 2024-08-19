@@ -5,8 +5,6 @@ import {createNamedLogger} from "./shared_logging_setup";
 import {
     Action,
     ActionStateChangeSeverity,
-    AnnotationCoordinator2PagePortMsgType,
-    AnnotationCoordinator2PanelPortMsgType,
     base64ToByteArray,
     BoundingBox,
     defaultIsAnnotatorMode,
@@ -14,9 +12,6 @@ import {
     exampleViewportDetails,
     isValidBoundingBox,
     makeStrSafeForFilename,
-    notSameKeys,
-    Page2AnnotationCoordinatorPortMsgType,
-    PanelToAnnotationCoordinatorPortMsgType,
     renderUnknownValue,
     SerializableElementData,
     setupModeCache,
@@ -28,6 +23,11 @@ import {Mutex} from "async-mutex";
 import {ServiceWorkerHelper} from "./ServiceWorkerHelper";
 import JSZip from "jszip";
 import Port = chrome.runtime.Port;
+import {
+    AnnotationCoordinator2PagePortMsgType, AnnotationCoordinator2PanelPortMsgType,
+    notSameKeys,
+    Page2AnnotationCoordinatorPortMsgType, PanelToAnnotationCoordinatorPortMsgType
+} from "./messaging_defs";
 
 /**
  * states for the action annotation coordinator Finite State Machine
@@ -60,9 +60,9 @@ export class ActionAnnotationCoordinator {
     //todo batch id and start-timestamp
 
     //todo fields for start-of-batch data
-    // interactive elements and html dump before any actions (when already scrolled to top)
     // list of screenshots of the page at different scroll positions
     // list of viewport details for the different screenshots
+    // interactive elements and html dump for each scroll position  (when already scrolled to top)
 
     //todo list of completed annotation ids in batch
     //todo list for in-progress batch of completed annotation actions, severities, descriptions, url's, target
