@@ -404,8 +404,8 @@ export class ActionAnnotationCoordinator {
             this.annotationHtmlDumpsInBatch.push(this.currActionHtmlDump);
 
             let annotationSummary = `annotation id ${this.currAnnotationId}; mouse coords: ${JSON.stringify(this.currActionMouseCoords)}, scroll position: ${this.currActionViewportInfo.scrollX}, ${this.currActionViewportInfo.scrollY}`;
-            if (this.currActionTargetElement) {annotationSummary += `; target element: ${this.currActionTargetElement.description.slice(100)}`;}
-            if (this.currAnnotationActionDesc) {annotationSummary += `; action description: ${this.currAnnotationActionDesc.slice(100)}`;}
+            if (this.currActionTargetElement) {annotationSummary += `;\ntarget element: ${this.currActionTargetElement.description.slice(100)}`;}
+            if (this.currAnnotationActionDesc) {annotationSummary += `;\naction description: ${this.currAnnotationActionDesc.slice(100)}`;}
             this.portToSidePanel!.postMessage({//null check was performed at top of function
                 type: AnnotationCoordinator2PanelPortMsgType.ANNOTATION_CAPTURED_CONFIRMATION, summary: annotationSummary
             });
@@ -543,7 +543,7 @@ export class ActionAnnotationCoordinator {
                 currAnnotationFolder.file("interactive_elements.json", JSON.stringify(interactiveElements, null, 4));
             } else {this.logger.error(`no interactive elements found for action annotation ${annotationId}`);}
 
-            if (this.currActionHtmlDump) {
+            if (htmlDump) {
                 currAnnotationFolder.file("page_html_dump.html", htmlDump);
             } else {this.logger.error(`no HTML dump found for action annotation ${annotationId}`);}
         }
