@@ -94,9 +94,10 @@ export class DomWrapper {
      *                     positive values scroll right, negative values scroll left
      * @param vertOffset the amount to scroll by in the vertical direction
      *                      positive values scroll down, negative values scroll up
+     * @param behavior how the scrolling should be animated
      */
-    scrollBy = (horizOffset: number, vertOffset: number): void => {
-        this.window.scrollBy({left: horizOffset, top: vertOffset, behavior: "smooth"});
+    scrollBy = (horizOffset: number, vertOffset: number, behavior: ScrollBehavior = "smooth"): void => {
+        this.window.scrollBy({left: horizOffset, top: vertOffset, behavior: behavior});
     }
 
     /**

@@ -268,3 +268,4 @@ export function renderTs(tsVal: number|undefined|null): string {
 // logged an error and returned true if the mutex wasn't acquired, or returned false if it was;
 // then such sensitive methods would have a 1 line guard at the very start:
 // if (guardMethod("someMethodName", this.mutex)) { return; }
+export const scrollFractionOfViewport = 0.80;

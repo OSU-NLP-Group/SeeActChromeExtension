@@ -6,12 +6,15 @@ import {createNamedLogger} from "./shared_logging_setup";
 import {
     ElementData,
     renderUnknownValue,
-    SerializableElementData
+    scrollFractionOfViewport,
+    SerializableElementData, sleep,
+    ViewportDetails
 } from "./misc";
 import {Mutex} from "async-mutex";
 import {
     AnnotationCoordinator2PagePortMsgType,
-    Page2AnnotationCoordinatorPortMsgType
+    Page2AnnotationCoordinatorPortMsgType,
+    PageRequestType
 } from "./messaging_defs";
 
 export class PageDataCollector {
@@ -45,6 +48,8 @@ export class PageDataCollector {
             this.browserHelper.resetElementAnalysis();
             if (message.type === AnnotationCoordinator2PagePortMsgType.REQ_ACTION_DETAILS_AND_CONTEXT) {
                 await this.mutex.runExclusive(async () => {await this.collectActionDetailsAndContext();});
+            } else if (message.type === AnnotationCoordinator2PagePortMsgType.REQ_GENERAL_PAGE_INFO_FOR_BATCH) {
+                await this.mutex.runExclusive(async () => {await this.collectGeneralPageInfoForBatch();});
             } else {
                 this.logger.warn(`unknown message from annotation coordinator: ${JSON.stringify(message)}`);
             }
@@ -59,13 +64,54 @@ export class PageDataCollector {
         }
     }
 
-    //todo method for start-of-batch data collection process
-    // scroll to top
-    // collect interactive elements and html dump
-    // capture/store screenshot and viewport details, then scroll down
-    // repeat prior step until bottom of page is reached and screen-capped
-    // scroll back to top and send all data to coordinator
-    // also provide page url and title at this point
+    collectGeneralPageInfoForBatch = async () => {
+        await this.browserHelper.clearElementHighlightingEarly();
+        const initialVertScrollPos = this.domWrapper.getVertScrollPos();
+        this.domWrapper.scrollBy(0, -initialVertScrollPos, "instant");
+
+        const generalViewportDetailsCaptures: Array<ViewportDetails> = [];
+        const generalInteractiveElementsCaptures: Array<SerializableElementData[]> = [];
+
+        const viewportHeight = this.domWrapper.getDocumentElement().clientHeight;
+        const scrollDist = viewportHeight * scrollFractionOfViewport;
+        let notAtBottomOfPage = false;//assuming the page might be too short to have a scrollbar
+        do {
+            const resp = await this.chromeWrapper.sendMessageToServiceWorker(
+                {reqType: PageRequestType.GENERAL_SCREENSHOT_FOR_SAFE_ELEMENTS,});
+            if (resp.success) {
+                this.logger.trace(`successfully got service worker to take general screenshot at scroll position ${this.domWrapper.getVertScrollPos()}`);
+            } else {
+                this.logger.warn(`failed to get service worker to take general screenshot at scroll position ${this.domWrapper.getVertScrollPos()}; response message: ${resp.message}; aborting general page info collection`);
+                return;
+            }
+            generalViewportDetailsCaptures.push(this.domWrapper.getViewportInfo());
+            generalInteractiveElementsCaptures.push(this.browserHelper.getInteractiveElements()
+                .map(makeElementDataSerializable));
+
+            this.domWrapper.scrollBy(0, scrollDist, "instant");
+            //don't want to measure the post-scroll position before the scroll animation concludes,
+            // in case 'instant' in ui terms is still slower than javascript execution
+            await sleep(100);
+            const postScrollViewportInfo = this.domWrapper.getViewportInfo();
+            notAtBottomOfPage = Math.abs(postScrollViewportInfo.pageScrollHeight
+                - postScrollViewportInfo.height - postScrollViewportInfo.scrollY) >= 1;
+        } while (notAtBottomOfPage);
+
+        this.domWrapper.scrollBy(0, initialVertScrollPos - this.domWrapper.getVertScrollPos());//scroll back to initial position
+
+        try {
+            this.portToBackground.postMessage({
+                type: Page2AnnotationCoordinatorPortMsgType.GENERAL_PAGE_INFO_FOR_BATCH,
+                generalViewportDetailsCaptures: generalViewportDetailsCaptures,
+                generalInteractiveElementsCaptures: generalInteractiveElementsCaptures,
+                url: this.domWrapper.getUrl(), title: this.domWrapper.getPageTitle(),
+                htmlDump: this.domWrapper.getDocumentElement().outerHTML
+            });
+        } catch (error: any) {
+            this.logger.error(`error in content script while sending general page info to annotation coordinator: ${renderUnknownValue(error)}`);
+        }
+
+    }
 
     collectActionDetailsAndContext = async (): Promise<void> => {
         await this.browserHelper.clearElementHighlightingEarly();
@@ -155,7 +201,7 @@ export class PageDataCollector {
 
         try {
             this.portToBackground.postMessage({
-                type: Page2AnnotationCoordinatorPortMsgType.PAGE_INFO,
+                type: Page2AnnotationCoordinatorPortMsgType.ANNOTATION_PAGE_INFO,
                 targetElementData: targetElementData,
                 interactiveElements: elementsDataInSerializableForm,
                 mouseX: currMouseX,

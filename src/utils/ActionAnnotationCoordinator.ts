@@ -37,8 +37,8 @@ export enum AnnotationCoordinatorState {
     IDLE,//i.e. no in-progress annotation
     WAITING_FOR_ANNOTATION_DETAILS,//waiting for annotation details from the side panel
     WAITING_FOR_CONTENT_SCRIPT_INIT,//injected content script hasn't notified coordinator of readiness yet
-    WAITING_FOR_PAGE_INFO,// waiting for content script to retrieve page state (e.g. interactive elements) from page
-    //todo state for 'waiting for start-of-batch data collection process to complete'
+    WAITING_FOR_PAGE_INFO_FOR_ANNOTATION,// waiting for content script to retrieve page state (e.g. interactive elements) from page
+    WAITING_FOR_GENERAL_PAGE_INFO_FOR_BATCH,//waiting for content script to retrieve general page info for start-of-batch data collection
 }
 
 export class ActionAnnotationCoordinator {
@@ -61,10 +61,14 @@ export class ActionAnnotationCoordinator {
     batchId: string | undefined;
     batchStartTimestamp: number | undefined;
 
-    //todo fields for start-of-batch data
-    // list of screenshots of the page at different scroll positions
-    // list of viewport details for the different screenshots
-    // interactive elements and html dump for each scroll position  (when already scrolled to top)
+    //start-of-batch data collection (to allow later creation of training data points for 'safe' elements/actions from
+    // the batch's zip archive)
+    startOfBatchScreenshots: string[] = [];
+    startOfBatchViewportInfos: ViewportDetails[] = [];
+    startOfBatchInteractiveElements: SerializableElementData[][] = [];
+    pageUrlForBatch: string | undefined;
+    pageTitleForBatch: string | undefined;
+    initialHtmlDumpForBatch: string | undefined;
 
     annotationIdsInBatch: string[] = [];
     actionTypesInBatch: Action[] = [];
@@ -179,7 +183,7 @@ export class ActionAnnotationCoordinator {
             return;
         }
 
-        this.state = AnnotationCoordinatorState.WAITING_FOR_PAGE_INFO;
+        this.state = AnnotationCoordinatorState.WAITING_FOR_PAGE_INFO_FOR_ANNOTATION;
         this.portToContentScript.postMessage({type: AnnotationCoordinator2PagePortMsgType.REQ_ACTION_DETAILS_AND_CONTEXT});
     }
 
@@ -227,6 +231,10 @@ export class ActionAnnotationCoordinator {
             this.resetAnnotationCaptureCoordinator("no side panel port to send batch start message to");
             return;
         }
+        if (!this.portToContentScript) {
+            this.resetAnnotationCaptureCoordinator("no content script port to send batch start message to");
+            return;
+        }
         this.batchId = uuidV4();
         this.batchStartTimestamp = Date.now();
         this.logger.info(`starting annotations batch ${this.batchId}`);
@@ -234,7 +242,9 @@ export class ActionAnnotationCoordinator {
             type: AnnotationCoordinator2PanelPortMsgType.NOTIFICATION, msg: "Batch started",
             details: `batch id: ${this.batchId}; batch start timestamp: ${renderTs(this.batchStartTimestamp)}`
         });
-        //todo send message to content script to start collecting data for the batch
+        this.state = AnnotationCoordinatorState.WAITING_FOR_GENERAL_PAGE_INFO_FOR_BATCH;
+        this.portToContentScript.postMessage(
+            {type: AnnotationCoordinator2PagePortMsgType.REQ_GENERAL_PAGE_INFO_FOR_BATCH});
     }
 
     concludeAnnotationsBatch = async () => {
@@ -245,6 +255,16 @@ export class ActionAnnotationCoordinator {
             this.resetAnnotationCaptureCoordinator(`asked to conclude annotations batch while batch id ${this.batchId} is not defined or batch start timestamp ${renderTs(this.batchStartTimestamp)} is undefined`);
             return;
         }
+        const numGeneralScreenshotCaptures = this.startOfBatchScreenshots.length;
+        const numGeneralViewportInfoCaptures = this.startOfBatchViewportInfos.length;
+        const numGeneralInteractiveElementsCaptures = this.startOfBatchInteractiveElements.length;
+        if (numGeneralScreenshotCaptures !== numGeneralViewportInfoCaptures
+            || numGeneralViewportInfoCaptures !== numGeneralInteractiveElementsCaptures) {
+            this.resetAnnotationCaptureCoordinator("at end of batch, the lists for accumulating the different parts of the start-of-batch data had different lengths!",
+                `# screenshots: ${numGeneralScreenshotCaptures}, # viewport info's: ${numGeneralViewportInfoCaptures}, # interactive elements sets: ${numGeneralInteractiveElementsCaptures}`);
+            return;
+        }
+
         const numIds = this.annotationIdsInBatch.length, numActionTypes = this.actionTypesInBatch.length;
         const numSeverities = this.actionSeveritiesInBatch.length;
         const numDescriptions = this.actionDescriptionsInBatch.length, numUrls = this.actionUrlsInBatch.length;
@@ -310,8 +330,10 @@ export class ActionAnnotationCoordinator {
         if (message.type === Page2AnnotationCoordinatorPortMsgType.READY) {
             this.logger.info("content script sent READY message to annotation coordinator in service worker");
             await this.mutex.runExclusive(() => this.respondToContentScriptInitialized(pagePort));
-        } else if (message.type === Page2AnnotationCoordinatorPortMsgType.PAGE_INFO) {
+        } else if (message.type === Page2AnnotationCoordinatorPortMsgType.ANNOTATION_PAGE_INFO) {
             await this.mutex.runExclusive(() => this.processActionContextAndDetails(message));
+        } else if (message.type === Page2AnnotationCoordinatorPortMsgType.GENERAL_PAGE_INFO_FOR_BATCH) {
+            await this.mutex.runExclusive(() => this.processGeneralPageInfoForBatch(message));
         } else if (message.type === Page2AnnotationCoordinatorPortMsgType.TERMINAL) {
             await this.mutex.runExclusive(() => this.resetAnnotationCaptureCoordinator(`content script encountered fatal error`, message.error));
         } else {
@@ -335,7 +357,7 @@ export class ActionAnnotationCoordinator {
 
     private async processActionContextAndDetails(message: any) {
         let preconditionErrMsg: string | undefined;
-        if (this.state !== AnnotationCoordinatorState.WAITING_FOR_PAGE_INFO) {preconditionErrMsg = `content script sent PAGE_INFO message while coordinator was in state ${AnnotationCoordinatorState[this.state]}`;}
+        if (this.state !== AnnotationCoordinatorState.WAITING_FOR_PAGE_INFO_FOR_ANNOTATION) {preconditionErrMsg = `content script sent PAGE_INFO message while coordinator was in state ${AnnotationCoordinatorState[this.state]}`;}
         if (!this.portToSidePanel) {preconditionErrMsg = `content script sent PAGE_INFO message when annotation coordinator didn't have a side panel port`;}
         if (preconditionErrMsg) {
             this.resetAnnotationCaptureCoordinator(preconditionErrMsg);
@@ -407,7 +429,8 @@ export class ActionAnnotationCoordinator {
             if (this.currActionTargetElement) {annotationSummary += `;\ntarget element: ${this.currActionTargetElement.description.slice(100)}`;}
             if (this.currAnnotationActionDesc) {annotationSummary += `;\naction description: ${this.currAnnotationActionDesc.slice(100)}`;}
             this.portToSidePanel!.postMessage({//null check was performed at top of function
-                type: AnnotationCoordinator2PanelPortMsgType.ANNOTATION_CAPTURED_CONFIRMATION, summary: annotationSummary
+                type: AnnotationCoordinator2PanelPortMsgType.ANNOTATION_CAPTURED_CONFIRMATION,
+                summary: annotationSummary
             });
             this.resetCurrAnnotationDetails();
         }
@@ -417,36 +440,35 @@ export class ActionAnnotationCoordinator {
     validateAndStoreActionContextAndDetails = (message: any): string | undefined => {
         const targetElemDataVal = message.targetElementData;
         if (targetElemDataVal === undefined) {
-            this.logger.info("no target element data in PAGE_INFO message from content script");
+            this.logger.info("no target element data in annotation page info message from content script");
         } else if (typeof targetElemDataVal !== "object" || notSameKeys(targetElemDataVal, exampleSerializableElemData)) {
-            return `invalid target element data ${renderUnknownValue(targetElemDataVal)} in PAGE_INFO message from content script`;
+            return `invalid target element data ${renderUnknownValue(targetElemDataVal)} in annotation page info message from content script`;
         } else { this.currActionTargetElement = targetElemDataVal; }
 
         const interactiveElementsVal: unknown = message.interactiveElements;
-        if (!Array.isArray(interactiveElementsVal) || interactiveElementsVal.some((entry) =>
-            typeof entry !== "object" || notSameKeys(entry, exampleSerializableElemData))) {
-            return `invalid interactive elements data ${renderUnknownValue(interactiveElementsVal)} in PAGE_INFO message from content script`;
-        } else { this.currActionInteractiveElements = interactiveElementsVal; }
+        if (this.validateArrayOfElementsData(interactiveElementsVal)) {
+            this.currActionInteractiveElements = interactiveElementsVal;
+        } else {return `invalid interactive elements data ${renderUnknownValue(interactiveElementsVal)} in annotation page info message from content script`;}
 
-        const viewportDtlsVal = message.viewportInfo
-        if (typeof viewportDtlsVal !== "object" || notSameKeys(viewportDtlsVal, exampleViewportDetails)) {
-            return `invalid viewport details ${renderUnknownValue(viewportDtlsVal)} in PAGE_INFO message from content script`;
-        } else { this.currActionViewportInfo = viewportDtlsVal; }
+        const viewportDtlsVal = message.viewportInfo;
+        if (this.validateViewportDetails(viewportDtlsVal)) {
+            this.currActionViewportInfo = viewportDtlsVal;
+        } else {return `invalid viewport details ${renderUnknownValue(viewportDtlsVal)} in annotation page info message from content script`;}
 
         const mouseXVal: unknown = message.mouseX;
         const mouseYVal: unknown = message.mouseY;
         if (typeof mouseXVal !== "number" || typeof mouseYVal !== "number") {
-            return `invalid mouse coordinates ${renderUnknownValue(mouseXVal)}, ${renderUnknownValue(mouseYVal)} in PAGE_INFO message from content script`;
+            return `invalid mouse coordinates ${renderUnknownValue(mouseXVal)}, ${renderUnknownValue(mouseYVal)} in annotation page info message from content script`;
         } else { this.currActionMouseCoords = {x: mouseXVal, y: mouseYVal}; }
 
         const htmlDumpVal: unknown = message.htmlDump;
         if (typeof htmlDumpVal !== "string") {
-            return `invalid HTML dump value ${renderUnknownValue(htmlDumpVal)} in PAGE_INFO message from content script`;
+            return `invalid HTML dump value ${renderUnknownValue(htmlDumpVal)} in annotation page info message from content script`;
         } else { this.currActionHtmlDump = htmlDumpVal; }
 
         const urlVal: unknown = message.url;
         if (typeof urlVal !== "string") {
-            return `invalid URL value ${renderUnknownValue(urlVal)} in PAGE_INFO message from content script`;
+            return `invalid URL value ${renderUnknownValue(urlVal)} in annotation page info message from content script`;
         } else if (this.currActionUrl !== urlVal) {
             if (this.currActionUrl) {this.logger.debug(`for annotation ${this.currAnnotationId}, URL from chrome's tool for injecting content script into active tab was ${this.currActionUrl} but page URL according to content script was actually ${urlVal}`); }
             this.currActionUrl = urlVal;
@@ -455,18 +477,77 @@ export class ActionAnnotationCoordinator {
         const mousePosElemDataVal = message.mousePosElemData;
         if (mousePosElemDataVal !== undefined) {
             if (typeof mousePosElemDataVal !== "object" || notSameKeys(mousePosElemDataVal, exampleSerializableElemData)) {
-                return `invalid mouse position element data ${renderUnknownValue(mousePosElemDataVal)} in PAGE_INFO message from content script`;
+                return `invalid mouse position element data ${renderUnknownValue(mousePosElemDataVal)} in annotation page info message from content script`;
             } else { this.mousePosElement = mousePosElemDataVal; }
         }
 
         const highlitElemDataVal = message.highlitElemData;
         if (highlitElemDataVal !== undefined) {
             if (typeof highlitElemDataVal !== "object" || notSameKeys(highlitElemDataVal, exampleSerializableElemData)) {
-                return `invalid actually-highlighted-element data ${renderUnknownValue(highlitElemDataVal)} in PAGE_INFO message from content script`;
+                return `invalid actually-highlighted-element data ${renderUnknownValue(highlitElemDataVal)} in annotation page info message from content script`;
             } else { this.highlitElement = highlitElemDataVal; }
         }
 
         return undefined;//i.e. no validation errors, all data stored successfully
+    }
+
+    processGeneralPageInfoForBatch = (message: any) => {
+        if (!this.portToSidePanel) {
+            this.resetAnnotationCaptureCoordinator("no side panel port to notify about general page info collection being done");
+            return;
+        }
+
+        const viewportDtlsCapturesVal = message.generalViewportDetailsCaptures;
+        if (Array.isArray(viewportDtlsCapturesVal) && viewportDtlsCapturesVal.every(viewportDtlsCapture =>
+            this.validateViewportDetails(viewportDtlsCapture))) {
+            this.startOfBatchViewportInfos = viewportDtlsCapturesVal;
+        } else {
+            this.resetAnnotationCaptureCoordinator(`invalid viewport details ${renderUnknownValue(viewportDtlsCapturesVal)} in general page info message from content script`);
+            return;
+        }
+
+        const interactiveElementsCapturesVal: unknown = message.generalInteractiveElementsCaptures;
+        if (Array.isArray(interactiveElementsCapturesVal) && interactiveElementsCapturesVal.every(elementsCapture =>
+            this.validateArrayOfElementsData(elementsCapture))) {
+            this.currActionInteractiveElements = interactiveElementsCapturesVal;
+        } else {
+            this.resetAnnotationCaptureCoordinator(`invalid interactive elements data ${renderUnknownValue(interactiveElementsCapturesVal)} in general page info message from content script`);
+            return;
+        }
+
+        const urlVal: unknown = message.url;
+        if (typeof urlVal !== "string") {
+            return `invalid URL value ${renderUnknownValue(urlVal)} in general page info message from content script`;
+        } else {this.pageUrlForBatch = urlVal;}
+
+        const titleVal: unknown = message.title;
+        if (typeof titleVal !== "string") {
+            return `invalid title value ${renderUnknownValue(titleVal)} in general page info message from content script`;
+        } else {this.pageTitleForBatch = titleVal;}
+
+        const htmlDumpVal: unknown = message.htmlDump;
+        if (typeof htmlDumpVal !== "string") {
+            return `invalid HTML dump value ${renderUnknownValue(htmlDumpVal)} in general page info message from content script`;
+        } else { this.initialHtmlDumpForBatch = htmlDumpVal; }
+
+        try {
+            this.portToSidePanel.postMessage({
+                type: AnnotationCoordinator2PanelPortMsgType.NOTIFICATION,
+                msg: "General page info collected, please start capturing annotations",
+                details: `URL: ${this.pageUrlForBatch}; title: ${this.pageTitleForBatch}`
+            });
+        } catch (error) {this.resetAnnotationCaptureCoordinator(`error while sending notification to side panel that general page info collection is done: ${renderUnknownValue(error)}`);}
+    }
+
+    private validateViewportDetails(viewportDtlsVal: unknown): viewportDtlsVal is ViewportDetails {
+        return typeof viewportDtlsVal === "object" && viewportDtlsVal !== null
+            && !notSameKeys(viewportDtlsVal, exampleViewportDetails);
+    }
+
+    private validateArrayOfElementsData(interactiveElementsVal: unknown):
+        interactiveElementsVal is SerializableElementData[] {
+        return Array.isArray(interactiveElementsVal) && interactiveElementsVal.every((entry) =>
+            typeof entry === "object" || !notSameKeys(entry, exampleSerializableElemData));
     }
 
     handlePageDisconnectFromAnnotationCoordinator = async (port: Port): Promise<void> => {
@@ -486,7 +567,30 @@ export class ActionAnnotationCoordinator {
             return;
         }
 
-        //todo store safe elements data (from the start-of-batch data collection process)
+        //the concludeAnnotationsBatch() method (which calls this) already confirmed that all the lists for the batch's
+        // initial general page info gathering have the same length, so we can just iterate over the indices of one of them
+        for (let generalPageInfoCaptureIdx = 0; generalPageInfoCaptureIdx < this.startOfBatchScreenshots.length;
+             generalPageInfoCaptureIdx++) {
+            const screenshotBase64 = this.startOfBatchScreenshots[generalPageInfoCaptureIdx];
+            const viewportInfo = this.startOfBatchViewportInfos[generalPageInfoCaptureIdx];
+            const interactiveElements = this.startOfBatchInteractiveElements[generalPageInfoCaptureIdx];
+
+            const currGeneralPageInfoFolder = zip.folder(`general_page_info_capture_${generalPageInfoCaptureIdx}`);
+            if (currGeneralPageInfoFolder === null) {
+                this.logger.error(`while trying to make folder in zip file for general information capture ${generalPageInfoCaptureIdx}, JSZip misbehaved (returned null from zip.folder() call); cannot proceed`);
+                return;
+            }
+
+            if (screenshotBase64) {
+                currGeneralPageInfoFolder().file("general_context_screenshot.png", base64ToByteArray(screenshotBase64))
+            } else {this.logger.error(`no screenshot found for general page info capture #${generalPageInfoCaptureIdx}`);}
+
+            currGeneralPageInfoFolder.file("viewport_info.json", JSON.stringify(viewportInfo, null, 4));
+            currGeneralPageInfoFolder.file("interactive_elements.json", JSON.stringify(interactiveElements, null, 4));
+        }
+        if (this.initialHtmlDumpForBatch) {
+            safeElemsDataFolder.file("initial_page_html_dump.html", this.initialHtmlDumpForBatch);
+        } else {this.logger.error(`no initial HTML dump found for batch ${this.batchId}`);}
 
         const actionAnnotationsFolder = zip.folder("manual_action_annotations");
         if (actionAnnotationsFolder === null) {
@@ -531,6 +635,8 @@ export class ActionAnnotationCoordinator {
             const annotationDetailsStr = JSON.stringify(annotationDtlsObj, replaceBlankWithNull, 4);
             currAnnotationFolder.file("annotation_details.json", annotationDetailsStr);
 
+            currAnnotationFolder.file("interactive_elements.json", JSON.stringify(interactiveElements, null, 4));
+
             if (contextScreenshotBase64) {
                 currAnnotationFolder.file("action_context_screenshot.png", base64ToByteArray(contextScreenshotBase64))
             } else {this.logger.error(`no context screenshot found for action annotation ${annotationId}`);}
@@ -538,10 +644,6 @@ export class ActionAnnotationCoordinator {
             if (targetedScreenshotBase64) {
                 currAnnotationFolder.file("action_targeted_screenshot.png", base64ToByteArray(targetedScreenshotBase64))
             } else {this.logger.warn(`no targeted screenshot found for action annotation ${annotationId}`);}
-
-            if (interactiveElements != undefined) {
-                currAnnotationFolder.file("interactive_elements.json", JSON.stringify(interactiveElements, null, 4));
-            } else {this.logger.error(`no interactive elements found for action annotation ${annotationId}`);}
 
             if (htmlDump) {
                 currAnnotationFolder.file("page_html_dump.html", htmlDump);
@@ -553,13 +655,20 @@ export class ActionAnnotationCoordinator {
             return;
         }
 
-        let zipFileName = `annotation_batch_${this.batchId}.zip`;
-        //todo instead simply rely on url provided by content script at start of batch processing
-        if (this.actionUrlsInBatch && this.actionUrlsInBatch[0]) {
-            zipFileName = `annotation_batch_${this.batchId}_from_${
-                makeStrSafeForFilename(this.actionUrlsInBatch[0].replace(/https?:\/\//, "").slice(0, 30))}.zip`;
-            //todo also use page title (provided by content script at start of batch processing) in file name
+        let zipFileName = `annotation_batch`;
+        if (this.pageTitleForBatch) {
+            zipFileName += `_${makeStrSafeForFilename(this.pageTitleForBatch.slice(0, 30))}`;
         }
+        zipFileName += `_id_${this.batchId}`;
+        const makeUrlPortionOfFileName = (url: string) => `_from_${
+            makeStrSafeForFilename(url.replace(/https?:\/\//, "").slice(0, 30))}`;
+        if (this.pageUrlForBatch) {
+            zipFileName += makeUrlPortionOfFileName(this.pageUrlForBatch);
+        } else if (this.actionUrlsInBatch && this.actionUrlsInBatch[0]) {
+            this.logger.warn(`no page URL found for batch ${this.batchId}; using first action annotation's URL instead`);
+            zipFileName += makeUrlPortionOfFileName(this.actionUrlsInBatch[0]);
+        }
+        zipFileName += ".zip";
 
         this.swHelper.sendZipToSidePanelForDownload(`annotated actions batch ${this.batchId}`, zip,
             this.portToSidePanel, zipFileName, AnnotationCoordinator2PanelPortMsgType.ANNOTATED_ACTIONS_EXPORT);
@@ -615,6 +724,29 @@ export class ActionAnnotationCoordinator {
         });
     }
 
+    /**
+     * captures a screenshot of the current page and stores it in the start-of-batch screenshots list
+     *
+     * @throws Error if called while not in the correct state or if there was an error capturing the screenshot
+     *                  This ensures that the background script's event handler will notify the data collection content
+     *                  script that the screenshot was not captured successfully (so it'll abort the data collection)
+     */
+    captureAndStoreGeneralScreenshot = async (): Promise<void> => {
+        if (this.state !== AnnotationCoordinatorState.WAITING_FOR_GENERAL_PAGE_INFO_FOR_BATCH) {
+            throw new Error(`asked to capture general screenshot while in state ${AnnotationCoordinatorState[this.state]}`);
+        }
+        if (this.batchId === undefined) {
+            throw new Error("asked to capture general screenshot while batch id is undefined");
+        }
+
+        const screenshotCapture = await this.swHelper.captureScreenshot("annotation_general");
+        if (screenshotCapture.error) {
+            this.resetAnnotationCaptureCoordinator(`error capturing general screenshot (for safe elements): ${screenshotCapture.error}`);
+            throw new Error(`error capturing general screenshot (for safe elements): ${screenshotCapture.error}`);
+        }
+        this.startOfBatchScreenshots.push(screenshotCapture.screenshotBase64);
+    }
+
     resetAnnotationCaptureCoordinator = (reason: string, details?: string, wasResetFromError = true): void => {
         (wasResetFromError ? this.logger.error : this.logger.info)(`terminating the capture of action annotation ${this.currAnnotationId} for reason: ${reason} with details ${details}`);
         this.portToSidePanel?.postMessage(
@@ -622,6 +754,13 @@ export class ActionAnnotationCoordinator {
         this.state = AnnotationCoordinatorState.IDLE;
         this.batchId = undefined;
         this.batchStartTimestamp = undefined;
+        this.startOfBatchScreenshots = [];
+        this.startOfBatchViewportInfos = [];
+        this.startOfBatchInteractiveElements = [];
+        this.pageUrlForBatch = undefined;
+        this.pageTitleForBatch = undefined;
+        this.initialHtmlDumpForBatch = undefined;
+
         this.annotationIdsInBatch = [];
         this.actionTypesInBatch = [];
         this.actionSeveritiesInBatch = [];

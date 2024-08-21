@@ -1,16 +1,12 @@
 import {Logger} from "loglevel";
 import {BrowserHelper, makeElementDataSerializable} from "./BrowserHelper";
 import {createNamedLogger} from "./shared_logging_setup";
-import {
-    Action,
-    buildGenericActionDesc, ElementData,
-    renderUnknownValue,
-    sleep
-} from "./misc";
+import {Action, buildGenericActionDesc, ElementData, renderUnknownValue, scrollFractionOfViewport, sleep} from "./misc";
 import {ChromeWrapper} from "./ChromeWrapper";
 import {DomWrapper} from "./DomWrapper";
 import {
-    AgentController2PagePortMsgType, expectedMsgForPortDisconnection,
+    AgentController2PagePortMsgType,
+    expectedMsgForPortDisconnection,
     Page2AgentControllerPortMsgType,
     PageRequestType
 } from "./messaging_defs";
@@ -231,7 +227,7 @@ export class PageActor {
     performScrollAction = async (actionToPerform: Action, actionOutcome: ActionOutcome): Promise<void> => {
         const docElement = this.domWrapper.getDocumentElement();
         const viewportHeight = docElement.clientHeight;
-        const scrollAmount = viewportHeight * 0.90;
+        const scrollAmount = viewportHeight * scrollFractionOfViewport;
         const scrollVertOffset = actionToPerform === Action.SCROLL_UP ? -scrollAmount : scrollAmount;
         const priorVertScrollPos = this.domWrapper.getVertScrollPos();
         this.logger.trace(`scrolling page by ${scrollVertOffset}px from starting vertical position ${priorVertScrollPos}px`);

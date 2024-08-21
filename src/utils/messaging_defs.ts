@@ -15,6 +15,7 @@ export enum PageRequestType {
     HOVER = "hover",
     SCREENSHOT_WITH_TARGET_HIGHLIGHTED = "screenshotWithTargetElementHighlighted",
     EULA_ACCEPTANCE = "eulaAcceptance",
+    GENERAL_SCREENSHOT_FOR_SAFE_ELEMENTS = "generalScreenshotForSafeElements",
 }
 
 /**
@@ -74,15 +75,13 @@ export enum AnnotationCoordinator2PanelPortMsgType {
 export enum Page2AnnotationCoordinatorPortMsgType {
     READY = "dataCollectorContentScriptInitializedAndReady",
     TERMINAL = "dataCollectorTerminalPageSideError",
-    PAGE_INFO = "sendingActionInfoAndContext",
-    //todo entry for the start-of-batch dump of data
+    ANNOTATION_PAGE_INFO = "sendingActionInfoAndContext",
+    GENERAL_PAGE_INFO_FOR_BATCH = "sendingGeneralPageInfoForBatch",
 }
 
 export enum AnnotationCoordinator2PagePortMsgType {
     REQ_ACTION_DETAILS_AND_CONTEXT = "requestActionDetailsAndContext",
-    //todo action to request heading to top of page, then grabbing interactive elements list, then iteratively
-    // taking screenshot and scrolling down; then scrolling back to top once bottom has been screen-capped and
-    // sending all collected info to coordinator
+    REQ_GENERAL_PAGE_INFO_FOR_BATCH = "requestGeneralPageInfoForBatch",
 }
 
 /**
@@ -96,10 +95,7 @@ export enum AgentController2PagePortMsgType {
 }
 
 export function notSameKeys<T extends object, U extends object>(obj1: T, obj2: U): boolean {
-    const keys1 = Object.keys(obj1);
-    const keys2 = Object.keys(obj2);
-    if (keys1.length !== keys2.length) {
-        return true;
-    }
-    return !keys1.every(key => keys2.includes(key)) || !keys2.every(key => keys1.includes(key));
+    const keys1 = Object.keys(obj1), keys2 = Object.keys(obj2);
+    return (keys1.length !== keys2.length) || !keys1.every(key => keys2.includes(key))
+        || !keys2.every(key => keys1.includes(key));
 }
