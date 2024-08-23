@@ -5,7 +5,7 @@ const path = require('path');
 const {CleanWebpackPlugin} = require('clean-webpack-plugin');
 const CopyPlugin = require('copy-webpack-plugin');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
-
+const WebpackDefinePlugin = require('webpack').DefinePlugin;
 
 /*
 maybe at some point try turning this into a webpack.config.ts file, then using templateParameters in each HtmlWebpackPlugin to
@@ -54,6 +54,11 @@ module.exports = {
     }
     ,
     plugins: [
+        new WebpackDefinePlugin({
+             '__BUILD_CONFIG': JSON.stringify({
+                      BUILD_TIMESTAMP: new Date().toISOString()
+                  })
+         }),
         new CleanWebpackPlugin({cleanOnceBeforeBuildPatterns: pathsToClean}),
         new CopyPlugin({
             patterns: [

@@ -481,12 +481,14 @@ export class SidePanelManager {
         if (this.cachedIsAnnotatorMode) {this.resetAnnotationUi();}
     }
 
-    private resetAnnotationUi() {
+    private resetAnnotationUi(isEndOfBatch: boolean = true) {
         this.annotatorActionType.value = Action.CLICK;
         this.annotatorActionStateChangeSeverity.value = ActionStateChangeSeverity.LOW;
         this.annotatorExplanationField.value = '';
-        this.annotatorStartButton.disabled = false;
-        this.annotatorEndButton.disabled = true;
+        if (isEndOfBatch) {
+            this.annotatorStartButton.disabled = false;
+            this.annotatorEndButton.disabled = true;
+        }
     }
 
     processConnectionReady = (): void => {
@@ -760,7 +762,7 @@ export class SidePanelManager {
             this.setAnnotatorStatusWithDelayedClear(message.msg, 10, message.details);
         } else if (message.type === AnnotationCoordinator2PanelPortMsgType.ANNOTATION_CAPTURED_CONFIRMATION) {
             this.setAnnotatorStatusWithDelayedClear("Annotation successfully captured", undefined, message.summary);
-            await this.mutex.runExclusive(() => this.resetAnnotationUi());
+            await this.mutex.runExclusive(() => this.resetAnnotationUi(false));
         } else {
             this.logger.warn(`unknown type of message from annotation coordinator: ${JSON.stringify(message)}`);
         }

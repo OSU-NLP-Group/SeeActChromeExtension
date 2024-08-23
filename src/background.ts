@@ -32,6 +32,7 @@ import {
 } from "./utils/messaging_defs";
 import Port = chrome.runtime.Port;
 import MessageSender = chrome.runtime.MessageSender;
+import {getBuildConfig} from "./utils/build_config";
 
 
 /**
@@ -67,6 +68,12 @@ chrome.runtime.onInstalled.addListener(async function (details) {
     if (details.reason == "install") {
         centralLogger.info("This is a first install! initializing indexeddb for logging");
         const initErrMsgs: string[] = [];
+
+        try {
+            getBuildConfig();
+        } catch (error: any) {
+            initErrMsgs.push(`build-time configs were not correctly stored in the bundle's source code by webpack: ${renderUnknownValue(error)}`);
+        }
 
         try {
             dbConnHolder.dbConn = await openDB<AgentDb>(DB_NAME, 1, {
