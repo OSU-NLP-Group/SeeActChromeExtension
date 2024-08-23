@@ -68,14 +68,17 @@ export class PageDataCollector {
         await this.browserHelper.clearElementHighlightingEarly();
         const initialVertScrollPos = this.domWrapper.getVertScrollPos();
         this.domWrapper.scrollBy(0, -initialVertScrollPos, "instant");
+        await sleep(50);//just in case 'instant' scroll animation is still slower than js execution
 
         const generalViewportDetailsCaptures: Array<ViewportDetails> = [];
         const generalInteractiveElementsCaptures: Array<SerializableElementData[]> = [];
 
         const viewportHeight = this.domWrapper.getDocumentElement().clientHeight;
         const scrollDist = viewportHeight * scrollFractionOfViewport;
-        let notAtBottomOfPage = false;//assuming the page might be too short to have a scrollbar
-        do {
+        const viewportInfo = this.domWrapper.getViewportInfo();
+        const numCaptures = Math.ceil(viewportInfo.pageScrollHeight / scrollDist);
+
+        for (let captureIdx = 0; captureIdx < numCaptures; captureIdx++) {
             const resp = await this.chromeWrapper.sendMessageToServiceWorker(
                 {reqType: PageRequestType.GENERAL_SCREENSHOT_FOR_SAFE_ELEMENTS,});
             if (resp.success) {
@@ -88,17 +91,17 @@ export class PageDataCollector {
             generalViewportDetailsCaptures.push(this.domWrapper.getViewportInfo());
             generalInteractiveElementsCaptures.push(this.browserHelper.getInteractiveElements()
                 .map(makeElementDataSerializable));
-
             this.domWrapper.scrollBy(0, scrollDist, "instant");
             const msForGeneralCaptures = performance.now() - tsAfterScreenshot;
-            //don't want to measure the post-scroll position before the scroll animation concludes,
-            // in case 'instant' in ui terms is still slower than javascript execution
+            // wait before next screenshot or the final scroll position check, in case 'instant' in ui terms is still
+            // slower than javascript execution
             // Also, we need to wait at least half a second between screenshots because of a Chrome limit/quota
-            await sleep(Math.max(100, 501 - msForGeneralCaptures));
-            const postScrollViewportInfo = this.domWrapper.getViewportInfo();
-            notAtBottomOfPage = Math.abs(postScrollViewportInfo.pageScrollHeight
-                - postScrollViewportInfo.height - postScrollViewportInfo.scrollY) >= 1;
-        } while (notAtBottomOfPage);
+            await sleep(Math.max(50, 501 - msForGeneralCaptures));
+        }
+        const finalViewportInfo = this.domWrapper.getViewportInfo();
+        if(Math.abs(finalViewportInfo.pageScrollHeight - finalViewportInfo.height - finalViewportInfo.scrollY) >= 1) {
+            this.logger.warn(`final viewport info after general page info collection doesn't indicate that we reached the bottom of the page; final viewport info: ${JSON.stringify(finalViewportInfo)}`);
+        }
 
         this.domWrapper.scrollBy(0, initialVertScrollPos - this.domWrapper.getVertScrollPos());//scroll back to initial position
 
