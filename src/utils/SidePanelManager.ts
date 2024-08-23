@@ -485,6 +485,8 @@ export class SidePanelManager {
         this.annotatorActionType.value = Action.CLICK;
         this.annotatorActionStateChangeSeverity.value = ActionStateChangeSeverity.LOW;
         this.annotatorExplanationField.value = '';
+        this.annotatorStartButton.disabled = false;
+        this.annotatorEndButton.disabled = true;
     }
 
     processConnectionReady = (): void => {
@@ -737,8 +739,7 @@ export class SidePanelManager {
             }
         } else {
             this.annotatorContainer.style.display = "none";
-            this.annotatorStartButton.disabled = false;
-            this.annotatorEndButton.disabled = true;
+            this.resetAnnotationUi();
         }
     }
 
@@ -768,6 +769,14 @@ export class SidePanelManager {
     handleAnnotationCoordinatorDisconnect = async (): Promise<void> => {
         this.logger.info("annotation coordinator port disconnected unexpectedly; attempting to reopen");
         await this.mutex.runExclusive(() => {
+            let annotationStatusText = "Annotation coordinator connection lost";
+            let annotationHovertext = "Please wait while it is started up again";
+            if (this.annotatorStartButton.disabled) {
+                annotationStatusText += " (current batch aborted)";
+                annotationHovertext += " and then try to begin a batch once more";
+            }
+            this.setAnnotatorStatusWithDelayedClear(annotationStatusText, undefined, annotationHovertext);
+            this.resetAnnotationUi();
             this.annotationCoordinatorPort = chrome.runtime.connect({name: panelToAnnotationCoordinatorPort});
             this.annotationCoordinatorPort.onMessage.addListener(this.handleAnnotationCoordinatorMsg);
             this.annotationCoordinatorPort.onDisconnect.addListener(this.handleAnnotationCoordinatorDisconnect);
@@ -789,8 +798,7 @@ export class SidePanelManager {
         if (this.annotationCoordinatorPort) {
             this.annotationCoordinatorPort.postMessage(
                 {type: PanelToAnnotationCoordinatorPortMsgType.END_ANNOTATION_BATCH});
-            this.annotatorEndButton.disabled = true;
-            this.annotatorStartButton.disabled = false;
+            this.resetAnnotationUi();
         } else {
             this.logger.error("annotation coordinator port doesn't exist, can't finish action annotations batch");
             this.setAnnotatorStatusWithDelayedClear("Connection to annotation coordinator is missing, so cannot finish action annotations batch (reopening the connection in background); please try again after this message disappears", 3);
