@@ -135,7 +135,7 @@ export class ActionAnnotationCoordinator {
 
     addSidePanelConnection = async (port: Port): Promise<void> => {
         await this.mutex.runExclusive(() => {
-            if (this.state != AnnotationCoordinatorState.IDLE) {this.resetAnnotationCaptureCoordinator(`side panel connected while in state ${this.state}; resetting coordinator before accepting connection`);}
+            if (this.state != AnnotationCoordinatorState.IDLE) {this.resetAnnotationCaptureCoordinator(`side panel connected while in state ${AnnotationCoordinatorState[this.state]}; resetting coordinator before accepting connection`);}
             if (this.portToSidePanel) {
                 this.portToSidePanel.disconnect();
                 this.resetAnnotationCaptureCoordinator(`side panel connected while a side panel port was already open; disconnecting old port and resetting coordinator before accepting connection`);
@@ -149,7 +149,7 @@ export class ActionAnnotationCoordinator {
         this.logger.info(`panel disconnected from coordinator: ${port.name}`);
         await this.mutex.runExclusive(() => {
             this.portToSidePanel = undefined;
-            if (this.state !== AnnotationCoordinatorState.IDLE) {this.resetAnnotationCaptureCoordinator(`panel disconnected while in state ${this.state}`);}
+            if (this.state !== AnnotationCoordinatorState.IDLE) {this.resetAnnotationCaptureCoordinator(`panel disconnected while in state ${AnnotationCoordinatorState[this.state]}`);}
         });
     }
 
@@ -168,7 +168,7 @@ export class ActionAnnotationCoordinator {
 
     private processAnnotationDetails(message: any) {
         if (this.state !== AnnotationCoordinatorState.WAITING_FOR_ANNOTATION_DETAILS) {
-            this.resetAnnotationCaptureCoordinator(`received annotation details message while in state ${this.state}`);
+            this.resetAnnotationCaptureCoordinator(`received annotation details message while in state ${AnnotationCoordinatorState[this.state]}`);
             return;
         }
 
@@ -249,7 +249,7 @@ export class ActionAnnotationCoordinator {
 
     concludeAnnotationsBatch = async () => {
         if (this.state !== AnnotationCoordinatorState.IDLE) {
-            this.resetAnnotationCaptureCoordinator(`asked to conclude annotations batch while in state ${this.state}`);
+            this.resetAnnotationCaptureCoordinator(`asked to conclude annotations batch while in state ${AnnotationCoordinatorState[this.state]}`);
             return;
         } else if (!this.batchId || this.batchStartTimestamp === undefined) {
             this.resetAnnotationCaptureCoordinator(`asked to conclude annotations batch while batch id ${this.batchId} is not defined or batch start timestamp ${renderTs(this.batchStartTimestamp)} is undefined`);
@@ -346,13 +346,13 @@ export class ActionAnnotationCoordinator {
             this.resetAnnotationCaptureCoordinator(`content script sent READY message while annotation coordinator is in state ${AnnotationCoordinatorState[this.state]}`);
             return;
         }
+        this.state = AnnotationCoordinatorState.IDLE;
+        this.logger.info(`content script connection ${pagePort.name} is initialized and ready for action annotation`);
+
         if (this.batchId) {
             this.logger.warn(`content script sent READY message while batch id ${this.batchId} is still defined; ignoring`);
             //todo change above line if I eventually implement auto-recovery from losing connection to content script
         } else {this.startAnnotationsBatch();}
-
-        this.state = AnnotationCoordinatorState.IDLE;
-        this.logger.info(`content script connection ${pagePort.name} is initialized and ready for action annotation`);
     }
 
     private async processActionContextAndDetails(message: any) {
@@ -433,6 +433,7 @@ export class ActionAnnotationCoordinator {
                 summary: annotationSummary
             });
             this.resetCurrAnnotationDetails();
+            this.logger.trace("action annotation stored in batch");
         }
         this.state = AnnotationCoordinatorState.IDLE;
     }
@@ -509,7 +510,7 @@ export class ActionAnnotationCoordinator {
         const interactiveElementsCapturesVal: unknown = message.generalInteractiveElementsCaptures;
         if (Array.isArray(interactiveElementsCapturesVal) && interactiveElementsCapturesVal.every(elementsCapture =>
             this.validateArrayOfElementsData(elementsCapture))) {
-            this.currActionInteractiveElements = interactiveElementsCapturesVal;
+            this.startOfBatchInteractiveElements = interactiveElementsCapturesVal;
         } else {
             this.resetAnnotationCaptureCoordinator(`invalid interactive elements data ${renderUnknownValue(interactiveElementsCapturesVal)} in general page info message from content script`);
             return;
@@ -536,6 +537,7 @@ export class ActionAnnotationCoordinator {
                 msg: "General page info collected, please start capturing annotations",
                 details: `URL: ${this.pageUrlForBatch}; title: ${this.pageTitleForBatch}`
             });
+            this.state = AnnotationCoordinatorState.IDLE;
         } catch (error) {this.resetAnnotationCaptureCoordinator(`error while sending notification to side panel that general page info collection is done: ${renderUnknownValue(error)}`);}
     }
 
@@ -561,7 +563,7 @@ export class ActionAnnotationCoordinator {
     exportActionAnnotationsBatch = async (): Promise<void> => {
         const zip = new JSZip();
 
-        const safeElemsDataFolder = zip.folder("safe_elements_data");
+        const safeElemsDataFolder = zip.folder("pg_data");
         if (safeElemsDataFolder === null) {
             this.logger.error("while trying to make folder in zip file for data about safe elements on the page, JSZip misbehaved (returned null from zip.folder() call); cannot proceed");
             return;
@@ -575,24 +577,24 @@ export class ActionAnnotationCoordinator {
             const viewportInfo = this.startOfBatchViewportInfos[generalPageInfoCaptureIdx];
             const interactiveElements = this.startOfBatchInteractiveElements[generalPageInfoCaptureIdx];
 
-            const currGeneralPageInfoFolder = zip.folder(`general_page_info_capture_${generalPageInfoCaptureIdx}`);
+            const currGeneralPageInfoFolder = safeElemsDataFolder.folder(`pg_info_${generalPageInfoCaptureIdx}`);
             if (currGeneralPageInfoFolder === null) {
                 this.logger.error(`while trying to make folder in zip file for general information capture ${generalPageInfoCaptureIdx}, JSZip misbehaved (returned null from zip.folder() call); cannot proceed`);
                 return;
             }
 
             if (screenshotBase64) {
-                currGeneralPageInfoFolder().file("general_context_screenshot.png", base64ToByteArray(screenshotBase64))
+                currGeneralPageInfoFolder.file("screenshot.png", base64ToByteArray(screenshotBase64));
             } else {this.logger.error(`no screenshot found for general page info capture #${generalPageInfoCaptureIdx}`);}
 
-            currGeneralPageInfoFolder.file("viewport_info.json", JSON.stringify(viewportInfo, null, 4));
-            currGeneralPageInfoFolder.file("interactive_elements.json", JSON.stringify(interactiveElements, null, 4));
+            currGeneralPageInfoFolder.file("viewport.json", JSON.stringify(viewportInfo, null, 4));
+            currGeneralPageInfoFolder.file("interact_elems.json", JSON.stringify(interactiveElements, null, 4));
         }
         if (this.initialHtmlDumpForBatch) {
-            safeElemsDataFolder.file("initial_page_html_dump.html", this.initialHtmlDumpForBatch);
+            safeElemsDataFolder.file("init_pg_dump.html", this.initialHtmlDumpForBatch);
         } else {this.logger.error(`no initial HTML dump found for batch ${this.batchId}`);}
 
-        const actionAnnotationsFolder = zip.folder("manual_action_annotations");
+        const actionAnnotationsFolder = zip.folder("act_annots");
         if (actionAnnotationsFolder === null) {
             this.logger.error("while trying to make folder in zip file for manual annotations of (generally unsafe) actions on the page, JSZip misbehaved (returned null from zip.folder() call); cannot proceed");
             return;
@@ -618,8 +620,8 @@ export class ActionAnnotationCoordinator {
             const interactiveElements = this.interactiveElementsSetsForAnnotationsInBatch[annotationIdx];
             const htmlDump = this.annotationHtmlDumpsInBatch[annotationIdx];
 
-            let annotationFolderName = `BROKEN_action_annotation_${actionStateChangeSeverity}_${annotationId}`;
-            if (targetElementData) {annotationFolderName = `action_annotation_${actionStateChangeSeverity}_Target_${makeStrSafeForFilename(targetElementData.description.slice(0, 30))}_${annotationId}.zip`;}
+            let annotationFolderName = `BROKEN_annot_${actionStateChangeSeverity}_${annotationId}`;
+            if (targetElementData) {annotationFolderName = `annot_${actionStateChangeSeverity}_Tgt_${makeStrSafeForFilename(targetElementData.description.slice(0, 30))}_${annotationId}`;}
             const currAnnotationFolder = actionAnnotationsFolder.folder(annotationFolderName);
             if (currAnnotationFolder === null) {
                 this.logger.error(`while trying to make folder in zip file for annotation ${annotationId}, JSZip misbehaved (returned null from zip.folder() call); cannot proceed`);
@@ -633,20 +635,20 @@ export class ActionAnnotationCoordinator {
                 actuallyHighlightedElementData: highlitElementData
             };
             const annotationDetailsStr = JSON.stringify(annotationDtlsObj, replaceBlankWithNull, 4);
-            currAnnotationFolder.file("annotation_details.json", annotationDetailsStr);
+            currAnnotationFolder.file("annot_dtls.json", annotationDetailsStr);
 
-            currAnnotationFolder.file("interactive_elements.json", JSON.stringify(interactiveElements, null, 4));
+            currAnnotationFolder.file("interact_elems.json", JSON.stringify(interactiveElements, null, 4));
 
             if (contextScreenshotBase64) {
-                currAnnotationFolder.file("action_context_screenshot.png", base64ToByteArray(contextScreenshotBase64))
+                currAnnotationFolder.file("context_screen.png", base64ToByteArray(contextScreenshotBase64))
             } else {this.logger.error(`no context screenshot found for action annotation ${annotationId}`);}
 
             if (targetedScreenshotBase64) {
-                currAnnotationFolder.file("action_targeted_screenshot.png", base64ToByteArray(targetedScreenshotBase64))
+                currAnnotationFolder.file("targeted_screen.png", base64ToByteArray(targetedScreenshotBase64))
             } else {this.logger.warn(`no targeted screenshot found for action annotation ${annotationId}`);}
 
             if (htmlDump) {
-                currAnnotationFolder.file("page_html_dump.html", htmlDump);
+                currAnnotationFolder.file("pg_dump.html", htmlDump);
             } else {this.logger.error(`no HTML dump found for action annotation ${annotationId}`);}
         }
 
@@ -655,7 +657,7 @@ export class ActionAnnotationCoordinator {
             return;
         }
 
-        let zipFileName = `annotation_batch`;
+        let zipFileName = `annot_batch`;
         if (this.pageTitleForBatch) {
             zipFileName += `_${makeStrSafeForFilename(this.pageTitleForBatch.slice(0, 30))}`;
         }
@@ -685,7 +687,7 @@ export class ActionAnnotationCoordinator {
                 return;
             }
             if (this.state !== AnnotationCoordinatorState.IDLE) {
-                this.logger.info(`asked to initiate annotation capture while in state ${this.state}; ignoring`);
+                this.logger.info(`asked to initiate annotation capture while in state ${AnnotationCoordinatorState[this.state]}; ignoring`);
                 return;
             }
             if (!this.portToSidePanel) {
@@ -748,7 +750,7 @@ export class ActionAnnotationCoordinator {
     }
 
     resetAnnotationCaptureCoordinator = (reason: string, details?: string, wasResetFromError = true): void => {
-        (wasResetFromError ? this.logger.error : this.logger.info)(`terminating the capture of action annotation ${this.currAnnotationId} for reason: ${reason} with details ${details}`);
+        (wasResetFromError ? this.logger.error : this.logger.info)(`terminating the capture of action annotation batch ${this.batchId}${this.currAnnotationId ? ` (with in-progress annotation id ${this.currAnnotationId})`: ""} for reason: ${reason} with details ${details}`);
         this.portToSidePanel?.postMessage(
             {type: AnnotationCoordinator2PanelPortMsgType.NOTIFICATION, msg: reason, details: details});
         this.state = AnnotationCoordinatorState.IDLE;

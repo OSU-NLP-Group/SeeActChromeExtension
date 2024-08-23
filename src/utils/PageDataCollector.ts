@@ -84,14 +84,17 @@ export class PageDataCollector {
                 this.logger.warn(`failed to get service worker to take general screenshot at scroll position ${this.domWrapper.getVertScrollPos()}; response message: ${resp.message}; aborting general page info collection`);
                 return;
             }
+            const tsAfterScreenshot = performance.now();
             generalViewportDetailsCaptures.push(this.domWrapper.getViewportInfo());
             generalInteractiveElementsCaptures.push(this.browserHelper.getInteractiveElements()
                 .map(makeElementDataSerializable));
 
             this.domWrapper.scrollBy(0, scrollDist, "instant");
+            const msForGeneralCaptures = performance.now() - tsAfterScreenshot;
             //don't want to measure the post-scroll position before the scroll animation concludes,
             // in case 'instant' in ui terms is still slower than javascript execution
-            await sleep(100);
+            // Also, we need to wait at least half a second between screenshots because of a Chrome limit/quota
+            await sleep(Math.max(100, 501 - msForGeneralCaptures));
             const postScrollViewportInfo = this.domWrapper.getViewportInfo();
             notAtBottomOfPage = Math.abs(postScrollViewportInfo.pageScrollHeight
                 - postScrollViewportInfo.height - postScrollViewportInfo.scrollY) >= 1;

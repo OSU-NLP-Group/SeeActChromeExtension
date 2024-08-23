@@ -354,7 +354,7 @@ export class BrowserHelper {
         let doesElemSeemInvisible = element.hidden || elemComputedStyle.display === "none"
             || elemComputedStyle.visibility === "hidden";
 
-        if (!isDocHostElem) {
+        if (element.shadowRoot === null) {//only skip this if element is shadow root host, not if it's an iframe element
             doesElemSeemInvisible = doesElemSeemInvisible || elemComputedStyle.height === "0px"
                 || elemComputedStyle.width === "0px" || elemBoundRect.width === 0 || elemBoundRect.height === 0;
         }

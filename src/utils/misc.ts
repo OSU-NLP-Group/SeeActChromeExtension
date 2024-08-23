@@ -252,8 +252,9 @@ export function makeStrSafeForFilename(str: string): string {
         let isCharSafe = true;
         if (char.charCodeAt(0) < 32) { isCharSafe = false}//for control characters and NUL byte
         //for ascii chars that're illegal in filenames in at least one OS, or that're sketchy in filenames, or that are just annoying in file names (i.e. the period)
+        // eliminating space character because it causes too many headaches
         if (isCharSafe && [`/`, `<`, `>`, `:`, `"`, `\\`, `|`, `?`, `*`, `#`, `$`, `%`, `!`, `&`, `'`, `{`, `}`, `@`,
-            `+`, "`", `=`, `.`, `’`].includes(char)) { isCharSafe = false}
+            `+`, "`", `=`, `.`, `’`, ' '].includes(char)) { isCharSafe = false}
         return isCharSafe ? char : "_";
     }).join("");
 }
