@@ -23,11 +23,12 @@ export class DomWrapper {
     /**
      * primitive wrapper around querySelectorAll to find elements in the DOM (doesn't pierce shadow roots or iframes)
      * @param cssSelector The CSS selector to use to find elements
+     * @param overrideDoc the secondary document or shadow root that should be searched through (instead of the main document of the page)
      * @returns array of elements that match the CSS selector;
      *           this is a static view of the elements (not live access that would allow modification)
      */
-    fetchElementsByCss = (cssSelector: string): Array<HTMLElement> => {
-        return Array.from(this.dom.querySelectorAll(cssSelector));
+    fetchElementsByCss = (cssSelector: string, overrideDoc?: Document | ShadowRoot): Array<HTMLElement> => {
+        return Array.from((overrideDoc ?? this.dom).querySelectorAll<HTMLElement>(cssSelector));
     }
 
     /**
@@ -64,10 +65,11 @@ export class DomWrapper {
     /**
      * trivial wrapper around window.getComputedStyle because jsdom doesn't support it and so it has to be mocked in unit tests
      * @param element the element whose computed style is needed
+     * @param pseudoElemName the name of the pseudo-element inside the given element whose style is needed
      * @returns the computed style of the element
      */
-    getComputedStyle = (element: HTMLElement): CSSStyleDeclaration => {
-        return this.window.getComputedStyle(element);
+    getComputedStyle = (element: HTMLElement, pseudoElemName: string | null | undefined = undefined): CSSStyleDeclaration => {
+        return this.window.getComputedStyle(element, pseudoElemName);
     }
 
     /**
@@ -92,9 +94,10 @@ export class DomWrapper {
      *                     positive values scroll right, negative values scroll left
      * @param vertOffset the amount to scroll by in the vertical direction
      *                      positive values scroll down, negative values scroll up
+     * @param behavior how the scrolling should be animated
      */
-    scrollBy = (horizOffset: number, vertOffset: number): void => {
-        this.window.scrollBy({left: horizOffset, top: vertOffset, behavior: "smooth"});
+    scrollBy = (horizOffset: number, vertOffset: number, behavior: ScrollBehavior = "smooth"): void => {
+        this.window.scrollBy({left: horizOffset, top: vertOffset, behavior: behavior});
     }
 
     /**
@@ -123,7 +126,13 @@ export class DomWrapper {
         return this.dom.URL;
     }
 
-    elementFromPoint = (x: number, y: number): Element | null => {
-        return this.dom.elementFromPoint(x, y);
+    elementFromPoint = (x: number, y: number, overrideDom?: Document | ShadowRoot): Element | null => {
+        return (overrideDom ?? this.dom).elementFromPoint(x, y);
     }
+
+    elementsFromPoint = (x: number, y: number, overrideDom?: Document | ShadowRoot): Element[] => {
+        return (overrideDom ?? this.dom).elementsFromPoint(x, y);
+    }
+
+    getPageTitle = (): string => {return this.dom.title;}
 }

@@ -1,18 +1,15 @@
 import {Logger} from "loglevel";
 import {BrowserHelper, makeElementDataSerializable} from "./BrowserHelper";
 import {createNamedLogger} from "./shared_logging_setup";
-import {
-    Action,
-    AgentController2PagePortMsgType,
-    buildGenericActionDesc, ElementData,
-    expectedMsgForPortDisconnection,
-    Page2AgentControllerPortMsgType,
-    PageRequestType,
-    renderUnknownValue,
-    sleep
-} from "./misc";
+import {Action, buildGenericActionDesc, ElementData, renderUnknownValue, scrollFractionOfViewport, sleep} from "./misc";
 import {ChromeWrapper} from "./ChromeWrapper";
 import {DomWrapper} from "./DomWrapper";
+import {
+    AgentController2PagePortMsgType,
+    expectedMsgForPortDisconnection,
+    Page2AgentControllerPortMsgType,
+    PageRequestType
+} from "./messaging_defs";
 
 /**
  * used to allow local variables success and result from the main action-performing method to be passed by reference
@@ -98,8 +95,8 @@ export class PageActor {
      *                       performActionFromController method
      * @return the text of the field after typing, or null if the field wasn't an editable text field
      */
-    typeIntoElement = (elementToActOn: HTMLElement, valueForAction: string | undefined, actionOutcome: ActionOutcome
-    ): string | null => {
+    typeIntoElement = async (elementToActOn: HTMLElement, valueForAction: string | undefined, actionOutcome: ActionOutcome
+    ): Promise<string | null> => {
         const priorElementText = this.browserHelper.getElementText(elementToActOn);
         const tagName = elementToActOn.tagName.toLowerCase();
         let result: string | null = null;
@@ -148,17 +145,39 @@ export class PageActor {
             const postTypeElementText = this.browserHelper.getElementText(elementToActOn);
             result = postTypeElementText;
             if (postTypeElementText !== valueForAction) {
-                if (priorElementText === postTypeElementText) {
-                    this.logger.warn("text of element after typing is the same as the prior text; typing might not have worked");
-                    actionOutcome.result += `; element text [<${postTypeElementText}>] not changed by typing`;
+                this.logger.trace(`element text after typing: ${postTypeElementText} was incorrect. Trying to type sequentially with chrome debugger`);
+                //clearing existing content, since js-based typing does that inherently but sequential/realistic typing doesn't
+                if ('value' in elementToActOn) {
+                    elementToActOn.value = "";
+                } else {elementToActOn.textContent = "";}
+
+                try {
+                    const resp = await this.chromeWrapper.sendMessageToServiceWorker(
+                        {reqType: PageRequestType.TYPE_SEQUENTIALLY, textToType: valueForAction});
+                    if (resp.success) {
+                        this.logger.trace(`sequentially typed ${valueForAction} into element`);
+                        actionOutcome.success = true;
+                    } else {
+                        actionOutcome.result += "; " + resp.message;
+                        actionOutcome.success = false;
+                    }
+                } catch (error: any) {
                     actionOutcome.success = false;
-                } else {
-                    this.logger.warn("text of element after typing doesn't match the desired value");
-                    actionOutcome.result += `; after typing, element text: [<${postTypeElementText}>] still doesn't match desired value`;
-                    actionOutcome.success = false;
+                    actionOutcome.result += "; error while asking service worker to type sequentially: " + renderUnknownValue(error);
                 }
-                //todo add fall-back options here like trying to clear the field and then type again, possibly
-                // using newly-written code for turning a string into a sequence of key press events and sending those to the element
+
+                const postSecondTryTypeElementText = this.browserHelper.getElementText(elementToActOn);
+                if (postSecondTryTypeElementText !== valueForAction) {
+                    if (priorElementText === postSecondTryTypeElementText) {
+                        this.logger.warn("text of element after typing is the same as the prior text; typing might not have worked");
+                        actionOutcome.result += `; element text [<${postSecondTryTypeElementText}>] not changed by typing`;
+                        actionOutcome.success = false;
+                    } else {
+                        this.logger.warn("text of element after typing doesn't match the desired value");
+                        actionOutcome.result += `; after typing, element text: [<${postSecondTryTypeElementText}>] still doesn't match desired value`;
+                        actionOutcome.success = false;
+                    }
+                }
             }
         }
         return result;
@@ -208,7 +227,7 @@ export class PageActor {
     performScrollAction = async (actionToPerform: Action, actionOutcome: ActionOutcome): Promise<void> => {
         const docElement = this.domWrapper.getDocumentElement();
         const viewportHeight = docElement.clientHeight;
-        const scrollAmount = viewportHeight * 0.90;
+        const scrollAmount = viewportHeight * scrollFractionOfViewport;
         const scrollVertOffset = actionToPerform === Action.SCROLL_UP ? -scrollAmount : scrollAmount;
         const priorVertScrollPos = this.domWrapper.getVertScrollPos();
         this.logger.trace(`scrolling page by ${scrollVertOffset}px from starting vertical position ${priorVertScrollPos}px`);
@@ -221,6 +240,8 @@ export class PageActor {
             actionOutcome.result +=
                 `; scrolled page by ${Math.abs(actualVertOffset).toFixed(1)}px ${actualVertOffset < 0 ? "up" : "down"}`;
         } else {
+            //todo fall back to using chrome.debugger to send page_down or page_up keystroke to tab
+
             this.logger.warn(`scroll action failed to move the viewport's vertical position from ${priorVertScrollPos}px`)
             actionOutcome.result += `; scroll action failed to move the viewport's vertical position from ${priorVertScrollPos.toFixed(1)}px`;
         }
@@ -255,7 +276,7 @@ export class PageActor {
             }
         } catch (error: any) {
             actionOutcome.success = false;
-            actionOutcome.result += "; error while asking service worker to press enter: " + error;
+            actionOutcome.result += `; error while asking service worker to press enter: ${renderUnknownValue(error)}`;
         }
     }
 
@@ -345,7 +366,7 @@ export class PageActor {
                 //  https://chromedevtools.github.io/devtools-protocol/1-2/Input/
                 actionOutcome.success = true;
             } else if (actionToPerform === Action.TYPE) {
-                this.typeIntoElement(elementToActOn, valueForAction, actionOutcome);
+                await this.typeIntoElement(elementToActOn, valueForAction, actionOutcome);
             } else if (actionToPerform === Action.PRESS_ENTER) {
                 elementToActOn.focus();
                 //if sleep proves unreliable or unacceptably slow, explore a conditional poll/wait approach to ensure
@@ -404,15 +425,10 @@ export class PageActor {
                     error: "no interactive elements stored to be highlighted"
                 });
             return;
-        } else if ((typeof message.elementIndex !== "number") || message.elementIndex >= this.interactiveElements.length) {
-            this.logger.error("highlight-candidate-element message received from background script but element index is invalid");
-            this.portToBackground.postMessage(
-                {type: Page2AgentControllerPortMsgType.TERMINAL, error: "invalid element index provided to highlight"});
-            return;
         }
 
         let elementToActOn: HTMLElement;
-        if (message.elementIndex) {
+        if ((typeof message.elementIndex === "number") && message.elementIndex < this.interactiveElements.length) {
             const elementToActOnData = this.interactiveElements[message.elementIndex];
             elementToActOn = elementToActOnData.element;
         } else {
@@ -425,7 +441,7 @@ export class PageActor {
             }
         }
 
-        await this.browserHelper.highlightElement(elementToActOn.style);
+        await this.browserHelper.highlightElement(elementToActOn, this.interactiveElements);
 
         try {
             const resp = await this.chromeWrapper.sendMessageToServiceWorker({
@@ -490,13 +506,13 @@ export class PageActor {
         if (didPageRegisterStartOfUnload) {
             //sometimes the page registers an 'unload' event but isn't actually going to unload
             // (e.g. clicking a 'write email' link which causes the OS to open a pop-up for choosing how to handle it)
-            await sleep(initialWait);
+            await sleep(5*initialWait);
             //todo test whether this extra logic is relevant
             const isCurrentTabStillActive = this.domWrapper.getVisibilityState() === "visible";
             if (isCurrentTabStillActive) {
-                this.logger.info(`while waiting before ${reasonForWait}, there was a signal that the page was unloading, but the page didn't actually unload; continuing to ${reasonForWait}`);
+                this.logger.info(`WHILE WAITING BEFORE ${reasonForWait}, there was a signal that the page was unloading, but the page didn't actually unload; continuing to ${reasonForWait}`);
             } else {
-                this.logger.info(`while waiting before ${reasonForWait}, there was a signal that the page was unloading, and it turned out that focus shifted to a new tab while the existing page was left in the old tab; old tab's content script is no longer relevant, so will not ${reasonForWait}`);
+                this.logger.info(`WHILE WAITING BEFORE ${reasonForWait}, there was a signal that the page was unloading, and it turned out that focus shifted to a new tab while the existing page was left in the old tab; old tab's content script is no longer relevant, so will not ${reasonForWait}`);
                 return true;
             }
         }

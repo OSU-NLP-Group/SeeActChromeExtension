@@ -1,9 +1,14 @@
 import {createNamedLogger} from "./utils/shared_logging_setup";
 import {
-    expectedMsgForPortDisconnection, Page2AnnotationCoordinatorPortMsgType,
-    pageToAnnotationCoordinatorPort, renderUnknownValue, sleep
+    renderUnknownValue, sleep
 } from "./utils/misc";
 import {PageDataCollector} from "./utils/PageDataCollector";
+import {IframesMonitor} from "./utils/IframesMonitor";
+import {
+    expectedMsgForPortDisconnection,
+    Page2AnnotationCoordinatorPortMsgType,
+    pageToAnnotationCoordinatorPort
+} from "./utils/messaging_defs";
 
 const logger = createNamedLogger('page-data-collection', false);
 logger.trace(`successfully injected page_data_collection script in browser for page ${document.URL}`);
@@ -16,6 +21,13 @@ const dataCollector = new PageDataCollector(portToBackground);
 portToBackground.onMessage.addListener(dataCollector.handleRequestFromAnnotationCoordinator);
 
 dataCollector.setupMouseMovementTracking();
+const visibleIframesMonitor = new IframesMonitor(document, dataCollector.handleVisibleIframesChange.bind(dataCollector));
+
+portToBackground.onDisconnect.addListener(() => {
+    logger.info("annotation coordinator experienced a port disconnect, terminating ongoing monitoring processes for mouse position and visible iframes");
+    dataCollector.stopMouseMovementTracking();
+    visibleIframesMonitor.disconnect();
+});
 
 (async () => {
     await sleep(50);//make sure coordinator has added its listeners before sending READY message

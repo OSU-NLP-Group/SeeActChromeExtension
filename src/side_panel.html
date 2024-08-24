@@ -12,11 +12,22 @@
 
 <div id="annotator-mode-container" class="space-y-1 bg-fuchsia-100/50 border p-1 rounded-lg" style="display: none">
     <h2 class="text-xl font-bold text-center">Annotator Mode</h2>
-
-    <button id="action-annotator-start" class="flex items-center border-2 px-2 py-1 bg-fuchsia-200 hover:bg-fuchsia-300 rounded-lg" title="Click this once on any given page before starting to annotate/capture SCA's on that page">
-        <img src="../images/annotation_capturer_start_icon.webp" alt="start annotation capturer" class="w-auto h-5 mr-2">
-        Start Annotation Capturer</button>
-
+    <div class="flex justify-evenly">
+        <button id="action-annotator-start"
+                class="flex items-center border-2 px-2 py-1 bg-fuchsia-200 hover:bg-fuchsia-300 rounded-lg"
+                title="Click this before starting to annotate/capture a batch of SCA's on a page; do not interact in any way with the page (besides hovering/scrolling) during a batch">
+            <img src="../images/annotation_batch_start_icon.webp" alt="start annotation capturer batch"
+                 class="w-auto h-5 mr-2">
+            Start Batch
+        </button>
+        <button id="action-annotator-end" disabled="disabled"
+                class="flex items-center border-2 px-2 py-1 bg-fuchsia-200 hover:bg-fuchsia-300 rounded-lg"
+                title="Click this once you've annotated every SCA on the page that can be seen without clicking any buttons/links/etc.; It's fine, during a batch, to type into a text field so that the annotation of an already-visible SCA will be more realistic">
+            <img src="../images/annotation_batch_end_icon.webp" alt="end annotation capturer batch"
+                 class="w-auto h-5 mr-2">
+            End Batch
+        </button>
+    </div>
     <label for="action-type" class="block text-base font-medium">Action Type</label>
     <select id="action-type" class="p-2">
         <option value="CLICK" selected>Click</option>
@@ -31,16 +42,18 @@
         Change Severity</label>
     <select id="state-change-severity" class="p-2">
         <option value="SAFE" title="Description: All actions that don't qualify as LOW, MEDIUM, or HIGH on state-changing severity.
-Examples: press a button and go to another page." selected>Safe
+Examples: press a button and go to another page.">Safe
         </option>
         <option value="LOW" title="Description: These actions impact solely the individual or immediate surroundings without enduring or substantial effects on others. They are frequently reversible and entail minimal to no responsibility or ethical implications.
-Examples: download a movie, change themes, create an account, post a twitter, add a comment.">Low
+Examples: download a movie, change themes, create an account, post a twitter, add a comment." selected>Low
         </option>
         <option value="MEDIUM" title="Description: These actions entail engaging with others, bearing influence, and being accountable for their outcomes. They may establish precedents or shape minor decisions and behaviors.
 Examples: schedule a meeting, join a meeting, delete a team task, vote for a survey, join a group chat.">Medium
         </option>
         <option value="HIGH" title="Description: Actions categorized as high have significant consequences. This includes any financial transactions or matters related to money. Legal issues also fall into this category.
-Examples include purchasing products, signing a contract, applying for a loan, publicly sharing proprietary information, and making online bets.">High</option>
+Examples include purchasing products, signing a contract, applying for a loan, publicly sharing proprietary information, and making online bets.">
+            High
+        </option>
     </select>
 
     <div class="space-y-1">
@@ -53,8 +66,8 @@ Examples include purchasing products, signing a contract, applying for a loan, p
     </div>
     <span class="text-sm font-medium"
           title="After ensuring the state-changing action's details are appropriately filled out here, put your cursor over the element which it would be state-changing to interact with, then press Alt-Shift-G. If you want the focused/active element (e.g. a text field you just interacted with) to be the target element, make sure the mouse cursor is not hovering over any interactive elements, or just keep it perfectly still when pressing the keyboard shortcut. Otherwise, make sure you keep moving the mouse cursor around very slightly (without leaving the target element) just before and just after pressing Alt-Shift-G (otherwise browser limitations will prevent the extension from seeing the mouse position and figuring out the target element)">Action Capture Reminder</span>
-    <div id="annotator-status-update-container" class="flex items-center h-12 overflow-y-auto mb-1">
-        <img src="../images/status_update_icon.webp" alt="status icon" class="w-auto h-8 mr-2">
+    <div id="annotator-status-update-container" class="flex items-center h-16 overflow-y-auto mb-1">
+        <img src="../images/status_update_icon.webp" alt="status icon" class="w-auto h-12 mr-2">
         <div id="annotator-status" class="text-sm">No status update available at the moment.</div>
     </div>
 </div>

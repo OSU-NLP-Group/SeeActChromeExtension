@@ -1,5 +1,6 @@
 import {Logger} from "loglevel";
 import {renderUnknownValue} from "./misc";
+import {createNamedLogger} from "./shared_logging_setup";
 
 /**
  * Represents a node in the iframe tree structure.
@@ -57,8 +58,8 @@ export class IframeTree {
     /**
      * Creates an instance of IframeTree and builds the tree structure.
      */
-    constructor(topWindow: Window, logger: Logger) {
-        this.logger = logger;
+    constructor(topWindow: Window, logger?: Logger) {
+        this.logger = logger ?? createNamedLogger('iframe-tree', false);
         this.root = new IframeNode(null, topWindow);
         this.nodeMap = new Map([[topWindow, this.root]]);
         this.buildTree();
@@ -91,6 +92,7 @@ export class IframeTree {
             }
         };
 
+        const treeBuildStartTs = performance.now();
         try {
             buildNodeRecursive(this.root);
         } catch (error: any) {
@@ -99,6 +101,8 @@ export class IframeTree {
                     renderUnknownValue(error).slice(0, 100)}`);
             } else {this.logger.error(`Error building iframe tree: ${renderUnknownValue(error)}`);}
         }
+        const treeBuildDuration = performance.now() - treeBuildStartTs;
+        (treeBuildDuration > 100 ? this.logger.warn : this.logger.debug )(`Iframe tree build time: ${treeBuildDuration}ms`);
     }
 
     /**
@@ -116,6 +120,13 @@ export class IframeTree {
             } else {currentWindow = null;}
         }
         return null;
+    }
+
+    findIframeNodeForIframeElement(iframeElement: HTMLIFrameElement): IframeNode | null {
+        let node = null;
+        if (iframeElement.contentWindow) {node = this.nodeMap.get(iframeElement.contentWindow);}
+        if (node === undefined) { node = null; }
+        return node;
     }
 
     /**

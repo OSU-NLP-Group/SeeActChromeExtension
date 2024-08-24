@@ -14,8 +14,6 @@ import {
 } from "./shared_logging_setup";
 import {
     Action, ActionStateChangeSeverity,
-    AgentController2PagePortMsgType,
-    AgentController2PanelPortMsgType,
     base64ToByteArray,
     buildGenericActionDesc, defaultAutoMonitorThreshold,
     defaultIsMonitorMode,
@@ -24,9 +22,7 @@ import {
     defaultMaxNoops,
     defaultMaxOps,
     elementHighlightRenderDelay,
-    expectedMsgForPortDisconnection, isActionStateChangeSeverity,
-    Page2AgentControllerPortMsgType,
-    Panel2AgentControllerPortMsgType,
+    isActionStateChangeSeverity,
     renderUnknownValue,
     SerializableElementData,
     setupModeCache,
@@ -54,6 +50,12 @@ import {
 } from "./ai_misc";
 import {ServiceWorkerHelper} from "./ServiceWorkerHelper";
 import Port = chrome.runtime.Port;
+import {
+    AgentController2PagePortMsgType, AgentController2PanelPortMsgType, expectedMsgForPortDisconnection,
+    Page2AgentControllerPortMsgType,
+    Panel2AgentControllerPortMsgType
+} from "./messaging_defs";
+import {getBuildConfig} from "./build_config";
 
 /**
  * states for the agent controller Finite State Machine
@@ -479,6 +481,7 @@ export class AgentController {
         const candidateIds = interactiveElements.map((element, index) => {
             return (element.centerCoords[0] != 0 && element.centerCoords[1] != 0) ? index : undefined;
         }).filter(Boolean) as number[];//ts somehow too dumb to realize that filter(Boolean) removes undefined elements
+        this.logger.debug(`number of interactive elements: ${interactiveElements.length}; number of candidate elements: ${candidateIds.length}`);
 
         const interactiveChoices = formatChoices(interactiveElements, candidateIds, viewportInfo);
 
@@ -486,7 +489,7 @@ export class AgentController {
         // (e.g. querying ai at least some of the time with both current and prior screenshots)
         // to check for actions being silently ineffectual, with no error message and the content script having
         // judged the action as successful
-        // Maybe could limit this to only some action types that are particularly prone to being ineffectual, or
+        // Maybe could limit this to only some action types that are particularly prone to being ineffectual (e.g. it's hard to tell whether click action failed), or
         // use a non-ML software tool to check for the two images being too close to identical
         //      the latter could be easily thrown off by ads or other dynamic content. maybe getting a good solution for this would be more effort than it's worth
         const numPromptingScreenshotsTakenForCurrentActionBeforeThisRound = this.numPriorScreenshotsTakenForPromptingCurrentAction;
@@ -595,7 +598,11 @@ export class AgentController {
                 this.state = AgentControllerState.WAITING_FOR_MONITOR_RESPONSE;
             } else {
                 //to get high confidence that the screenshot with highlighted target element has been captured
-                if (isTargetElementHighlightingNeeded) { await sleep(40 + elementHighlightRenderDelay); }
+                // the 2/60ths of a second part is for the requestAnimationFrame part
+                //todo given observed variability of time for highlighting render to complete, consider just switching
+                // to message-passing and extra state in FSM to handle this more robustly; wait on that until 'targeted'
+                // screenshot with no outline occurs (where logs/human-oversight show that outlining did work, just too slowly)
+                if (isTargetElementHighlightingNeeded) { await sleep(40 + 2/60*100 + elementHighlightRenderDelay); }
 
                 if (this.terminationSignal) {
                     this.logger.info("received termination signal after deciding on the action but before actually committing it (possibly while waiting for a screenshot to be captured with the target element highlighted; terminating task")
@@ -610,6 +617,7 @@ export class AgentController {
                 let autoMonitorAllowsProceeding = this.pendingActionInfo.action !== Action.CLICK
                     && this.pendingActionInfo.action !== Action.PRESS_ENTER;
                 if (!autoMonitorAllowsProceeding) {//if action is a type that can possibly be dangerous, actually invoke the auto-monitor
+                    //todo add this.pendingActionInfo.elementData
                     autoMonitorAllowsProceeding = await this.consultAutoMonitor(isTargetElementHighlightingNeeded,
                         screenshotDataUrl, prompts, planningOutput, groundingOutput);
                 }
@@ -665,37 +673,49 @@ export class AgentController {
             screenshotDataUrlForJudge = screenshotDataUrl;
         }
 
-        let judgeOutput: string;
-        const startOfAiJudgeQuerying = Date.now();
-        try {
-            judgeOutput = await this.aiEngine.generateWithRetry({
-                prompts: prompts, generationType: GenerateMode.AUTO_MONITORING, planningOutput: planningOutput,
-                imgDataUrl: screenshotDataUrlForJudge, groundingOutput: groundingOutput
-            });
-        } catch (error) {
-            this.terminateTask(`error getting safety judgment from ai; error: ${renderUnknownValue(error)}`);
-            return false;
-        }
-        this.logger.debug(`ai querying for judge took ${Date.now() - startOfAiJudgeQuerying}ms`);
-        this.logger.info("judge output: " + judgeOutput);
-        try {
-            this.portToSidePanel.postMessage({
-                type: AgentController2PanelPortMsgType.NOTIFICATION, details: judgeOutput,
-                msg: "AI judgement of action safety complete"
-            });
-        } catch (error: any) {
-            this.terminateTask(`error while trying to send notification to side panel about auto-monitor call completion; error: ${renderUnknownValue(error)}`);
-            return false;
+        let judgeOutput: string = "";
+        let llmRespObj: any = {};
+        const isJudgeOutputInvalid = (judgmentObj: any) => !isActionStateChangeSeverity(judgmentObj.severity) || typeof judgmentObj.explanation !== "string"
+
+        for (let judgePromptingIndex = 0; judgePromptingIndex < 3 && isJudgeOutputInvalid(llmRespObj); judgePromptingIndex++) {
+            if (judgePromptingIndex > 0) {
+                if (this.aiEngine.providerDetails().supportsToolUse) {
+                    prompts.autoMonitorPrompt += `\nYou absolutely must call the 'action_judgment' tool after reasoning about the proposed action!`;
+                } else {
+                    prompts.autoMonitorPrompt += `\nYou absolutely must include 'severity' and 'explanation' values in your json output!`;
+                }
+            }
+
+            const startOfAiJudgeQuerying = Date.now();
+            try {
+                judgeOutput = await this.aiEngine.generateWithRetry({
+                    prompts: prompts, generationType: GenerateMode.AUTO_MONITORING, planningOutput: planningOutput,
+                    imgDataUrl: screenshotDataUrlForJudge, groundingOutput: groundingOutput
+                });
+            } catch (error) {
+                this.terminateTask(`error getting safety judgment from ai; error: ${renderUnknownValue(error)}`);
+                return false;
+            }
+            this.logger.debug(`ai querying for judge took ${Date.now() - startOfAiJudgeQuerying}ms`);
+            this.logger.info("judge output: " + judgeOutput);
+            try {
+                this.portToSidePanel.postMessage({
+                    type: AgentController2PanelPortMsgType.NOTIFICATION, details: judgeOutput,
+                    msg: "AI judgement of action safety complete"
+                });
+            } catch (error: any) {
+                this.terminateTask(`error while trying to send notification to side panel about auto-monitor call completion; error: ${renderUnknownValue(error)}`);
+                return false;
+            }
+            try {
+                llmRespObj = JSON.parse(judgeOutput);
+            } catch (e) {
+                this.terminateTask(`Invalid JSON response from the model (which shouldn't be possible per API docs): [<${judgeOutput}>] with error ${renderUnknownValue(e)}`);
+                return false;
+            }
         }
 
-        let llmRespObj: any;
-        try {
-            llmRespObj = JSON.parse(judgeOutput);
-        } catch (e) {
-            this.terminateTask(`Invalid JSON response from the model (which shouldn't be possible per API docs): [<${judgeOutput}>] with error ${renderUnknownValue(e)}`);
-            return false;
-        }
-        if (!isActionStateChangeSeverity(llmRespObj.severity) || typeof llmRespObj.explanation !== "string") {
+        if (isJudgeOutputInvalid(llmRespObj)) {
             this.terminateTask(`AI output for safety judgment was invalid: ${judgeOutput}`);
             return false;
         }
@@ -703,7 +723,9 @@ export class AgentController {
         const scaSeverityNameToLevel = (scaSeverityName: ActionStateChangeSeverity) => { return Object.values(ActionStateChangeSeverity).findIndex(severityName => severityName === scaSeverityName); };
         const actualLevel = scaSeverityNameToLevel(severity);
         const thresholdLevel = scaSeverityNameToLevel(this.autoMonitorThreshold);
-        if (actualLevel >= thresholdLevel) {
+        const shouldEscalate = actualLevel >= thresholdLevel;
+        this.logger.info(`SAFETY MONITOR decision to escalate to human user: ${shouldEscalate};  auto-monitor threshold name: ${this.autoMonitorThreshold}; actual severity name: ${severity}; threshold level: ${thresholdLevel}; actual severity level: ${actualLevel};\n explanation: ${llmRespObj.explanation};\n reasoning (see above logging of judge output)`);
+        if (shouldEscalate) {
             this.logger.info(`AI Judge decided that the proposed action was unsafe (severity ${severity}); explanation: ${llmRespObj.explanation}; escalating this action to human user as monitor`);
             this.isMonitorModeTempEnabled = true;
             this.cachedMonitorMode = true;
@@ -791,7 +813,12 @@ export class AgentController {
         this.logger.debug(`suggested action: ${action}; value: ${value}; explanation: ${explanation}`);
         let chosenCandidateIndex = getIndexFromOptionName(element);
 
+        //todo if planning output included SKIP_ELEMENT_SELECTION and then grounding output is NONE or invalid
+        // (e.g. action that requires element), then should immediately retry grouding prompt step with
+        // element-containing grounding prompt without having to do the planning step again
 
+        //todo add more indexical info here- how many actions completed by this point, value of numPriorScreenshotsTakenForPromptingCurrentAction,
+        // number of repromptings so far in the current for loop in processPageStateFromActor()
         this.predictionsInTask.push({
             modelPlanningOutput: planningOutput, modelGroundingOutput: groundingOutput,
             targetElementData: chosenCandidateIndex !== undefined && chosenCandidateIndex < candidateIds.length
@@ -892,7 +919,7 @@ export class AgentController {
         }
         //using weird comparison b/c pageScrollHeight is rounded to nearest int
         const isBrowserAtBottomOfPage = Math.abs(viewportInfo.pageScrollHeight - viewportInfo.height - viewportInfo.scrollY) < 1;
-        if ((action === Action.SCROLL_UP && viewportInfo.scrollY == 0) || (action === Action.SCROLL_UP && isBrowserAtBottomOfPage)) {
+        if ((action === Action.SCROLL_UP && viewportInfo.scrollY === 0) || (action === Action.SCROLL_DOWN && isBrowserAtBottomOfPage)) {
             const problemDesc = `AI selected ${action === Action.SCROLL_UP ? "scroll up when already at top of page" : "scroll down when already at bottom of page"}`;
             this.logger.info(`${problemDesc}, marking action as noop`);
             this.noopCount++;
@@ -1532,7 +1559,8 @@ export class AgentController {
 
         //note - if prof or users request, can add the Z's back in when exporting from db to log file, to make clear
         // that they're in UTC+0
-        const logFileContents = logsForTask.map(log =>
+        const logFileContents = `TIMESTAMP OF BUILD that produced this installation's version of the extension: ${getBuildConfig().BUILD_TIMESTAMP}\n` +
+            logsForTask.map(log =>
             `${log.timestamp} ${log.loggerName} ${log.level.toUpperCase()}: ${log.msg}`)
             .join("\n");
         this.logger.debug(`log file contents has length ${logFileContents.length}`);

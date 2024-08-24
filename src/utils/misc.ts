@@ -1,17 +1,10 @@
 import {Logger} from "loglevel";
 
-//todo consider breaking large parts of this off into 2 separate files, for inter-component communications and for options management in storage
-
-export const expectedMsgForPortDisconnection = "Attempting to use a disconnected port object";
-export const pageToControllerPort = `page-actor-2-agent-controller`;
-export const pageToAnnotationCoordinatorPort = `page-data-collector-2-annotation-coordinator`;
-export const panelToControllerPort = "side-panel-2-agent-controller";
-export const panelToAnnotationCoordinatorPort = "side-panel-2-annotation-coordinator";
-export const expectedMsgForSendingRuntimeRequestFromDisconnectedContentScript = "Extension context invalidated.";
+//todo consider breaking large parts of this off into 2 separate files, e.g. for options management in storage
 
 //ms, how long to sleep (after editing an element for highlighting) before telling the service worker to take a
 // screenshot; i.e. longest realistic amount of time the browser might take to re-render the modified element
-export const elementHighlightRenderDelay = 5;
+export const elementHighlightRenderDelay = 15;
 
 export enum ActionStateChangeSeverity {
     SAFE = "SAFE",
@@ -21,7 +14,8 @@ export enum ActionStateChangeSeverity {
 }
 
 export function isActionStateChangeSeverity(severity: unknown): severity is ActionStateChangeSeverity {
-    return typeof severity === "string" && Object.values(ActionStateChangeSeverity).includes(severity as ActionStateChangeSeverity);
+    return typeof severity === "string" && Object.values(ActionStateChangeSeverity)
+        .includes(severity as ActionStateChangeSeverity);
 }
 
 export const storageKeyForEulaAcceptance = "eulaAccepted";
@@ -41,7 +35,6 @@ export const storageKeyForAnnotatorMode = "isAnnotatorMode";
 export const storageKeyForAutoMonitorThreshold = "autoMonitorThreshold";
 
 
-
 export const defaultIsMonitorMode = false;
 export const defaultShouldWipeActionHistoryOnStart = true;
 
@@ -50,7 +43,7 @@ export const defaultMaxNoops = 7;
 export const defaultMaxFailures = 10;
 export const defaultMaxFailureOrNoopStreak = 4;
 
-export const defaultIsAnnotatorMode = false;
+export const defaultIsAnnotatorMode = true;
 
 export const defaultAutoMonitorThreshold = ActionStateChangeSeverity.LOW;
 
@@ -78,89 +71,6 @@ export const exampleViewportDetails: ViewportDetails =
     {scrollX: 0, scrollY: 0, width: 0, height: 0, pageScrollWidth: 0, pageScrollHeight: 0}
 
 /**
- * types of one-off messages that might be sent to the service worker, either from the content script or the popup
- */
-export enum PageRequestType {
-    LOG = "log",
-    PRESS_ENTER = "pressEnter",
-    HOVER = "hover",
-    SCREENSHOT_WITH_TARGET_HIGHLIGHTED = "screenshotWithTargetElementHighlighted",
-    EULA_ACCEPTANCE = "eulaAcceptance",
-}
-
-/**
- * types of messages that the service worker might send to the side panel (for adding entries to history list, but
- * also for things like monitor mode)
- */
-export enum AgentController2PanelPortMsgType {
-    AGENT_CONTROLLER_READY = "agentControllerReady",
-    TASK_STARTED = "taskStarted",
-    ACTION_CANDIDATE = "actionCandidate",
-    AUTO_MONITOR_ESCALATION = "autoMonitorEscalation",//for when the controller's "auto-monitor" feature has decided to escalate to monitor mode for a single action (to get the human user's input)
-    TASK_HISTORY_ENTRY = "taskHistoryEntry",
-    TASK_ENDED = "taskEnded",
-    ERROR = "error",//cases where the agent controller wants to tell the side panel about a problem with some message from the side panel which was identified before a task id was generated
-    NOTIFICATION = "notification",//for agent notifying side panel of non-critical problem that will delay progress on the task (so the side panel can display that to user in status field and avoid user giving up on system)
-    HISTORY_EXPORT = "historyExport"//for when the controller has assembled a Blob for a zip file containing logs and/or screenshots and needs to send it to the side panel so that it can be downloaded to the user's computer
-}
-
-/**
- * types of messages that the side panel might send to the service worker
- */
-export enum Panel2AgentControllerPortMsgType {
-    //specific to agent controller
-    START_TASK = "mustStartTask",
-    KILL_TASK = "mustKillTask",
-    MONITOR_APPROVED = "monitorApproved",
-    MONITOR_REJECTED = "monitorRejected",
-    //doesn't have to be specific to controller? handling these might be split off from AgentController later
-    KEEP_ALIVE = "keepAlive",
-    EXPORT_UNAFFILIATED_LOGS = "exportUnaffiliatedLogs"//i.e. logs not affiliated with any task (and so not included in any task's history export zip file)
-}
-
-/**
- * types of messages that the content script (mostly the page actor in the content script) might send to the agent
- * controller in the service worker (in the 'background') over their persistent connection
- */
-export enum Page2AgentControllerPortMsgType {
-    READY = "pageActorContentScriptInitializedAndReady",
-    TERMINAL = "pageActorTerminalPageSideError",
-    PAGE_STATE = "sendingPageState",
-    ACTION_DONE = "actionPerformed"
-}
-
-export enum PanelToAnnotationCoordinatorPortMsgType {
-    ANNOTATION_DETAILS = "annotationDetails",
-    START_CAPTURER = "startCapturer",
-}
-
-export enum AnnotationCoordinator2PanelPortMsgType {
-    REQ_ANNOTATION_DETAILS = "annotationDetailsRequest",
-    ANNOTATED_ACTION_EXPORT = "annotatedActionExport",
-    NOTIFICATION = "annotationNotification",
-}
-
-export enum Page2AnnotationCoordinatorPortMsgType {
-    READY = "dataCollectorContentScriptInitializedAndReady",
-    TERMINAL = "dataCollectorTerminalPageSideError",
-    PAGE_INFO = "sendingActionInfoAndContext",
-}
-
-export enum AnnotationCoordinator2PagePortMsgType {
-    REQ_ACTION_DETAILS_AND_CONTEXT = "requestActionDetailsAndContext",
-}
-
-/**
- * types of messages that the agent controller in the service worker (in the 'background') might send to the content
- * script over their persistent connection
- */
-export enum AgentController2PagePortMsgType {
-    REQ_PAGE_STATE = "requestPageState",
-    REQ_ACTION = "requestAction",
-    HIGHLIGHT_CANDIDATE_ELEM = "highlightCandidateElement",
-}
-
-/**
  * types of actions that the web agent might choose to take
  */
 export enum Action {
@@ -185,19 +95,22 @@ export interface HTMLElementWithDocumentHost extends HTMLElement {
     documentHostChain?: HTMLIFrameElement[];
 }
 
+/**
+ * tL: top-left corner and bR: bottom-right corner
+ */
+export type BoundingBox = {
+    tLx: number;
+    tLy: number;
+    bRx: number;
+    bRy: number
+}
+
 export type ElementData = {
     centerCoords: readonly [number, number],
     description: string,
     tagHead: string,
-    /**
-     * tL: top-left corner and bR: bottom-right corner
-     */
-    boundingBox: {
-        tLx: number;
-        tLy: number;
-        bRx: number;
-        bRy: number
-    },
+
+    boundingBox: BoundingBox,
     /**
      * index/identifier relative to the other interactable elements on the page
      */
@@ -207,11 +120,59 @@ export type ElementData = {
     height: number,
     tagName: string,
     element: HTMLElementWithDocumentHost
+    //todo if element is inside a scrollable context (e.g. a div with overflow auto), this should have info about that
+    // context
 }
 export type SerializableElementData = Omit<ElementData, 'element'>;
 export const exampleSerializableElemData: SerializableElementData = {
     centerCoords: [0, 0], description: "example element", tagHead: "div", boundingBox: {tLx: 0, tLy: 0, bRx: 0, bRy: 0},
     width: 0, height: 0, tagName: "div", xpath: "example xpath", interactivesIndex: -1
+}
+
+export function isValidBoundingBox(boxVal: unknown): boxVal is BoundingBox {
+    return typeof boxVal === "object" && boxVal !== null && "tLx" in boxVal && "tLy" in boxVal && "bRx" in boxVal && "bRy" in boxVal;
+}
+
+function getInternalClass(obj: any): string {return Object.prototype.toString.call(obj).slice(8, -1);}
+
+export function isDocument(node: Node | null | undefined): node is Document {
+    return node !== null && node != undefined && (
+        node instanceof Document || getInternalClass(node) === "Document"
+        || ('doctype' in node && 'implementation' in node && 'documentElement' in node)
+        || ('defaultView' in node && typeof node.defaultView === "object" && node.defaultView !== null
+            && 'document' in node.defaultView && node === node.defaultView.document));
+}
+
+export function isShadowRoot(node: Node | null | undefined): node is ShadowRoot {
+    return node !== null && node != undefined && (
+        node instanceof ShadowRoot || getInternalClass(node) === "ShadowRoot"
+        || ((node instanceof DocumentFragment || getInternalClass(node) === "DocumentFragment")
+            && 'host' in node && 'mode' in node));
+}
+
+const propsAlwaysAndOnlyInHtmlElements = ['style', 'innerText'];
+const methodsAlwaysAndOnlyInHtmlElements = ['blur', 'click', 'focus'];
+export function isHtmlElement(node: Node | null | undefined): node is HTMLElement {
+    if (node === null || node === undefined) { return false; }
+    if (node instanceof HTMLElement) { return true; }
+    const nodeType = getInternalClass(node);
+    if ((nodeType.startsWith("SVG") && nodeType.endsWith("Element")) || nodeType.startsWith("MathML")) { return false; }
+
+    return (nodeType.startsWith("HTML") && nodeType.endsWith("Element"))
+        || (propsAlwaysAndOnlyInHtmlElements.every(prop => prop in node)
+            && methodsAlwaysAndOnlyInHtmlElements.every(method => typeof (node as any)[method] === "function"));
+}
+
+export function isIframeElement(element: HTMLElement): element is HTMLIFrameElement {
+    if (element instanceof HTMLIFrameElement || element.tagName.toLowerCase() === "iframe") { return true; }
+    const elemType = getInternalClass(element).toLowerCase();
+    if (elemType.includes("iframe") && elemType.includes("element")) { return true;}
+    try {
+        //'data'/'type' checks are to rule out the element being an instance of HTMLObjectElement
+        return 'contentDocument' in element && 'contentWindow' in element && !('data' in element || 'type' in element);
+    } catch (e: any) {
+        return e.name === "SecurityError";
+    }
 }
 
 /**
@@ -286,13 +247,21 @@ export function base64ToByteArray(base64Data: string): Uint8Array {
     return bytes;
 }
 
-export function notSameKeys<T extends object, U extends object>(obj1: T, obj2: U): boolean {
-    const keys1 = Object.keys(obj1);
-    const keys2 = Object.keys(obj2);
-    if (keys1.length !== keys2.length) {
-        return true;
-    }
-    return !keys1.every(key => keys2.includes(key)) || !keys2.every(key => keys1.includes(key));
+export function makeStrSafeForFilename(str: string): string {
+    return Array.from(str).map(char => {
+        let isCharSafe = true;
+        if (char.charCodeAt(0) < 32) { isCharSafe = false}//for control characters and NUL byte
+        //for ascii chars that're illegal in filenames in at least one OS, or that're sketchy in filenames, or that are just annoying in file names (i.e. the period)
+        // eliminating space character because it causes too many headaches
+        if (isCharSafe && [`/`, `<`, `>`, `:`, `"`, `\\`, `|`, `?`, `*`, `#`, `$`, `%`, `!`, `&`, `'`, `{`, `}`, `@`,
+            `+`, "`", `=`, `.`, `’`, ' '].includes(char)) { isCharSafe = false}
+        return isCharSafe ? char : "_";
+    }).join("");
+}
+
+export function renderTs(tsVal: number|undefined|null): string {
+    if (tsVal === undefined || tsVal === null) { return "undefined/null";}
+    return new Date(tsVal).toISOString();
 }
 
 //todo idea- a number of methods implicitly assume/rely-on the enclosing context's mutex being acquired before they're
@@ -300,3 +269,4 @@ export function notSameKeys<T extends object, U extends object>(obj1: T, obj2: U
 // logged an error and returned true if the mutex wasn't acquired, or returned false if it was;
 // then such sensitive methods would have a 1 line guard at the very start:
 // if (guardMethod("someMethodName", this.mutex)) { return; }
+export const scrollFractionOfViewport = 0.80;

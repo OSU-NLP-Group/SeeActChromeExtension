@@ -5,32 +5,34 @@ import {
     createNamedLogger,
     DB_NAME,
     dbConnHolder,
-    initializeDbConnection, LogMessage,
-    LOGS_OBJECT_STORE, logsNotYetSavedToDb, mislaidLogsQueueMutex, saveLogMsgToDb,
+    initializeDbConnection,
+    LogMessage,
+    LOGS_OBJECT_STORE,
+    logsNotYetSavedToDb,
+    mislaidLogsQueueMutex,
+    saveLogMsgToDb,
     SCREENSHOTS_OBJECT_STORE,
 } from "./utils/shared_logging_setup";
 
 import log from "loglevel";
-import {
-    AgentController,
-    AgentControllerState
-} from "./utils/AgentController";
-import {
-    PageRequestType, pageToAnnotationCoordinatorPort,
-    pageToControllerPort, panelToAnnotationCoordinatorPort,
-    panelToControllerPort,
-    renderUnknownValue,
-    sleep,
-    storageKeyForEulaAcceptance
-} from "./utils/misc";
+import {AgentController, AgentControllerState} from "./utils/AgentController";
+import {renderUnknownValue, sleep, storageKeyForEulaAcceptance} from "./utils/misc";
 import {openDB} from "idb";
-import Port = chrome.runtime.Port;
-import MessageSender = chrome.runtime.MessageSender;
 import {AiEngine} from "./utils/AiEngine";
 import {createSelectedAiEngine} from "./utils/ai_misc";
 import {ActionAnnotationCoordinator} from "./utils/ActionAnnotationCoordinator";
-import { Mutex } from "async-mutex";
+import {Mutex} from "async-mutex";
 import {ServiceWorkerHelper} from "./utils/ServiceWorkerHelper";
+import {
+    PageRequestType,
+    pageToAnnotationCoordinatorPort,
+    pageToControllerPort,
+    panelToAnnotationCoordinatorPort,
+    panelToControllerPort
+} from "./utils/messaging_defs";
+import Port = chrome.runtime.Port;
+import MessageSender = chrome.runtime.MessageSender;
+import {getBuildConfig} from "./utils/build_config";
 
 
 /**
@@ -66,6 +68,12 @@ chrome.runtime.onInstalled.addListener(async function (details) {
     if (details.reason == "install") {
         centralLogger.info("This is a first install! initializing indexeddb for logging");
         const initErrMsgs: string[] = [];
+
+        try {
+            getBuildConfig();
+        } catch (error: any) {
+            initErrMsgs.push(`build-time configs were not correctly stored in the bundle's source code by webpack: ${renderUnknownValue(error)}`);
+        }
 
         try {
             dbConnHolder.dbConn = await openDB<AgentDb>(DB_NAME, 1, {
@@ -240,6 +248,26 @@ function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (r
                 sendResponse({success: false, message: errMsg});
             });
         }
+    } else if (request.reqType === PageRequestType.TYPE_SEQUENTIALLY) {
+        const text: unknown = request.textToType
+        if (!agentController) {
+            sendResponse(
+                {success: false, message: "Cannot type sequentially when agent controller is not initialized"});
+        } else if (agentController.currTaskTabId === undefined) {
+            sendResponse({success: false, message: "No active tab to type sequentially into"});
+        } else if (typeof text !== "string") {
+            const errMsg = `Cannot type sequentially with invalid text input ${renderUnknownValue(text)}`;
+            centralLogger.error(errMsg);
+            sendResponse({success: false, message: errMsg});
+        } else {
+            serviceWorkerHelper.typeSequentially(agentController.currTaskTabId, text).then(() => {
+                sendResponse({success: true, message: `Typed ${text} sequentially`});
+            }, (error) => {
+                const errMsg = `error typing ${text} sequentially; error: ${renderUnknownValue(error)}`;
+                centralLogger.error(errMsg);
+                sendResponse({success: false, message: errMsg});
+            });
+        }
     } else if (request.reqType === PageRequestType.HOVER) {
         if (!agentController) {
             sendResponse({success: false, message: "Cannot hover when agent controller is not initialized"});
@@ -278,6 +306,16 @@ function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (r
         //idea for later space-efficiency refinement - when saving a "targeted" screenshot, maybe could reduce its
         // quality drastically b/c you only care about an indication of which element in the screen was being targeted,
         // and you can consult the corresponding "initial" screenshot for more detail?
+    } else if (request.reqType === PageRequestType.GENERAL_SCREENSHOT_FOR_SAFE_ELEMENTS) {
+        actionAnnotationCoordinator.captureAndStoreGeneralScreenshot().then(() => {
+                centralLogger.info("took general screenshot of page (to ensure all safe elements are covered in a screenshot)");
+                sendResponse({success: true, message: "Took general screenshot of page"});
+            }, (error) => {
+                const errMsg = `error taking general screenshot of page; error: ${renderUnknownValue(error)}`;
+                centralLogger.error(errMsg);
+                sendResponse({success: false, message: errMsg});
+            }
+        );
     } else if (request.reqType === PageRequestType.EULA_ACCEPTANCE) {
         chrome.storage.local.set({[storageKeyForEulaAcceptance]: true}, () => {
             if (chrome.runtime.lastError) {
@@ -320,7 +358,7 @@ async function updateServiceWorkerOnNewSidePanelConnection(newPort: Port, discon
                 centralLogger.warn("error while trying to clear keep-alive alarm; error: ", renderUnknownValue(error)));
             chrome.alarms.clear(serviceWorker2ndaryKeepaliveAlarmName).catch((error) =>
                 centralLogger.warn("error while trying to clear secondary keep-alive alarm; error: ", renderUnknownValue(error)));
-        }  else { serviceWorkerStateMutex.release() }
+        } else { serviceWorkerStateMutex.release() }
 
         disconnectHandler(port).catch((error) => {
             centralLogger.error(`error handling side panel disconnection in service worker: ${renderUnknownValue(error)}`);

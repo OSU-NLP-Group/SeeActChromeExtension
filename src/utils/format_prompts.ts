@@ -73,6 +73,11 @@ export const formatChoices = (elements: Array<SerializableElementData>, candidat
             sizeInfo = `Size: ${relElemWidth.toFixed(1)}% x ${relElemHeight.toFixed(1)}%; `;
         }
 
+        //todo eventually also want to clarify if the element is inside of a scrollable context/container-element, and
+        // if so, what that container-element's interactive-element-id is, and also whether this element is currently
+        // visible inside of that context or whether the context needs to be scrolled to in order to see this element
+        // (if scrolling of that context is needed, should say which direction(s))
+
         let possiblyAbbrevDesc = description;
         const descriptionSplit: Array<string> = description.split(/\s+/);
         if ("select" !== tagName && descriptionSplit.length >= 30) {
@@ -151,11 +156,13 @@ To be successful, it is important to follow the following rules:
 2. You should only issue one action at a time
 3. For handling the select dropdown elements on the webpage, it's not necessary for you to provide completely accurate options right now. The full list of options for these elements will be supplied later.
 
-Sometimes the action won't require a target element: SCROLL_UP, SCROLL_DOWN, TERMINATE, or NONE; PRESS_ENTER also qualifies if your last action was TYPE.
-In such a case, it is very important that you include the exact string SKIP_ELEMENT_SELECTION near the end of your initial/planning output. DO NOT include it if you want to do something else first (e.g. TYPE before PRESS_ENTER).`;
+Sometimes the very next action won't require a target element: SCROLL_UP, SCROLL_DOWN, TERMINATE, or NONE.
+If the very next action won't require a target element, it is very important that you include the exact string SKIP_ELEMENT_SELECTION near the end of your initial/planning output. However, it is equally important that you not include that string if the next action _does_ require a target element.`;
 //todo ask Boyuan about changing the action space- it keeps getting confused or doing things wrong related to the
-// sequence "TYPE on one step then PRESS ENTER on next step"; why don't we just make 2 actions TYPE and TYPE_THEN_ENTER?
+// sequence "TYPE on one step then PRESS ENTER on next step"; why don't we just make 2 actions TYPE and TYPE_THEN_ENTER (or TYPE_THEN_CONFIRM, or TYPE_THEN_PRESS_ENTER, or something)?
 // and get rid of the PRESS_ENTER stand-alone action unless/until it becomes clear that it's needed?
+
+//todo add ability to optionally specify target element for SCROLL_UP and SCROLL_DOWN actions (to handle elements that have overflow content and so have their own scroll bars separate from the page's scroll bar)
 
 export const onlineReferringPromptDesc = `(Reiteration)
 First, reiterate your next target element, its detailed location, and the corresponding operation.
@@ -195,7 +202,7 @@ export const browserActionRequiredProps = ["explanation", "element", "action", "
 //description for 'action' property in the json schema for the inputs to the 'browser_action' tool
 export const browserActionSchemaActionDesc = "the type of the next action that should be taken";
 
-export const groundingPromptElementParamDesc = `The two-uppercase-letters ID of your chosen element. (can be set to null for PRESS_ENTER, SCROLL_UP, SCROLL_DOWN, or TERMINATE)`;
+export const groundingPromptElementParamDesc = `The one-or-two-uppercase-letters ID of your chosen element. (can be set to null for PRESS_ENTER, SCROLL_UP, SCROLL_DOWN, or TERMINATE); if the element's ID is just 1 letter, you must only put that 1 letter ID here and not double it to a 2 letter ID.`;
 export const groundingPromptValueParamDesc = `Provide additional input based on action. The value means:
     - If action == TYPE, specify the text to be typed.
     - If action == SELECT, indicate the option to be chosen. Revise the selection value to align with the available options within the element.
@@ -213,7 +220,7 @@ export const groundingWithToolUseElementlessActionPromptExplanation = `Based on 
     When calling the 'browser_action' tool, the action should be chosen from the options {SCROLL_UP, SCROLL_DOWN, PRESS_ENTER, TERMINATE, NONE}`;
 
 export const autoMonitorPromptIntro = `The proposed action (above, under "GROUNDING:") is potentially state-changing and may require human confirmation. Please review the proposed action, in the context of the earlier task specification, screenshot, and planning output.  
-Think step by step about whether this action could have any effects (especially hard-to-reverse effects) which the user might conceivably not desire or even just not want to be surprised by.  
+Think step by step about whether this action _on its own_ could have any effects (especially hard-to-reverse effects) which the user might conceivably not desire or even just not want to be surprised by.  
 The definitions of the levels of state-change severity of actions are:  
 - LOW: 
   - Description: These actions impact solely the individual or immediate surroundings without enduring or substantial effects on others. They are frequently reversible and entail minimal to no responsibility or ethical implications.
@@ -227,7 +234,7 @@ The definitions of the levels of state-change severity of actions are:
 - SAFE:
   - Description: All actions that don't qualify as LOW, MEDIUM, or HIGH on state-changing severity
   - Example: press a button and go to another page.
-You should make your judgement solely about the current proposed action (above, under "GROUNDING:"), not being swayed by the riskiness of the task (specified earlier).`;
+You should make your judgement solely about the current proposed action (above, under "GROUNDING:"), not being swayed by the riskiness of the task (specified earlier) or any possible effects that this action could add to future actions.`;
 export const actionJudgmentFuncDesc = "mechanism for submitting an assessment of the potential state-changing nature of an action";
 export const actionJudgmentSeverityParamDesc = "whether the proposed action's state-change is LOW, MEDIUM, or HIGH severity (or SAFE if it isn't meaningfully state-changing)";
 export const actionJudgmentExplanationParamDesc = `a 1-sentence explanation of why the proposed action belongs to the chosen state-change severity level.`;
@@ -277,7 +284,7 @@ export const generatePrompt = (task: string, previousActions: Array<string>, cho
         groundingPrompt += _formatOptions(choices);
     }
 
-    if (aiProviderType === AiProviders.ANTHROPIC.id || aiProviderType === AiProviders.GOOGLE_DEEPMIND.id) {
+    if (AiProviders[aiProviderType].supportsToolUse) {
         //Anthropic's/Google Deepmind's support for tool use means we can let the model do normal chain of thought
         // (not jammed into a "reasoning" entry of a json document), which should be more on-policy for it and so
         // hopefully more effective

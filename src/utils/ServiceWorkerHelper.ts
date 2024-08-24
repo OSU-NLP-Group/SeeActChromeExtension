@@ -110,8 +110,7 @@ export class ServiceWorkerHelper {
         if (!tabId) {
             return `Can't inject content script into chrome:// URLs for security reasons`;
         } else {
-
-            this.logger.trace(`injecting ${contentScriptDesc} script into page; in tab ${tabId}`);
+            this.logger.trace(`injecting ${contentScriptDesc} script into page; in tab ${tabId} with title ${tab.title} and url ${tab.url}`);
 
             const errMsg = preInjectChecksAndStateUpdates(tabId, tab.url, tab.title);
             if (errMsg) { return errMsg; }
@@ -137,16 +136,30 @@ export class ServiceWorkerHelper {
         this.logger.debug(`chrome.debugger attached to the tab ${tabId} to send an Enter key press`);
         //thanks to @activeliang https://github.com/ChromeDevTools/devtools-protocol/issues/45#issuecomment-850953391
         await this.chromeWrapper.sendCommand({tabId: tabId}, "Input.dispatchKeyEvent",
-            {"type": "rawKeyDown", "windowsVirtualKeyCode": 13, "unmodifiedText": "\r", "text": "\r"});
+            {"type": "rawKeyDown", "windowsVirtualKeyCode": 13});
         this.logger.debug(`chrome.debugger sent key-down keyevent for Enter/CR key to tab ${tabId}`);
         await this.chromeWrapper.sendCommand({tabId: tabId}, "Input.dispatchKeyEvent",
-            {"type": "char", "windowsVirtualKeyCode": 13, "unmodifiedText": "\r", "text": "\r"});
+            {"type": "char", "text": "\r"});
         this.logger.debug(`chrome.debugger sent char keyevent for Enter/CR key to tab ${tabId}`);
         await this.chromeWrapper.sendCommand({tabId: tabId}, "Input.dispatchKeyEvent",
-            {"type": "keyUp", "windowsVirtualKeyCode": 13, "unmodifiedText": "\r", "text": "\r"});
+            {"type": "keyUp", "windowsVirtualKeyCode": 13});
         this.logger.debug(`chrome.debugger sent keyup keyevent for Enter/CR key to tab ${tabId}`);
         await this.chromeWrapper.detachDebugger({tabId: tabId});
         this.logger.debug(`chrome.debugger detached from the tab ${tabId} after sending an Enter key press`);
+    }
+
+    typeSequentially = async (tabId: number, textToType: string): Promise<void> => {
+        await this.chromeWrapper.attachDebugger({tabId: tabId}, "1.3");
+        this.logger.debug(`chrome.debugger attached for typing`);
+
+        await this.chromeWrapper.sendCommand({tabId: tabId}, "Input.dispatchKeyEvent",
+            {"type": "rawKeyDown", "key": textToType.charAt(0)});
+        for (const charToSend of textToType) {
+            await this.chromeWrapper.sendCommand({tabId: tabId}, "Input.dispatchKeyEvent",
+                {"type": "char", "text": charToSend});
+        }
+        await this.chromeWrapper.detachDebugger({tabId: tabId});
+        this.logger.debug(`chrome.debugger detached from the tab ${tabId} after typing the text ${textToType} one character at a time`);
     }
 
     /**

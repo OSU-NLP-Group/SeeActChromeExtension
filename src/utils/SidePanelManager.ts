@@ -4,13 +4,9 @@ import {Logger} from "loglevel";
 import {
     Action,
     ActionStateChangeSeverity,
-    AgentController2PanelPortMsgType, AnnotationCoordinator2PanelPortMsgType,
     buildGenericActionDesc, defaultIsAnnotatorMode,
     defaultIsMonitorMode,
     defaultShouldWipeActionHistoryOnStart,
-    expectedMsgForPortDisconnection,
-    Panel2AgentControllerPortMsgType, panelToAnnotationCoordinatorPort, PanelToAnnotationCoordinatorPortMsgType,
-    panelToControllerPort,
     renderUnknownValue,
     setupModeCache, storageKeyForAnnotatorMode,
     storageKeyForEulaAcceptance,
@@ -21,11 +17,22 @@ import {Mutex} from "async-mutex";
 import {ActionInfo} from "./AgentController";
 import saveAs from "file-saver";
 import {marked} from "marked";
+import {
+    AgentController2PanelPortMsgType,
+    AnnotationCoordinator2PanelPortMsgType,
+    expectedMsgForPortDisconnection,
+    Panel2AgentControllerPortMsgType,
+    panelToAnnotationCoordinatorPort,
+    PanelToAnnotationCoordinatorPortMsgType,
+    panelToControllerPort
+} from "./messaging_defs";
 
 
 export interface SidePanelElements {
     eulaComplaintContainer: HTMLDivElement,
     annotatorContainer: HTMLDivElement,
+    annotatorStartButton: HTMLButtonElement,
+    annotatorEndButton: HTMLButtonElement,
     annotatorActionType: HTMLSelectElement,
     annotatorActionStateChangeSeverity: HTMLSelectElement,
     annotatorExplanationField: HTMLTextAreaElement,
@@ -61,6 +68,8 @@ export class SidePanelManager {
     private readonly eulaComplaintContainer: HTMLDivElement;
 
     private readonly annotatorContainer: HTMLDivElement;
+    private readonly annotatorStartButton: HTMLButtonElement;
+    private readonly annotatorEndButton: HTMLButtonElement;
     private readonly annotatorActionType: HTMLSelectElement;
     private readonly annotatorActionStateChangeSeverity: HTMLSelectElement;
     private readonly annotatorExplanationField: HTMLTextAreaElement;
@@ -107,6 +116,8 @@ export class SidePanelManager {
     constructor(elements: SidePanelElements, chromeWrapper?: ChromeWrapper, logger?: Logger, overrideDoc?: Document) {
         this.eulaComplaintContainer = elements.eulaComplaintContainer;
         this.annotatorContainer = elements.annotatorContainer;
+        this.annotatorStartButton = elements.annotatorStartButton;
+        this.annotatorEndButton = elements.annotatorEndButton;
         this.annotatorActionType = elements.annotatorActionType;
         this.annotatorActionStateChangeSeverity = elements.annotatorActionStateChangeSeverity;
         this.annotatorExplanationField = elements.annotatorExplanationField;
@@ -130,6 +141,7 @@ export class SidePanelManager {
 
         //have to initialize to default value this way to ensure that the monitor mode container is hidden if the default is false
         this.handleMonitorModeCacheUpdate(defaultIsMonitorMode);
+        this.handleAnnotatorModeCacheUpdate(defaultIsAnnotatorMode);
 
         setupModeCache(this.handleMonitorModeCacheUpdate, "monitor mode", storageKeyForMonitorMode, this.logger);
         setupModeCache(this.handleAnnotatorModeCacheUpdate, "annotator mode", storageKeyForAnnotatorMode, this.logger);
@@ -466,10 +478,16 @@ export class SidePanelManager {
             this.isMonitorModeTempEnabled = false;
         }
 
-        if (this.cachedIsAnnotatorMode) {
-            this.annotatorActionType.value = Action.CLICK;
-            this.annotatorActionStateChangeSeverity.value = ActionStateChangeSeverity.SAFE;
-            this.annotatorExplanationField.value = '';
+        if (this.cachedIsAnnotatorMode) {this.resetAnnotationUi();}
+    }
+
+    private resetAnnotationUi(isEndOfBatch: boolean = true) {
+        this.annotatorActionType.value = Action.CLICK;
+        this.annotatorActionStateChangeSeverity.value = ActionStateChangeSeverity.LOW;
+        this.annotatorExplanationField.value = '';
+        if (isEndOfBatch) {
+            this.annotatorStartButton.disabled = false;
+            this.annotatorEndButton.disabled = true;
         }
     }
 
@@ -508,7 +526,7 @@ export class SidePanelManager {
             this.addHistoryEntry(`Task started: ${message.taskSpec}`, `Task ID: ${message.taskId}`, "task_start")
             this.startButton.disabled = true;
             this.killButton.disabled = false;
-            this.taskSpecField.value = '';
+            //this.taskSpecField.value = ''; disabled at Boyuan's request
             if (this.cachedMonitorMode) {
                 this.monitorFeedbackField.disabled = false;
             }
@@ -545,7 +563,7 @@ export class SidePanelManager {
     processAutoMonitorEscalation = (message: any): void => {
         this.isMonitorModeTempEnabled = true;
         this.handleMonitorModeCacheUpdate(true);
-        this.setAgentStatusWithDelayedClear(`Pending action judged potentially unsafe at severity ${message.severity} (hover for reason); please review then approve or reject`, 15, `Explanation of judgement: ${message.explanation}`);
+        this.setAgentStatusWithDelayedClear(`Pending action judged to be dangerous at level ${message.severity} (hover for reason); please review then approve or reject`, 15, `Explanation of judgement: ${message.explanation}`);
         this.monitorApproveButton.disabled = false;
         this.monitorRejectButton.disabled = false;
         this.monitorFeedbackField.disabled = false;
@@ -619,6 +637,7 @@ export class SidePanelManager {
             this.statusPopup.innerHTML = marked.setOptions({async: false}).parse(hovertext) as string;
         }
         setTimeout(() => {
+            this.logger.trace(`after ${delay} seconds, clearing agent status ${status} with hovertext ${hovertext?.slice(0, 100)}...`);
             this.agentStatusDiv.textContent = 'No status update available at the moment.';
             this.statusPopup.innerHTML = '';
             this.statusPopup.style.display = "none";
@@ -631,6 +650,7 @@ export class SidePanelManager {
             this.annotatorStatusDiv.title = hovertext;
         }
         setTimeout(() => {
+            this.logger.trace(`after ${delay} seconds, clearing annotator status ${status} with hovertext ${hovertext?.slice(0, 100)}...`);
             this.annotatorStatusDiv.textContent = 'No status update available at the moment.';
             this.annotatorStatusDiv.title = '';
         }, delay * 1000)
@@ -655,6 +675,8 @@ export class SidePanelManager {
         newEntry.textContent = displayedText;
         newEntry.title = hoverText;
         this.historyList.appendChild(newEntry);
+        //todo if mouse is not inside history element (i.e. if user isn't looking at an existing history entry),
+        // automatically scroll the history element's contents to bottom to show the latest history entry
     }
 
     displayStatusPopup = (): void => {
@@ -672,10 +694,17 @@ export class SidePanelManager {
     handleMouseLeaveStatus = (elementThatWasLeft: HTMLElement): void => {
         //using referential equality intentionally here
         const otherStatusElemRect = (elementThatWasLeft == this.agentStatusDiv ? this.statusPopup : this.agentStatusDiv).getBoundingClientRect();
-        if (this.mouseClientX < otherStatusElemRect.left || this.mouseClientX > otherStatusElemRect.right
-            || this.mouseClientY < otherStatusElemRect.top || this.mouseClientY > otherStatusElemRect.bottom) {
-            this.statusPopup.style.display = 'none';
-        }
+        const mX = this.mouseClientX;
+        const mY = this.mouseClientY;
+        const isMouseOutsideOtherElem = mX < otherStatusElemRect.left || mX > otherStatusElemRect.right
+            || mY < otherStatusElemRect.top || mY > otherStatusElemRect.bottom;
+        const divRect = this.agentStatusDiv.getBoundingClientRect();
+        const popupRect = this.statusPopup.getBoundingClientRect();
+        //don't hide the popup if the mouse coords are in between the status div and the popup
+        const isMouseBetweenElems = mX > divRect.left && mX > popupRect.left && mX < divRect.right
+            && mX < popupRect.right && ((mY > divRect.bottom && mY < popupRect.top)
+                || (mY > popupRect.bottom && mY < divRect.top));
+        if (isMouseOutsideOtherElem && !isMouseBetweenElems) {this.statusPopup.style.display = 'none';}
     }
 
     handleMonitorModeCacheUpdate = (newMonitorModeVal: boolean) => {
@@ -712,6 +741,7 @@ export class SidePanelManager {
             }
         } else {
             this.annotatorContainer.style.display = "none";
+            this.resetAnnotationUi();
         }
     }
 
@@ -724,14 +754,15 @@ export class SidePanelManager {
                 type: PanelToAnnotationCoordinatorPortMsgType.ANNOTATION_DETAILS,
                 actionType: this.annotatorActionType.value, explanation: this.annotatorExplanationField.value,
                 actionStateChangeSeverity: this.annotatorActionStateChangeSeverity.value
-            })
-        } else if (message.type === AnnotationCoordinator2PanelPortMsgType.ANNOTATED_ACTION_EXPORT) {
-            this.processFileDownload(message);
-            await this.mutex.runExclusive(() => {
-                this.reset()
             });
+        } else if (message.type === AnnotationCoordinator2PanelPortMsgType.ANNOTATED_ACTIONS_EXPORT) {
+            this.processFileDownload(message);
+            await this.mutex.runExclusive(() => this.reset());
         } else if (message.type === AnnotationCoordinator2PanelPortMsgType.NOTIFICATION) {
             this.setAnnotatorStatusWithDelayedClear(message.msg, 10, message.details);
+        } else if (message.type === AnnotationCoordinator2PanelPortMsgType.ANNOTATION_CAPTURED_CONFIRMATION) {
+            this.setAnnotatorStatusWithDelayedClear("Annotation successfully captured", undefined, message.summary);
+            await this.mutex.runExclusive(() => this.resetAnnotationUi(false));
         } else {
             this.logger.warn(`unknown type of message from annotation coordinator: ${JSON.stringify(message)}`);
         }
@@ -740,18 +771,39 @@ export class SidePanelManager {
     handleAnnotationCoordinatorDisconnect = async (): Promise<void> => {
         this.logger.info("annotation coordinator port disconnected unexpectedly; attempting to reopen");
         await this.mutex.runExclusive(() => {
+            let annotationStatusText = "Annotation coordinator connection lost";
+            let annotationHovertext = "Please wait while it is started up again";
+            if (this.annotatorStartButton.disabled) {
+                annotationStatusText += " (current batch aborted)";
+                annotationHovertext += " and then try to begin a batch once more";
+            }
+            this.setAnnotatorStatusWithDelayedClear(annotationStatusText, undefined, annotationHovertext);
+            this.resetAnnotationUi();
             this.annotationCoordinatorPort = chrome.runtime.connect({name: panelToAnnotationCoordinatorPort});
             this.annotationCoordinatorPort.onMessage.addListener(this.handleAnnotationCoordinatorMsg);
             this.annotationCoordinatorPort.onDisconnect.addListener(this.handleAnnotationCoordinatorDisconnect);
         });
     }
 
-    startActionAnnotationCapturer = (): void => {
+    startActionAnnotationBatch = (): void => {
         if (this.annotationCoordinatorPort) {
-            this.annotationCoordinatorPort.postMessage({type: PanelToAnnotationCoordinatorPortMsgType.START_CAPTURER});
+            this.annotationCoordinatorPort.postMessage({type: PanelToAnnotationCoordinatorPortMsgType.START_ANNOTATION_BATCH});
+            this.annotatorEndButton.disabled = false;
+            this.annotatorStartButton.disabled = true;
         } else {
             this.logger.error("annotation coordinator port doesn't exist, can't start action annotation capture");
             this.setAnnotatorStatusWithDelayedClear("Connection to annotation coordinator is missing, so cannot start action annotation capture (reopening the connection in background); please try again after this message disappears", 3);
+        }
+    }
+
+    endActionAnnotationBatch = (): void => {
+        if (this.annotationCoordinatorPort) {
+            this.annotationCoordinatorPort.postMessage(
+                {type: PanelToAnnotationCoordinatorPortMsgType.END_ANNOTATION_BATCH});
+            this.resetAnnotationUi();
+        } else {
+            this.logger.error("annotation coordinator port doesn't exist, can't finish action annotations batch");
+            this.setAnnotatorStatusWithDelayedClear("Connection to annotation coordinator is missing, so cannot finish action annotations batch (reopening the connection in background); please try again after this message disappears", 3);
         }
     }
 

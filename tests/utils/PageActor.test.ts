@@ -8,12 +8,13 @@ import {createMockPort, fixHtmlElementContentEditable} from "../test_utils";
 import {ChromeWrapper} from "../../src/utils/ChromeWrapper";
 import {
     Action,
-    AgentController2PagePortMsgType,
     buildGenericActionDesc, ElementData,
-    expectedMsgForPortDisconnection,
-    Page2AgentControllerPortMsgType,
-    PageRequestType, SerializableElementData
+    SerializableElementData
 } from "../../src/utils/misc";
+import {
+    AgentController2PagePortMsgType, expectedMsgForPortDisconnection,
+    Page2AgentControllerPortMsgType, PageRequestType
+} from "../../src/utils/messaging_defs";
 
 
 const testLogger = log.getLogger("page-actor-test");
