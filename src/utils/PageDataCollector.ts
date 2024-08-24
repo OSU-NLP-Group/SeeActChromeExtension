@@ -76,12 +76,10 @@ export class PageDataCollector {
         const viewportHeight = this.domWrapper.getDocumentElement().clientHeight;
         const scrollDist = viewportHeight * scrollFractionOfViewport;
         const viewportInfo = this.domWrapper.getViewportInfo();
-        //need floor() + 1 instead of ceil() because of case where page scroll height is exactly equal to viewport height
-        // Used abs() just in case float weirdness (or fractional vs integer precision in numbers from browser)
-        // caused the difference to be negative in that scenario
-        const numCaptures = Math.floor(Math.abs(viewportInfo.pageScrollHeight-viewportHeight) / scrollDist) + 1;
-        this.logger.debug(`scrolling through page to capture general page info for batch; viewport height: ${viewportHeight}; scroll distance: ${scrollDist}; num captures: ${numCaptures}; argument to abs(): ${viewportInfo.pageScrollHeight-viewportHeight}; argument to floor(): ${Math.abs(viewportInfo.pageScrollHeight-viewportHeight) / scrollDist}; viewport info: ${JSON.stringify(viewportInfo)}`);
-        //todo need further review/troubleshooting here, sometimes getting anomalous measurements of pageScrollHeight (possibly related to zoom level, but not necessarily)
+        let numCaptures = 1;
+        const totalDistToScroll = viewportInfo.pageScrollHeight - viewportHeight;
+        if (totalDistToScroll > 1) {numCaptures += Math.ceil(totalDistToScroll / scrollDist);}
+        this.logger.debug(`scrolling through page to capture general page info for batch; viewport height: ${viewportHeight}; scroll distance: ${scrollDist}; num captures: ${numCaptures}; dist to scroll: ${totalDistToScroll}; argument to ceil(): ${totalDistToScroll / scrollDist}; viewport info: ${JSON.stringify(viewportInfo)}`);
 
         const checkAtBottom = (): boolean => {
             const currViewportInfo = this.domWrapper.getViewportInfo();
@@ -103,21 +101,22 @@ export class PageDataCollector {
             generalViewportDetailsCaptures.push(this.domWrapper.getViewportInfo());
             generalInteractiveElementsCaptures.push(this.browserHelper.getInteractiveElements()
                 .map(makeElementDataSerializable));
-            this.domWrapper.scrollBy(0, scrollDist, "instant");
-            // wait before next screenshot or the final scroll position check, in case 'instant' in ui terms is still
-            // slower than javascript execution
-            await sleep(50);
-            const msForGeneralCaptures = performance.now() - tsAfterScreenshot;
-            if (captureIdx < numCaptures - 1) {//not last capture
-                if (checkAtBottom()) {
-                    this.logger.warn(`reached the bottom of the page earlier than expected when capturing all general page info; stopping early; viewport info: ${JSON.stringify(this.domWrapper.getViewportInfo())}; num captures so far ${captureIdx+1}; expected number of captures needed: ${numCaptures}`);
-                    break;
-                }
+            if (captureIdx < numCaptures - 1) {//i.e. didn't just complete the last capture
+                this.domWrapper.scrollBy(0, scrollDist, "instant");
+                // wait before next screenshot or the final scroll position check, in case 'instant' in ui terms is still
+                // slower than javascript execution
+                await sleep(50);
+                const msForGeneralCaptures = performance.now() - tsAfterScreenshot;
                 // Also, we need to wait at least half a second between screenshots because of a Chrome limit/quota
                 await sleep(501 - msForGeneralCaptures);
             }
+            //if captureIdx===numCaptures-2, we're about to do the last iteration of the loop, and we should be at the bottom
+            if (captureIdx < numCaptures - 2 && checkAtBottom()) {
+                this.logger.warn(`reached the bottom of the page earlier than expected when capturing all general page info; stopping early; viewport info: ${JSON.stringify(this.domWrapper.getViewportInfo())}; num captures so far ${captureIdx + 1}; expected number of captures needed: ${numCaptures}`);
+                break;
+            } else if (captureIdx === numCaptures - 2 && !checkAtBottom()
+            ) {this.logger.warn(`final viewport info before last general page info capture doesn't indicate that we reached the bottom of the page; final viewport info: ${JSON.stringify(this.domWrapper.getViewportInfo())}`);}
         }
-        if(!checkAtBottom()) {this.logger.warn(`final viewport info after general page info collection doesn't indicate that we reached the bottom of the page; final viewport info: ${JSON.stringify(this.domWrapper.getViewportInfo())}`);}
 
         this.domWrapper.scrollBy(0, initialVertScrollPos - this.domWrapper.getVertScrollPos());//scroll back to initial position
 
