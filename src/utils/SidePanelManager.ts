@@ -761,7 +761,7 @@ export class SidePanelManager {
         } else if (message.type === AnnotationCoordinator2PanelPortMsgType.NOTIFICATION) {
             this.setAnnotatorStatusWithDelayedClear(message.msg, 10, message.details);
         } else if (message.type === AnnotationCoordinator2PanelPortMsgType.ANNOTATION_CAPTURED_CONFIRMATION) {
-            this.setAnnotatorStatusWithDelayedClear("Annotation successfully captured", undefined, message.summary);
+            this.setAnnotatorStatusWithDelayedClear(`Annotation ${message.annotId.slice(0,4)}... captured ${message.wasTargetIdentified ? `successfully${message.wasTargetNotRecognizedAsInteractive ? " but target element was not recognized as interactive (needs review by extension developer)" : ""}` : ", but target element couldn't be identified"}`, undefined, message.summary);
             await this.mutex.runExclusive(() => this.resetAnnotationUi(false));
         } else {
             this.logger.warn(`unknown type of message from annotation coordinator: ${JSON.stringify(message)}`);

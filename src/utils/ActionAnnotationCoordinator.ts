@@ -29,6 +29,7 @@ import {
     PanelToAnnotationCoordinatorPortMsgType
 } from "./messaging_defs";
 import Port = chrome.runtime.Port;
+import {getBuildConfig} from "./build_config";
 
 /**
  * states for the action annotation coordinator Finite State Machine
@@ -138,6 +139,7 @@ export class ActionAnnotationCoordinator {
             if (this.state != AnnotationCoordinatorState.IDLE) {this.resetAnnotationCaptureCoordinator(`side panel connected while in state ${AnnotationCoordinatorState[this.state]}; resetting coordinator before accepting connection`);}
             if (this.portToSidePanel) {
                 this.portToSidePanel.disconnect();
+                this.portToSidePanel = undefined;
                 this.resetAnnotationCaptureCoordinator(`side panel connected while a side panel port was already open; disconnecting old port and resetting coordinator before accepting connection`);
             }
             this.portToSidePanel = port;
@@ -430,7 +432,9 @@ export class ActionAnnotationCoordinator {
             if (this.currAnnotationActionDesc) {annotationSummary += `;\naction description: ${this.currAnnotationActionDesc.slice(100)}`;}
             this.portToSidePanel!.postMessage({//null check was performed at top of function
                 type: AnnotationCoordinator2PanelPortMsgType.ANNOTATION_CAPTURED_CONFIRMATION,
-                summary: annotationSummary
+                summary: annotationSummary, wasTargetIdentified: this.currActionTargetElement !== undefined || this.mousePosElement !== undefined,
+                wasTargetNotRecognizedAsInteractive: this.mousePosElement !== undefined && this.currActionTargetElement === undefined,
+                annotId: this.currAnnotationId
             });
             this.resetCurrAnnotationDetails();
             this.logger.trace("action annotation stored in batch");
@@ -562,6 +566,16 @@ export class ActionAnnotationCoordinator {
 
     exportActionAnnotationsBatch = async (): Promise<void> => {
         const zip = new JSZip();
+        const batchDetailsObj = {
+            batchId: this.batchId,
+            startTimestamp: this.batchStartTimestamp ? new Date(this.batchStartTimestamp).toISOString() : undefined,
+            endTimestamp: new Date().toISOString(),
+            pageUrl: this.pageUrlForBatch, pageTitle: this.pageTitleForBatch,
+            extensionBuildTimestamp: getBuildConfig().BUILD_TIMESTAMP,
+            extensionBuildVersion: getBuildConfig().BUILD_VERSION
+        };
+        const batchDetailsStr = JSON.stringify(batchDetailsObj, null, 4);
+        zip.file("batch_details.json", batchDetailsStr);
 
         const safeElemsDataFolder = zip.folder("pg_data");
         if (safeElemsDataFolder === null) {
