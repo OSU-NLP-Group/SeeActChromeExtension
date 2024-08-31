@@ -76,9 +76,8 @@ module.exports = {
                     globOptions: {
                         ignore: ["**/loading_dist_into_chrome.png", "**/open_options_menu.png",
                             "**/open_service_worker_console.png", "**/open_side_panel.png", "**/pinning_extension.png",
-                            "**/set_openai_api_key.png", "**/setup_step*.png", "**/unzipping.png"]
+                            "**/set_openai_api_key.png", "**/setup_step*.png", "**/unzipping.png", "**/save_options_changes.png"]
                     }
-
                 },
             ]
         }),

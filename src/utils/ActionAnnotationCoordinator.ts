@@ -557,10 +557,11 @@ export class ActionAnnotationCoordinator {
     }
 
     handlePageDisconnectFromAnnotationCoordinator = async (port: Port): Promise<void> => {
-        await this.mutex.runExclusive(() => {
+    await this.mutex.runExclusive(async () => {
+            this.logger.info(`content script disconnected from annotation coordinator in service worker: ${port.name}`);
             this.portToContentScript = undefined;
             this.idOfTabWithCapturer = undefined;
-            this.resetAnnotationCaptureCoordinator(`content script ${port.name} disconnected`, undefined, false);
+            await this.concludeAnnotationsBatch();
         });
     }
 
