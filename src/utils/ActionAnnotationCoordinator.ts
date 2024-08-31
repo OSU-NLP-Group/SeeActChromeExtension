@@ -28,8 +28,8 @@ import {
     Page2AnnotationCoordinatorPortMsgType,
     PanelToAnnotationCoordinatorPortMsgType
 } from "./messaging_defs";
-import Port = chrome.runtime.Port;
 import {getBuildConfig} from "./build_config";
+import Port = chrome.runtime.Port;
 
 /**
  * states for the action annotation coordinator Finite State Machine
@@ -559,6 +559,7 @@ export class ActionAnnotationCoordinator {
     handlePageDisconnectFromAnnotationCoordinator = async (port: Port): Promise<void> => {
     await this.mutex.runExclusive(async () => {
             this.logger.info(`content script disconnected from annotation coordinator in service worker: ${port.name}`);
+            if (chrome.runtime.lastError) {this.logger.info(`last error from chrome.runtime: ${chrome.runtime.lastError.message}`);}
             this.portToContentScript = undefined;
             this.idOfTabWithCapturer = undefined;
             await this.concludeAnnotationsBatch();
