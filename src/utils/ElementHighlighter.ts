@@ -301,6 +301,7 @@ export class ElementHighlighter {
         // eslint-disable-next-line prefer-const -- destructuring operation
         let [hue, saturation, lightness] = hsl;
         hue = (hue + 180) % 360;
+        saturation= 100;//we want the new color to be as blatant/obvious as possible; it is a mediocre sort of contrast for the new color to differ from the original color by being less vibrant
         lightness = lightness > 50 ? Math.max(0, lightness - 30) : Math.min(100, lightness + 30);
         return [hue, saturation, lightness];
     }

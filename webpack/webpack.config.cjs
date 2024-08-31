@@ -59,12 +59,9 @@ module.exports = {
                       BUILD_TIMESTAMP: new Date().toISOString(),
                  // Semantic Versioning
                  // major version's currently 0 b/c project is still experimental and not yet released to public
-                 // minor version is starting at 4 because I labelled the last significant release of a version for
-                 //  annotators as annotator beta 3 and the next version will be a new minor version
-                 // patch version is starting at 0 because I'm going to make the next version a minor version release
                  // The -SNAPSHOT suffix is a Maven convention to indicate that the version is a development version,
                  //  and should be temporarily snipped off when doing a build for an official release version
-                        BUILD_VERSION: "0.4.0-SNAPSHOT",
+                        BUILD_VERSION: "0.4.0",
                   })
          }),
         new CleanWebpackPlugin({cleanOnceBeforeBuildPatterns: pathsToClean}),
