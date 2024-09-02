@@ -562,7 +562,7 @@ export class ActionAnnotationCoordinator {
             if (chrome.runtime.lastError) {this.logger.info(`last error from chrome.runtime: ${chrome.runtime.lastError.message}`);}
             this.portToContentScript = undefined;
             this.idOfTabWithCapturer = undefined;
-            await this.concludeAnnotationsBatch();
+            if (this.batchId) { await this.concludeAnnotationsBatch(); }
         });
     }
 
