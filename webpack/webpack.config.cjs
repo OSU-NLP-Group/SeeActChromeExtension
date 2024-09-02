@@ -56,7 +56,12 @@ module.exports = {
     plugins: [
         new WebpackDefinePlugin({
              '__BUILD_CONFIG': JSON.stringify({
-                      BUILD_TIMESTAMP: new Date().toISOString()
+                      BUILD_TIMESTAMP: new Date().toISOString(),
+                 // Semantic Versioning
+                 // major version's currently 0 b/c project is still experimental and not yet released to public
+                 // The -SNAPSHOT suffix is a Maven convention to indicate that the version is a development version,
+                 //  and should be temporarily snipped off when doing a build for an official release version
+                        BUILD_VERSION: "0.4.2-SNAPSHOT",
                   })
          }),
         new CleanWebpackPlugin({cleanOnceBeforeBuildPatterns: pathsToClean}),
@@ -64,9 +69,16 @@ module.exports = {
             patterns: [
                 {from: path.resolve(root, "manifest.json"), to: path.resolve(root, "dist")},
                 {from: path.resolve(root, "privacy_policy.pdf"), to: path.resolve(root, "dist")},
-                {from: path.resolve(root, "rail_a_eula.pdf"), to: path.resolve(root, "dist")},
+                // {from: path.resolve(root, "rail_a_eula.pdf"), to: path.resolve(root, "dist")}, todo uncomment this line when the EULA is ready
                 {from: path.resolve(root, "user_manual.pdf"), to: path.resolve(root, "dist")},
-                {from: "images", to: path.resolve(root, "dist", "images"), context: root},
+                {
+                    from: "images", to: path.resolve(root, "dist", "images"), context: root,
+                    globOptions: {
+                        ignore: ["**/loading_dist_into_chrome.png", "**/open_options_menu.png",
+                            "**/open_service_worker_console.png", "**/open_side_panel.png", "**/pinning_extension.png",
+                            "**/set_openai_api_key.png", "**/setup_step*.png", "**/unzipping.png", "**/save_options_changes.png"]
+                    }
+                },
             ]
         }),
         new HtmlWebpackPlugin({

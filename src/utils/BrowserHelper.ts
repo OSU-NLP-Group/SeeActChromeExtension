@@ -838,7 +838,7 @@ export class BrowserHelper {
                         numPointsWhereElem2IsForeground++;
                     } else { numPointsWhereElem1IsForeground++; }
                 }
-            } else { this.logger.warn(`neither of the overlapping elements ${elem1Data.description} and ${elem2Data.description} contained the foreground element ${foregroundElemAtQueryPoint?.outerHTML.slice(0, 200)} at position ${queryPoint[0]}, ${queryPoint[1]} in their overlap region`)}
+            } else { this.logger.info(`neither of the overlapping elements ${elem1Data.description} and ${elem2Data.description} contained the foreground element ${foregroundElemAtQueryPoint?.outerHTML.slice(0, 200)} at position ${queryPoint[0]}, ${queryPoint[1]} in their overlap region`)}
         }
         if (numPointsWhereElem1IsForeground === 0) {this.logger.info(`No query points where ${elem1Data.description} was in the foreground, when evaluating its overlap with ${elem2Data.description}`);}
         if (numPointsWhereElem2IsForeground === 0) {this.logger.info(`No query points where ${elem2Data.description} was in the foreground, when evaluating its overlap with ${elem1Data.description}`);}

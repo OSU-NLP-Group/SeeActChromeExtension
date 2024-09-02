@@ -156,11 +156,11 @@ export class SidePanelManager {
         }
 
         try {
-            this.establishServiceWorkerConnection();
+            this.establishAgentControllerConnection();
         } catch (error: any) {
             this.logger.error('error while establishing service worker connection:', renderUnknownValue(error));
             try {
-                this.establishServiceWorkerConnection();
+                this.establishAgentControllerConnection();
             } catch (error: any) {
                 this.logger.error('error while retrying to establish service worker connection:', renderUnknownValue(error));
                 this.setAgentStatusWithDelayedClear('Persistent errors while trying to establish connection to agent controller; Please close and reopen the side panel to try again');
@@ -200,7 +200,7 @@ export class SidePanelManager {
         }
     }
 
-    establishServiceWorkerConnection = (): void => {
+    establishAgentControllerConnection = (): void => {
         this.agentControllerReady = false;
 
         this.state = SidePanelMgrState.WAIT_FOR_CONNECTION_INIT;
@@ -242,7 +242,7 @@ export class SidePanelManager {
                 this.setAgentStatusWithDelayedClear('Connection to agent controller is missing, so cannot start task (starting it up again); please try again after status display shows that connection is working again', 3);
 
                 try {
-                    this.establishServiceWorkerConnection();
+                    this.establishAgentControllerConnection();
                 } catch (error: any) {
                     this.setAgentStatusWithDelayedClear('Error while trying to establish connection to agent controller; Please close and reopen the side panel to try again');
                     this.logger.error('error while establishing service worker connection after start task button clicked', renderUnknownValue(error));
@@ -325,7 +325,7 @@ export class SidePanelManager {
                 this.setAgentStatusWithDelayedClear('Connection to agent controller is missing, so cannot export non-task-specific logs (reopening the connection in background); please try again after status display shows that connection is working again', 3);
 
                 try {
-                    this.establishServiceWorkerConnection();
+                    this.establishAgentControllerConnection();
                 } catch (error: any) {
                     this.setAgentStatusWithDelayedClear('Error while trying to establish connection to agent controller; Please close and reopen the side panel to try again');
                     this.logger.error('error while establishing service worker connection after unaffiliated logs export button clicked', renderUnknownValue(error));
@@ -657,12 +657,12 @@ export class SidePanelManager {
     }
 
     handleAgentControllerDisconnect = async (): Promise<void> => {
-        this.logger.warn('service worker port disconnected unexpectedly; attempting to reestablish connection');
+        this.logger.info('service worker port to agent controller disconnected unexpectedly; attempting to reestablish connection');
         this.setAgentStatusWithDelayedClear("Agent controller connection lost. Please wait while it is started up again");
         await this.mutex.runExclusive(() => {
             this.reset();
             try {
-                this.establishServiceWorkerConnection();
+                this.establishAgentControllerConnection();
             } catch (error: any) {this.logger.error('error while reestablishing service worker connection:', renderUnknownValue(error));}
         });
     }
@@ -761,7 +761,7 @@ export class SidePanelManager {
         } else if (message.type === AnnotationCoordinator2PanelPortMsgType.NOTIFICATION) {
             this.setAnnotatorStatusWithDelayedClear(message.msg, 10, message.details);
         } else if (message.type === AnnotationCoordinator2PanelPortMsgType.ANNOTATION_CAPTURED_CONFIRMATION) {
-            this.setAnnotatorStatusWithDelayedClear("Annotation successfully captured", undefined, message.summary);
+            this.setAnnotatorStatusWithDelayedClear(`Annotation ${message.annotId.slice(0,4)}... captured ${message.wasTargetIdentified ? `successfully${message.wasTargetNotRecognizedAsInteractive ? " but target element was not recognized as interactive (needs review by extension developer)" : ""}` : ", but target element couldn't be identified"}`, undefined, message.summary);
             await this.mutex.runExclusive(() => this.resetAnnotationUi(false));
         } else {
             this.logger.warn(`unknown type of message from annotation coordinator: ${JSON.stringify(message)}`);

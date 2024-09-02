@@ -319,7 +319,7 @@ function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (r
     } else if (request.reqType === PageRequestType.EULA_ACCEPTANCE) {
         chrome.storage.local.set({[storageKeyForEulaAcceptance]: true}, () => {
             if (chrome.runtime.lastError) {
-                centralLogger.error("error setting eulaAccepted to true in local storage:", chrome.runtime.lastError);
+                centralLogger.error("error setting eulaAccepted to true in local storage:", renderUnknownValue(chrome.runtime.lastError));
             } else {centralLogger.info("set eulaAccepted to true in local storage");}
         });
 

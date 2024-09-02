@@ -1,5 +1,6 @@
 interface BuildConfig {
     BUILD_TIMESTAMP: string;
+    BUILD_VERSION: string;
 }
 
 declare const __BUILD_CONFIG: BuildConfig;

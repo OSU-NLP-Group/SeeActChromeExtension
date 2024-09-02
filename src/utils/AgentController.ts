@@ -1557,10 +1557,10 @@ export class AgentController {
             return 0;
         });
 
-        //note - if prof or users request, can add the Z's back in when exporting from db to log file, to make clear
-        // that they're in UTC+0
-        const logFileContents = `TIMESTAMP OF BUILD that produced this installation's version of the extension: ${getBuildConfig().BUILD_TIMESTAMP}\n` +
-            logsForTask.map(log =>
+        //note - if prof or users request, can add the Z's back into the timestamps when exporting from db to log file,
+        // to make clear that they're in UTC+0
+        const logFileContents = `VERSION of this installation of the extension: ${getBuildConfig().BUILD_VERSION}\nTIMESTAMP OF BUILD that produced this installation's version of the extension: ${getBuildConfig().BUILD_TIMESTAMP}\n`
+            + logsForTask.map(log =>
             `${log.timestamp} ${log.loggerName} ${log.level.toUpperCase()}: ${log.msg}`)
             .join("\n");
         this.logger.debug(`log file contents has length ${logFileContents.length}`);
