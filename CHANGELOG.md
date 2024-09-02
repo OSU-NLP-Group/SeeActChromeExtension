@@ -2,16 +2,19 @@
 Nontrivial changes to the extension are documented here.
 
 
-
-
 ## [Unreleased]
 ### Added
 
 ### Updated
-- annotation tool auto-concludes batch in sensible way when user navigates away before explicitly terminating the batch
+
 ### Removed
 
 
+## [0.4.1] - 2024-09-02
+### Updated
+- annotation tool auto-concludes batch in sensible way when user navigates away before explicitly terminating the batch
+### Removed
+- unnecessary warning messages
 
 ## [0.4.0] - 2024-08-31
 ### Added
