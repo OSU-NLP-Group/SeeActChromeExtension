@@ -1215,6 +1215,7 @@ export class AgentController {
             // worker for another 30sec; as an added layer of redundancy on top of the keep-alive alarms
             // Just the alarms on their own still lead to service worker disconnects every few hours
         } else if (message.type === Panel2AgentControllerPortMsgType.EXPORT_UNAFFILIATED_LOGS) {
+            this.logger.trace("received request to export non-task-specific logs");
             if (this.isDisabledUntilEulaAcceptance) {
                 this.logger.warn("cannot export logs until user accepts EULA");
             } else if (dbConnHolder.dbConn && this.portToSidePanel) {

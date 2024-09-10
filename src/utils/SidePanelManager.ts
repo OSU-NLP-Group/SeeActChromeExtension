@@ -334,6 +334,7 @@ export class SidePanelManager {
                 this.logger.info("unaffiliated logs export button clicked when port to service worker exists but service worker has not yet confirmed its readiness; ignoring");
                 this.setAgentStatusWithDelayedClear("Agent controller not ready yet, please wait a moment and try again");
             } else {
+                this.logger.trace("sending message to service worker to export non-task-specific logs");
                 try {
                     this.agentControllerPort.postMessage({type: Panel2AgentControllerPortMsgType.EXPORT_UNAFFILIATED_LOGS});
                 } catch (error: any) {

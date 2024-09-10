@@ -760,7 +760,8 @@ export class BrowserHelper {
         for (const elem of elemsAtPoint) {
             if (isHtmlElement(elem)) {
                 if (searchContextHost === elem) {
-                    this.logger.trace(`FOUND THE SHADOW HOST ELEMENT AT THE POINT ${x}, ${y} when searching within that host element's shadow DOM; skipping it: ${elem.outerHTML.slice(0, 200)}`);
+                    this.logger.trace(`FOUND THE SHADOW HOST ELEMENT AT THE POINT ${x}, ${y} when searching within that host element's shadow DOM; giving up on further digging into shadow DOM's to avoid risk of infinite recursion: ${elem.outerHTML.slice(0, 200)}`);
+                    break;
                 } else {
                     foremostElemAtPoint = elem;
                     break;

@@ -113,6 +113,11 @@ Regex for finding log messages that are trying to tell the developer about somet
 
 ## Developer notes
 
+I'm using ".58495" (as a 4th number in the chrome extension version in the manifest.json) to indicate that the current
+unpacked extension install is a snapshot version (not an official/finalized release). This is needed because the
+version number in the chrome extension's manifest.json file must be a string that matches the regex
+`^(\d+\.\d+\.\d+\.\d+)$` (i.e. 4 numbers separated by periods).
+
 
 
 TODO consider replacing "utils" folder with frontend, serviceworker, and shared folders
