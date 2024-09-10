@@ -17,7 +17,7 @@ const LogLevelValues = {
 export const origLoggerFactory = log.methodFactory;
 
 
-export const defaultLogLevel: keyof LogLevel = "TRACE";//todo change this to warn before release
+export const defaultLogLevel: keyof LogLevel = "DEBUG";//todo change this to warn before release
 
 const logLevelCache: { chosenLogLevel: keyof LogLevel } = {chosenLogLevel: defaultLogLevel}
 chrome.storage.local.get(storageKeyForLogLevel).then((items) => {
