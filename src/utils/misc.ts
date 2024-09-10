@@ -270,3 +270,15 @@ export function renderTs(tsVal: number|undefined|null): string {
 // then such sensitive methods would have a 1 line guard at the very start:
 // if (guardMethod("someMethodName", this.mutex)) { return; }
 export const scrollFractionOfViewport = 0.80;
+
+/**
+ * this is used (to uppercase part of a log message under some conditions) because sometimes an outcome in a given
+ * function is only surprising enough to merit uppercasing (as a way to make it easier to find instances of such a
+ * strange outcome in the logs) if that function was called in a particular context. This function is used to make
+ * the uppercasing conditional on the context type.
+ * @param str piece of a log message which might be uppercased if that log message is indicating a surprising outcome
+ * @param isOutcomeSurprisingBasedOnContext whether context means that the log message is indicating a surprising outcome
+ */
+export function maybeUpperCase(str: string, isOutcomeSurprisingBasedOnContext: boolean): string {
+    return isOutcomeSurprisingBasedOnContext ? str.toUpperCase() : str;
+}
