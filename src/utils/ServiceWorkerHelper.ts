@@ -57,7 +57,7 @@ export class ServiceWorkerHelper {
             this.logger.debug(`array buffer made from that blob has length: ${arrBuffForTraceZip.byteLength}`);
             const arrForTraceZip = Array.from(new Uint8Array(arrBuffForTraceZip));
             this.logger.debug(`array made from that buffer has length: ${arrForTraceZip.length}`);
-            const maxMessageByteLen = 20_000_000;//conservative estimate of the limit for message size in Chrome
+            const maxMessageByteLen = 15_000_000;//conservative estimate of the limit for message size in Chrome
 
             if (arrForTraceZip.length <= maxMessageByteLen) {
                 try {

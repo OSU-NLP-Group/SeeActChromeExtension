@@ -4,11 +4,13 @@ import {Logger} from "loglevel";
 import {
     Action,
     ActionStateChangeSeverity,
-    buildGenericActionDesc, defaultIsAnnotatorMode,
+    buildGenericActionDesc,
+    defaultIsAnnotatorMode,
     defaultIsMonitorMode,
     defaultShouldWipeActionHistoryOnStart,
     renderUnknownValue,
-    setupModeCache, storageKeyForAnnotatorMode,
+    setupModeCache,
+    storageKeyForAnnotatorMode,
     storageKeyForEulaAcceptance,
     storageKeyForMonitorMode,
     storageKeyForShouldWipeHistoryOnTaskStart
@@ -513,8 +515,8 @@ export class SidePanelManager {
             const errDtls = `data is ${renderUnknownValue(data)
                 .slice(0, 200)}, fileName is ${renderUnknownValue(fileNameForDownload).slice(0, 200)}`;
             this.logger.error(`${errMsg} ${errDtls}`);
-            (isForAgentOrAnnotation ? this.setAgentStatusWithDelayedClear
-                : this.setAnnotatorStatusWithDelayedClear)(errMsg, undefined, errDtls)
+            (isForAgentOrAnnotation ? this.setAgentStatusWithDelayedClear.bind(this)
+                : this.setAnnotatorStatusWithDelayedClear.bind(this))(errMsg, undefined, errDtls)
         }
     }
 
@@ -530,7 +532,8 @@ export class SidePanelManager {
      * @param isForAgentOrAnnotation true means this is a file download from AgentController and false means it's from ActionAnnotationCoordinator
      */
     private convertBytesNumberArrToFileDownload(data: number[], fileNameForDownload: string, isForAgentOrAnnotation: boolean) {
-        const statusSetter = isForAgentOrAnnotation ? this.setAgentStatusWithDelayedClear : this.setAnnotatorStatusWithDelayedClear;
+        const statusSetter = isForAgentOrAnnotation ? this.setAgentStatusWithDelayedClear.bind(this)
+            : this.setAnnotatorStatusWithDelayedClear.bind(this);
         try {
             this.logger.debug(`received array of data from background script for a file, length: ${data.length}`);
             const arrBuff = new Uint8Array(data).buffer;
@@ -554,7 +557,7 @@ export class SidePanelManager {
      * @param isForAgentOrAnnotation true means this is a file download from AgentController and false means it's from ActionAnnotationCoordinator
      */
     private processChunkedDownloadSegment(message: any, isForAgentOrAnnotation: boolean): boolean {
-        const statusSetter = isForAgentOrAnnotation ? this.setAgentStatusWithDelayedClear : this.setAnnotatorStatusWithDelayedClear;
+        const statusSetter = isForAgentOrAnnotation ? this.setAgentStatusWithDelayedClear.bind(this) : this.setAnnotatorStatusWithDelayedClear.bind(this);
         let errMsg: string | undefined;
         let fullArrOfNumbers: number[] | undefined;
         let errDtls: string | undefined;
@@ -771,13 +774,11 @@ export class SidePanelManager {
 
     private setAgentStatusWithDelayedClear(status: string, delay: number = 10, hovertext?: string) {
         this.agentStatusDiv.textContent = status;
-        let hovertextAsHtml = '';
         if (hovertext) {
-            hovertextAsHtml = marked.setOptions({async: false}).parse(hovertext) as string;
-            this.agentStatusPopup.innerHTML = hovertextAsHtml;
+            this.agentStatusPopup.innerHTML = marked.setOptions({async: false}).parse(hovertext) as string;
         }
         setTimeout(() => {
-            if (this.agentStatusDiv.textContent === status && this.agentStatusPopup.innerHTML === hovertextAsHtml) {
+            if (this.agentStatusDiv.textContent === status) {
                 this.logger.trace(`after ${delay} seconds, clearing agent status ${status} with hovertext ${hovertext?.slice(0, 100)}...`);
                 this.agentStatusDiv.textContent = 'No status update available at the moment.';
                 this.agentStatusPopup.innerHTML = '';
