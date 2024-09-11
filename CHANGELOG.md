@@ -9,23 +9,31 @@ Nontrivial changes to the extension are documented here.
 
 ### Removed
 
+## [0.4.2] - 2024-09-11
+### Updated
+- Fix for Github issue 16 (large batches failing during the 'end batch and download zip file' step because of Chrome limitation on size of messages over extension 'ports')
+  - messages for file downloads are now automatically 'chunked' if the file to be downloaded is too large  
+- Fix for Github issue 17 (batch terminated by taking annotations too quickly and running into Chrome limitation on screenshot frequency)
+- Fix for Github issue 18 (infinite recursion in weird scenario with nested shadow DOM's)
+- Change default log level to DEBUG
+- Fix notification messages being cleared too quickly sometimes
 
 ## [0.4.1] - 2024-09-02
 ### Updated
-- annotation tool auto-concludes batch in sensible way when user navigates away before explicitly terminating the batch
+- Annotation tool auto-concludes batch in sensible way when user navigates away before explicitly terminating the batch
 ### Removed
-- unnecessary warning messages
+- Unnecessary warning messages
 
 ## [0.4.0] - 2024-08-31
 ### Added
-- a batch-wide information json in each annotation batch zip (including the identifying details of the version of the extension that was used to generate that batch of annotations)
+- A batch-wide information json in each annotation batch zip (including the identifying details of the version of the extension that was used to generate that batch of annotations)
 
 ### Updated
-- version number is included at the top of each logs-export file
-- element highlighting's dynamic color choice always picks a maximally saturated color
-- side panel's annotator UI gives more informative status messages when an annotation is captured
+- Version number is included at the top of each logs-export file
+- Element highlighting's dynamic color choice always picks a maximally saturated color
+- Side panel's annotator UI gives more informative status messages when an annotation is captured
 
 ### Removed
-- draft/template EULA is no longer displayed upon first install
-- remove files from build output that aren't needed at runtime
+- Draft/template EULA is no longer displayed upon first install
+- Remove files from build output that aren't needed at runtime
 

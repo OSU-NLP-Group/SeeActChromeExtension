@@ -5,7 +5,7 @@ import log, {Logger} from "loglevel";
 import * as fuzz from "fuzzball";
 import {
     ElementData,
-    HTMLElementWithDocumentHost, isDocument, isHtmlElement, isIframeElement, isShadowRoot,
+    HTMLElementWithDocumentHost, isDocument, isHtmlElement, isIframeElement, isShadowRoot, maybeUpperCase,
     renderUnknownValue,
     SerializableElementData,
 } from "./misc";
@@ -431,7 +431,7 @@ export class BrowserHelper {
 
         for (let i = 0; i < queryPoints.length && isBuried; i++) {
             const queryPoint = queryPoints[i];
-            const foregroundElemAtQueryPoint = this.actualElementFromPoint(queryPoint[0], queryPoint[1], searchContext);
+            const foregroundElemAtQueryPoint = this.actualElementFromPoint(queryPoint[0], queryPoint[1], searchContext, undefined, false);
             if (element.contains(foregroundElemAtQueryPoint)) {
                 isBuried = false;
             }
@@ -478,7 +478,7 @@ export class BrowserHelper {
         const elemFetchDuration = performance.now() - elemsFetchStartTs;//ms
         //todo move this threshold to 250 or 500 ms after there's time to investigate/remediate the recent jump in fetch time
         // this isn't a perf bottleneck in agent use case, but it is in the action annotation/data-collection use case
-        (elemFetchDuration < 1000 ? this.logger.debug : this.logger.info)(`TIME TO FETCH INTERACTIVE ELEMENTS: ${elemFetchDuration} ms`);
+        (elemFetchDuration < 500 ? this.logger.debug : this.logger.info)(`time to fetch interactive elements: ${elemFetchDuration} ms`);
 
         const interactiveElementsData = Array.from(uniqueInteractiveElements)
             .map(element => this.getElementData(element))
@@ -738,7 +738,7 @@ export class BrowserHelper {
         return queryPoints;
     }
 
-    actualElementFromPoint(x: number, y: number, searchDom?: Document | ShadowRoot, shouldDebug = false): HTMLElement | null {
+    actualElementFromPoint(x: number, y: number, searchDom?: Document | ShadowRoot, shouldDebug = false, isElemExpectedAtPoint = true): HTMLElement | null {
         const {width, height} = this.domHelper.getViewportInfo();
         if (x < 0 || y < 0 || x >= width || y >= height) {
             this.logger.trace(`Attempted to find element at point ${x}, ${y} which is outside the viewport`);
@@ -760,16 +760,17 @@ export class BrowserHelper {
         for (const elem of elemsAtPoint) {
             if (isHtmlElement(elem)) {
                 if (searchContextHost === elem) {
-                    this.logger.trace(`FOUND THE SHADOW HOST ELEMENT AT THE POINT ${x}, ${y} when searching within that host element's shadow DOM; skipping it: ${elem.outerHTML.slice(0, 200)}`);
+                    this.logger.trace(`FOUND THE SHADOW HOST ELEMENT AT THE POINT ${x}, ${y} when searching within that host element's shadow DOM; giving up on further digging into shadow DOM's to avoid risk of infinite recursion: ${elem.outerHTML.slice(0, 200)}`);
+                    break;
                 } else {
                     foremostElemAtPoint = elem;
                     break;
                 }
-            } else { this.logger.info(`FOUND A NON HTMLELEMENT ELEMENT AT THE POINT ${x}, ${y}; skipping it: ${elem.outerHTML.slice(0, 200)}`); }
+            } else { this.logger.info(`found a non htmlelement element at the point ${x}, ${y}; skipping it: ${elem.outerHTML.slice(0, 200)}`); }
         }
 
         if (!foremostElemAtPoint) {
-            this.logger.trace(`NO ELEMENT FOUND AT POINT ${x}, ${y}; checking${searchDom ? " relative to a surrounding context" : ""} for shadow roots that overlap that point`);
+            this.logger.trace(`${maybeUpperCase("no element found at point", isElemExpectedAtPoint)} ${x}, ${y}; checking${searchDom ? " relative to a surrounding context" : ""} for shadow roots that overlap that point`);
             //deal with shadow root possibility
             let currScopeShadowRootHostAtMousePos = undefined;
             if (searchDom === undefined) {

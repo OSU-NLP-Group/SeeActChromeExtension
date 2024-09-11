@@ -31,7 +31,8 @@ export enum AgentController2PanelPortMsgType {
     TASK_ENDED = "taskEnded",
     ERROR = "error",//cases where the agent controller wants to tell the side panel about a problem with some message from the side panel which was identified before a task id was generated
     NOTIFICATION = "notification",//for agent notifying side panel of non-critical problem that will delay progress on the task (so the side panel can display that to user in status field and avoid user giving up on system)
-    HISTORY_EXPORT = "historyExport"//for when the controller has assembled a Blob for a zip file containing logs and/or screenshots and needs to send it to the side panel so that it can be downloaded to the user's computer
+    HISTORY_EXPORT = "historyExport",//for when the controller has assembled a Blob for a zip file containing logs and/or screenshots and needs to send it to the side panel so that it can be downloaded to the user's computer
+    ABORT_CHUNKED_DOWNLOAD = "abortChunkedDownload",//for when the controller needs to tell the side panel to abort a chunked download (i.e. something went wrong while sending a huge logs zip file to the side panel for download)
 }
 
 /**
@@ -70,6 +71,7 @@ export enum AnnotationCoordinator2PanelPortMsgType {
     ANNOTATED_ACTIONS_EXPORT = "annotatedActionsExport",
     NOTIFICATION = "annotationNotification",
     ANNOTATION_CAPTURED_CONFIRMATION = "annotationCapturedConfirmation",
+    ABORT_CHUNKED_DOWNLOAD = "abortChunkedDownload",//for when the controller needs to tell the side panel to abort a chunked download (i.e. something went wrong while sending a huge annotations-batch zip file to the side panel for download)
 }
 
 export enum Page2AnnotationCoordinatorPortMsgType {

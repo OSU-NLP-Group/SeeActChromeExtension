@@ -83,9 +83,7 @@ export class PageDataCollector {
 
         const checkAtBottom = (): boolean => {
             const currViewportInfo = this.domWrapper.getViewportInfo();
-            //todo remove this logger call
-            this.logger.debug(`checking if at bottom of page; current viewport info: ${JSON.stringify(currViewportInfo)}`);
-            return Math.abs(currViewportInfo.pageScrollHeight - currViewportInfo.height - currViewportInfo.scrollY) < 1;
+            return currViewportInfo.pageScrollHeight - currViewportInfo.height - currViewportInfo.scrollY < 1;
         }
 
         for (let captureIdx = 0; captureIdx < numCaptures; captureIdx++) {

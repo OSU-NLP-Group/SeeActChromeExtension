@@ -44,9 +44,11 @@ export class ServiceWorkerHelper {
         return { screenshotBase64: screenshotDataUrl.substring(startIndexForBase64Data), screenshotDataUrl: screenshotDataUrl };
     }
 
-    sendZipToSidePanelForDownload(zipDescription: string, zip: JSZip, sidePanelPort: chrome.runtime.Port, zipFilename: string, sidePanelMsgType: string) {
+    sendZipToSidePanelForDownload(
+        zipDescription: string, zip: JSZip, sidePanelPort: chrome.runtime.Port, zipFilename: string,
+        sidePanelDownloadMsgType: string, sidePanelAbortDownloadMsgType: string) {
         this.logger.info(`about to compress info into virtual zip file for ${zipDescription}`);
-        zip.generateAsync({type: "blob", compression: "DEFLATE", compressionOptions: {level: 5}}
+        zip.generateAsync({type: "blob", compression: "DEFLATE", compressionOptions: {level: 7}}
         ).then(async (content) => {
             this.logger.debug(`successfully generated virtual zip file for ${zipDescription}; about to send it to side panel so that it can be saved as a download`);
 
@@ -55,12 +57,36 @@ export class ServiceWorkerHelper {
             this.logger.debug(`array buffer made from that blob has length: ${arrBuffForTraceZip.byteLength}`);
             const arrForTraceZip = Array.from(new Uint8Array(arrBuffForTraceZip));
             this.logger.debug(`array made from that buffer has length: ${arrForTraceZip.length}`);
-            try {
-                sidePanelPort.postMessage({type: sidePanelMsgType, data: arrForTraceZip, fileName: zipFilename});
-            } catch (error: any) {
-                this.logger.error(`error while trying to send zip file for ${zipDescription} to side panel for download; error: ${renderUnknownValue(error)}`);
+            const maxMessageByteLen = 15_000_000;//conservative estimate of the limit for message size in Chrome
+
+            if (arrForTraceZip.length <= maxMessageByteLen) {
+                try {
+                    sidePanelPort.postMessage({type: sidePanelDownloadMsgType, data: arrForTraceZip, fileName: zipFilename});
+                    this.logger.debug(`sent zip file for ${zipDescription} to side panel for download`);
+                } catch (error: any) {
+                    this.logger.error(`error while trying to send zip file for ${zipDescription} to side panel for download; error: ${renderUnknownValue(error)}`);
+                }
+            } else {
+                const numChunks = Math.ceil(arrForTraceZip.length / maxMessageByteLen);
+                this.logger.info(`zip file for ${zipDescription} is too large to send in one message; will split it up into ${numChunks} chunks`);
+                for (let i = 0; i < numChunks; i++) {
+                    const chunkStart = i * maxMessageByteLen;
+                    const chunkEnd = Math.min((i + 1) * maxMessageByteLen, arrForTraceZip.length);
+                    const chunk = arrForTraceZip.slice(chunkStart, chunkEnd);
+                    try {
+                        sidePanelPort.postMessage({type: sidePanelDownloadMsgType, data: chunk, fileName: zipFilename, chunkIndex: i, numChunks: numChunks});
+                        this.logger.debug(`sent chunk ${i} of zip file for ${zipDescription} to side panel for download`);
+                    } catch (error: any) {
+                        this.logger.error(`error while trying to send chunk ${i} of zip file for ${zipDescription} to side panel for download; error: ${renderUnknownValue(error)}`);
+                        try {
+                            sidePanelPort.postMessage({type: sidePanelAbortDownloadMsgType, error: `error while trying to send chunk ${i} of zip file for ${zipDescription} to side panel for download; error: ${renderUnknownValue(error)}`});
+                        } catch (error: any) {
+                            this.logger.error(`error while trying to tell side panel to abort chunked download after error occurred during the sending of chunk ${i} of zip file for ${zipDescription} to side panel for download; error: ${renderUnknownValue(error)}`);
+                        }
+                        break;
+                    }
+                }
             }
-            this.logger.debug(`sent zip file for ${zipDescription} to side panel for download`);
         }, (error) => {
             this.logger.error(`error while trying to generate zip file for ${zipDescription}; error: ${renderUnknownValue(error)}`);
         });

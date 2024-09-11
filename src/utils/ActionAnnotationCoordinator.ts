@@ -43,6 +43,7 @@ export enum AnnotationCoordinatorState {
 }
 
 export class ActionAnnotationCoordinator {
+    readonly chromeScreenshotThrottleMsgSubstring = "MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND";
     readonly mutex = new Mutex();
 
     cachedAnnotatorMode: boolean = defaultIsAnnotatorMode;
@@ -384,7 +385,13 @@ export class ActionAnnotationCoordinator {
             //data collector in content script highlighted the target element before sending info back
             const screenshotCapture = await this.swHelper.captureScreenshot("annotation_action_targeted");
             if (screenshotCapture.error) {
-                this.resetAnnotationCaptureCoordinator(`error capturing screenshot of target element for action annotation: ${screenshotCapture.error}`);
+                if (screenshotCapture.error.includes(this.chromeScreenshotThrottleMsgSubstring)) {
+                    this.resetCurrAnnotationDetails();
+                    this.logger.info("Chrome's screenshot API is throttling the extension's requests; ending the annotation attempt (but not the batch) and notifying user");
+                    try {//null check performed at top of function
+                        this.portToSidePanel!.postMessage({type: AnnotationCoordinator2PanelPortMsgType.NOTIFICATION, msg: "Error capturing 'targeted' screenshot", details: "Chrome's screenshot API is throttling the extension's requests; please try again in a few seconds"});
+                    } catch (error) {this.logger.error(`error while sending notification to side panel about problem with taking 'targeted' screenshot as part of annotation: ${renderUnknownValue(error)}`);}
+                } else { this.resetAnnotationCaptureCoordinator(`error capturing screenshot of target element for action annotation: ${screenshotCapture.error}`); }
                 return;
             }
             this.currActionTargetedScreenshotBase64 = screenshotCapture.screenshotBase64;
@@ -689,7 +696,8 @@ export class ActionAnnotationCoordinator {
         zipFileName += ".zip";
 
         this.swHelper.sendZipToSidePanelForDownload(`annotated actions batch ${this.batchId}`, zip,
-            this.portToSidePanel, zipFileName, AnnotationCoordinator2PanelPortMsgType.ANNOTATED_ACTIONS_EXPORT);
+            this.portToSidePanel, zipFileName, AnnotationCoordinator2PanelPortMsgType.ANNOTATED_ACTIONS_EXPORT,
+            AnnotationCoordinator2PanelPortMsgType.ABORT_CHUNKED_DOWNLOAD);
     }
 
     initiateActionAnnotationCapture = async (): Promise<void> => {
@@ -732,7 +740,13 @@ export class ActionAnnotationCoordinator {
             this.currAnnotationId = uuidV4();
             const screenshotCapture = await this.swHelper.captureScreenshot("annotation_action_context");
             if (screenshotCapture.error) {
-                this.resetAnnotationCaptureCoordinator(`error capturing context screenshot for action annotation: ${screenshotCapture.error}`);
+                if (screenshotCapture.error.includes(this.chromeScreenshotThrottleMsgSubstring)) {
+                    this.resetCurrAnnotationDetails();
+                    this.logger.info("Chrome's screenshot API is throttling the extension's requests; ending the annotation attempt (but not the batch) and notifying user");
+                    try {
+                        this.portToSidePanel.postMessage({type: AnnotationCoordinator2PanelPortMsgType.NOTIFICATION, msg: "Error capturing context screenshot", details: "Chrome's screenshot API is throttling the extension's requests; please try again in a few seconds"});
+                    } catch (error) {this.logger.error(`error while sending notification to side panel about problem with taking 'context' screenshot as part of annotation: ${renderUnknownValue(error)}`);}
+                } else { this.resetAnnotationCaptureCoordinator(`error capturing context screenshot for action annotation: ${screenshotCapture.error}`); }
                 return;
             }
             this.currActionContextScreenshotBase64 = screenshotCapture.screenshotBase64;

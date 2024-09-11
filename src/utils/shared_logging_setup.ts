@@ -17,7 +17,7 @@ const LogLevelValues = {
 export const origLoggerFactory = log.methodFactory;
 
 
-export const defaultLogLevel: keyof LogLevel = "TRACE";//todo change this to warn before release
+export const defaultLogLevel: keyof LogLevel = "DEBUG";//todo change this to warn before release
 
 const logLevelCache: { chosenLogLevel: keyof LogLevel } = {chosenLogLevel: defaultLogLevel}
 chrome.storage.local.get(storageKeyForLogLevel).then((items) => {
@@ -29,6 +29,11 @@ chrome.storage.local.get(storageKeyForLogLevel).then((items) => {
     }
 });
 
+//todo rename this to activityIdHolder so it can hold either a taskId uuid (for agent scaffolding)
+// or a batchId uuid (for action annotation);
+// This would be part of splitting the log export code out of AgentController and into ServiceWorkerHelper (or even
+// a separate class that ServiceWorkerHelper delegated to) and making the log export code able to also constrain the
+// timeframe (e.g. to last 1 hour)
 export const taskIdHolder: { currTaskId: string | undefined } = {currTaskId: undefined};
 export const taskIdPlaceholderVal = "UNAFFILIATED";
 
