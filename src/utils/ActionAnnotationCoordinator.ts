@@ -689,7 +689,8 @@ export class ActionAnnotationCoordinator {
         zipFileName += ".zip";
 
         this.swHelper.sendZipToSidePanelForDownload(`annotated actions batch ${this.batchId}`, zip,
-            this.portToSidePanel, zipFileName, AnnotationCoordinator2PanelPortMsgType.ANNOTATED_ACTIONS_EXPORT);
+            this.portToSidePanel, zipFileName, AnnotationCoordinator2PanelPortMsgType.ANNOTATED_ACTIONS_EXPORT,
+            AnnotationCoordinator2PanelPortMsgType.ABORT_CHUNKED_DOWNLOAD);
     }
 
     initiateActionAnnotationCapture = async (): Promise<void> => {

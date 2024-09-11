@@ -1224,7 +1224,9 @@ export class AgentController {
                 if (logFileContents != undefined) {
                     const fileSafeTimestampStr = new Date().toISOString().split(":").join("-").split(".").join("_");
                     zip.file(`non_task_specific_${fileSafeTimestampStr}.log`, logFileContents);
-                    this.swHelper.sendZipToSidePanelForDownload("non-task-affiliated logs download", zip, this.portToSidePanel, `misc_logs_${fileSafeTimestampStr}.zip`, AgentController2PanelPortMsgType.HISTORY_EXPORT);
+                    this.swHelper.sendZipToSidePanelForDownload("non-task-affiliated logs download", zip,
+                        this.portToSidePanel, `misc_logs_${fileSafeTimestampStr}.zip`,
+                        AgentController2PanelPortMsgType.HISTORY_EXPORT, AgentController2PanelPortMsgType.ABORT_CHUNKED_DOWNLOAD);
                 } //error message already logged in retrieveLogsForTaskId()
             } else {
                 let errMsg = "";
@@ -1539,7 +1541,9 @@ export class AgentController {
         const predictionsStr = JSON.stringify(predictions, replaceUndefinedWithNull, 4);
         zip.file("all_predictions.json", predictionsStr);
 
-        this.swHelper.sendZipToSidePanelForDownload(`logs and screenshots of agent task ${givenTaskId}`, zip, this.portToSidePanel, `task-${givenTaskId}-trace.zip`, AgentController2PanelPortMsgType.HISTORY_EXPORT);
+        this.swHelper.sendZipToSidePanelForDownload(`logs and screenshots of agent task ${givenTaskId}`, zip,
+            this.portToSidePanel, `task-${givenTaskId}-trace.zip`, AgentController2PanelPortMsgType.HISTORY_EXPORT,
+            AgentController2PanelPortMsgType.ABORT_CHUNKED_DOWNLOAD);
     }
 
     retrieveLogsForTaskId = async (dbConnection: IDBPDatabase<AgentDb>, taskId: string): Promise<string | undefined> => {

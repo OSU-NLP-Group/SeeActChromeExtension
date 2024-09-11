@@ -27,6 +27,55 @@ import {
     panelToControllerPort
 } from "./messaging_defs";
 
+class ChunkedDownloadHandler {
+    expectedNextChunkIndex = -1;
+    numChunks = -1;
+    chunks: number[][] = [];
+
+    isChunkedDownloadInProgress = (): boolean => {
+        if (this.expectedNextChunkIndex >= 0 && this.numChunks >= 0 && this.chunks.length === this.expectedNextChunkIndex) {
+            return true;
+        } else if (this.expectedNextChunkIndex < 0 && this.numChunks < 0 && this.chunks.length === 0) {
+            return false;
+        } else {
+            const errMsg = `inconsistent state in ChunkedDownloadHandler: expectedNextChunkIndex=${this.expectedNextChunkIndex}, numChunks=${this.numChunks}, chunks.length=${this.chunks.length}, reset download handler`;
+            this.reset();
+            throw new Error(errMsg);
+        }
+    }
+
+    processDownloadChunk = (dataChunk: number[], chunkIndex: number, totalNumChunks: number
+    ): [string | undefined, number[] | undefined] => {
+        let errMsg: string | undefined;
+        let finalizedDownloadNumbersArr: number[] | undefined;
+        //assuming for now that Chrome will maintain the order of a sequence of messages sent over a port
+        // Will add logic to support out-of-order messages only if that proves necessary
+        if (this.isChunkedDownloadInProgress()) {
+            if (chunkIndex === this.expectedNextChunkIndex && totalNumChunks === this.numChunks && dataChunk.length > 0) {
+                this.chunks.push(dataChunk);
+                if (chunkIndex < totalNumChunks - 1) {
+                    this.expectedNextChunkIndex++;
+                } else if (chunkIndex === totalNumChunks - 1) {
+                    finalizedDownloadNumbersArr = this.chunks.flat();
+                } else { throw new Error(`chunk index reached illegal value ${chunkIndex} that's >= num chunks ${totalNumChunks}`); }
+            } else {errMsg = `received inconsistent input partway through chunked download: chunk index=${chunkIndex}, expected chunk index=${this.expectedNextChunkIndex}, num chunks=${totalNumChunks}, expected num chunks=${this.numChunks}, and data chunk length=${dataChunk.length}`;}
+        } else if (chunkIndex === 0 && totalNumChunks > 0 && dataChunk.length > 0) {
+            this.chunks.push(dataChunk);
+            this.expectedNextChunkIndex = 1;
+            this.numChunks = totalNumChunks;
+        } else {errMsg = `received bad input at start of chunked download: in message, chunk index=${chunkIndex}, num chunks=${totalNumChunks}, and data chunk length=${dataChunk.length}`;}
+
+        if (errMsg || finalizedDownloadNumbersArr) { this.reset(); }
+        return [errMsg, finalizedDownloadNumbersArr];
+    }
+
+    reset = (): void => {
+        this.expectedNextChunkIndex = -1;
+        this.numChunks = -1;
+        this.chunks = [];
+    }
+}
+
 
 export interface SidePanelElements {
     eulaComplaintContainer: HTMLDivElement,
@@ -91,6 +140,7 @@ export class SidePanelManager {
     private readonly chromeWrapper: ChromeWrapper;
     readonly logger: Logger;
     private readonly dom: Document;
+    private readonly chunkedDownloadHandler: ChunkedDownloadHandler;
 
     readonly mutex = new Mutex();
 
@@ -113,7 +163,8 @@ export class SidePanelManager {
     public mouseClientX = -1;
     public mouseClientY = -1;
 
-    constructor(elements: SidePanelElements, chromeWrapper?: ChromeWrapper, logger?: Logger, overrideDoc?: Document) {
+    constructor(elements: SidePanelElements, chromeWrapper?: ChromeWrapper, logger?: Logger, overrideDoc?: Document,
+                chunkedDownloadHandler?: ChunkedDownloadHandler) {
         this.eulaComplaintContainer = elements.eulaComplaintContainer;
         this.annotatorContainer = elements.annotatorContainer;
         this.annotatorStartButton = elements.annotatorStartButton;
@@ -138,6 +189,7 @@ export class SidePanelManager {
         this.chromeWrapper = chromeWrapper ?? new ChromeWrapper();
         this.logger = logger ?? createNamedLogger('side-panel-mgr', false);
         this.dom = overrideDoc ?? document;
+        this.chunkedDownloadHandler = chunkedDownloadHandler ?? new ChunkedDownloadHandler();
 
         //have to initialize to default value this way to ensure that the monitor mode container is hidden if the default is false
         this.handleMonitorModeCacheUpdate(defaultIsMonitorMode);
@@ -431,7 +483,14 @@ export class SidePanelManager {
         } else if (message.type === AgentController2PanelPortMsgType.ERROR) {
             await this.mutex.runExclusive(() => this.processErrorFromController(message));
         } else if (message.type === AgentController2PanelPortMsgType.HISTORY_EXPORT) {
-            this.processFileDownload(message);
+            if ('numChunks' in message) {
+                await this.mutex.runExclusive(() => this.processChunkedDownloadSegment(message, true));
+            } else { this.processFileDownload(message, true); }
+        } else if (message.type === AgentController2PanelPortMsgType.ABORT_CHUNKED_DOWNLOAD) {
+            await this.mutex.runExclusive(() => {
+                this.chunkedDownloadHandler.reset();
+                this.setAgentStatusWithDelayedClear("Aborted download of logs zip file due to an error", undefined, message.error);
+            });
         } else if (message.type === AgentController2PanelPortMsgType.NOTIFICATION) {
             this.setAgentStatusWithDelayedClear(message.msg, 30, message.details);//give user plenty of time to read details
         } else {
@@ -439,21 +498,98 @@ export class SidePanelManager {
         }
     }
 
-    private processFileDownload(message: any) {
+    /**
+     * Validates the message from the service worker and saves its contents to the user's downloads folder as a file
+     * @param message the message from the service worker with data to be downloaded to the user's computer as a file
+     * @param isForAgentOrAnnotation true means this is a file download from AgentController and false means it's from ActionAnnotationCoordinator
+     */
+    private processFileDownload(message: any, isForAgentOrAnnotation: boolean) {
+        const data = message.data;
+        const fileNameForDownload = message.fileName;
+        if (this.isNumArrOfUint8(data) && typeof fileNameForDownload === "string") {
+            this.convertBytesNumberArrToFileDownload(data, fileNameForDownload, isForAgentOrAnnotation);
+        } else {
+            const errMsg = `received invalid data for a file download from background script:`;
+            const errDtls = `data is ${renderUnknownValue(data)
+                .slice(0, 200)}, fileName is ${renderUnknownValue(fileNameForDownload).slice(0, 200)}`;
+            this.logger.error(`${errMsg} ${errDtls}`);
+            (isForAgentOrAnnotation ? this.setAgentStatusWithDelayedClear
+                : this.setAnnotatorStatusWithDelayedClear)(errMsg, undefined, errDtls)
+        }
+    }
+
+    private isNumArrOfUint8(data: any): data is number[] {
+        return Array.isArray(data) && data.every((value) =>
+            typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 255);
+    }
+
+    /**
+     * Converts the given array of numbers to the bytes of a file, then saves that to the user's computer
+     * @param data array of numbers, each representing a byte of the file to be downloaded
+     * @param fileNameForDownload the name of the file to be saved to the user's computer
+     * @param isForAgentOrAnnotation true means this is a file download from AgentController and false means it's from ActionAnnotationCoordinator
+     */
+    private convertBytesNumberArrToFileDownload(data: number[], fileNameForDownload: string, isForAgentOrAnnotation: boolean) {
+        const statusSetter = isForAgentOrAnnotation ? this.setAgentStatusWithDelayedClear : this.setAnnotatorStatusWithDelayedClear;
         try {
-            this.logger.debug(`received array of data from background script for a zip file, length: ${message.data.length}`);
-            const arrBuff = new Uint8Array(message.data).buffer;
+            this.logger.debug(`received array of data from background script for a file, length: ${data.length}`);
+            const arrBuff = new Uint8Array(data).buffer;
             this.logger.debug(`converted array of data to array buffer, length: ${arrBuff.byteLength}`);
             const blob = new Blob([arrBuff]);
             this.logger.debug(`after converting array buffer to blob, length is ${blob.size} bytes`);
-            this.logger.debug(`about to save zip file ${message.fileName} to user's computer`);
-            saveAs(blob, message.fileName);
-            this.logger.info(`successfully saved zip file ${message.fileName}`);
+            this.logger.debug(`about to save file ${fileNameForDownload} to user's computer`);
+            saveAs(blob, fileNameForDownload);
+            this.logger.info(`successfully saved file ${fileNameForDownload}`);
+            statusSetter(`Downloaded file ${fileNameForDownload}`, 3);
         } catch (error: any) {
-            const errMsg = `error while trying to save zip file to user's computer: ${error.message}`;
+            const errMsg = `error while trying to save file to user's computer: ${error.message}`;
             this.logger.error(errMsg);
-            this.setAgentStatusWithDelayedClear(errMsg);
+            statusSetter(errMsg);
         }
+    }
+
+    /**
+     * Validates and processes a message from the service worker that contains a segment of a chunked download
+     * @param message the message from the service worker with a segment of a chunked download
+     * @param isForAgentOrAnnotation true means this is a file download from AgentController and false means it's from ActionAnnotationCoordinator
+     */
+    private processChunkedDownloadSegment(message: any, isForAgentOrAnnotation: boolean): boolean {
+        const statusSetter = isForAgentOrAnnotation ? this.setAgentStatusWithDelayedClear : this.setAnnotatorStatusWithDelayedClear;
+        let errMsg: string | undefined;
+        let fullArrOfNumbers: number[] | undefined;
+        let errDtls: string | undefined;
+
+        const dataChunk = message.data;
+        const chunkIndex = message.chunkIndex;
+        const totalNumChunks = message.numChunks;
+
+        if (!this.isNumArrOfUint8(dataChunk) || !Number.isInteger(chunkIndex) || !Number.isInteger(totalNumChunks)) {
+            errMsg = `received invalid data for a chunked download segment from background script:`;
+            errDtls = `data is ${renderUnknownValue(dataChunk)
+                .slice(0, 200)}, chunkIndex is ${renderUnknownValue(chunkIndex)}, totalNumChunks is ${renderUnknownValue(totalNumChunks)}`;
+        } else {
+            try {
+                [errMsg, fullArrOfNumbers] = this.chunkedDownloadHandler.processDownloadChunk(dataChunk, chunkIndex, totalNumChunks);
+            } catch (error: any) {
+                errMsg = `error while processing chunked download segment: ${error.message}`;
+                errDtls = renderUnknownValue(error);
+                this.chunkedDownloadHandler.reset();
+            }
+        }
+        if (errMsg) {
+            this.logger.error(`${errMsg} ${errDtls}`);
+            statusSetter(errMsg, undefined, errDtls);
+        } else if (fullArrOfNumbers) {
+            const fileNameForDownload = message.fileName;
+            if (typeof fileNameForDownload === "string") {
+                this.convertBytesNumberArrToFileDownload(fullArrOfNumbers, fileNameForDownload, isForAgentOrAnnotation);
+            } else {
+                const errMsg = `received last segment of chunked download data but missing or invalid file name for download`;
+                this.logger.error(`${errMsg}: ${renderUnknownValue(fileNameForDownload)}`);
+                statusSetter(errMsg, undefined, renderUnknownValue(fileNameForDownload));
+            }
+        }
+        return this.chunkedDownloadHandler.isChunkedDownloadInProgress();
     }
 
     private processErrorFromController(message: any) {
@@ -480,6 +616,7 @@ export class SidePanelManager {
         }
 
         if (this.cachedIsAnnotatorMode) {this.resetAnnotationUi();}
+        if (this.chunkedDownloadHandler.isChunkedDownloadInProgress()) { this.chunkedDownloadHandler.reset(); }
     }
 
     private resetAnnotationUi(isEndOfBatch: boolean = true) {
@@ -757,12 +894,24 @@ export class SidePanelManager {
                 actionStateChangeSeverity: this.annotatorActionStateChangeSeverity.value
             });
         } else if (message.type === AnnotationCoordinator2PanelPortMsgType.ANNOTATED_ACTIONS_EXPORT) {
-            this.processFileDownload(message);
-            await this.mutex.runExclusive(() => this.reset());
+            await this.mutex.runExclusive(() => {
+                if ('numChunks' in message) {
+                    const isChunkedDownloadStillInProgress = this.processChunkedDownloadSegment(message, false);
+                    if (!isChunkedDownloadStillInProgress) {this.reset();}
+                } else {
+                    this.processFileDownload(message, false);
+                    this.reset();
+                }
+            });
+        } else if (message.type === AnnotationCoordinator2PanelPortMsgType.ABORT_CHUNKED_DOWNLOAD) {
+            await this.mutex.runExclusive(() => {
+                this.chunkedDownloadHandler.reset();
+                this.setAnnotatorStatusWithDelayedClear("Chunked download of annotations-batch aborted", undefined, message.error);
+            });
         } else if (message.type === AnnotationCoordinator2PanelPortMsgType.NOTIFICATION) {
             this.setAnnotatorStatusWithDelayedClear(message.msg, 10, message.details);
         } else if (message.type === AnnotationCoordinator2PanelPortMsgType.ANNOTATION_CAPTURED_CONFIRMATION) {
-            this.setAnnotatorStatusWithDelayedClear(`Annotation ${message.annotId.slice(0,4)}... captured ${message.wasTargetIdentified ? `successfully${message.wasTargetNotRecognizedAsInteractive ? " but target element was not recognized as interactive (needs review by extension developer)" : ""}` : ", but target element couldn't be identified"}`, undefined, message.summary);
+            this.setAnnotatorStatusWithDelayedClear(`Annotation ${message.annotId.slice(0, 4)}... captured ${message.wasTargetIdentified ? `successfully${message.wasTargetNotRecognizedAsInteractive ? " but target element was not recognized as interactive (needs review by extension developer)" : ""}` : ", but target element couldn't be identified"}`, undefined, message.summary);
             await this.mutex.runExclusive(() => this.resetAnnotationUi(false));
         } else {
             this.logger.warn(`unknown type of message from annotation coordinator: ${JSON.stringify(message)}`);

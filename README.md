@@ -118,6 +118,11 @@ unpacked extension install is a snapshot version (not an official/finalized rele
 version number in the chrome extension's manifest.json file must be a string that matches the regex
 `^(\d+\.\d+\.\d+\.\d+)$` (i.e. 4 numbers separated by periods).
 
+The official distributed zip files are being named like this `OsuNlpGrpSeeActChromeExtn-A-B-C.zip`
+and the snapshot distributed zip files like this `OsuNlpGrpSeeActChromeExtn-A-B-C-SOMETHING-SNAPSHOT-#.zip`
+where A, B, and C are the major, minor, and patch version numbers respectively. The SOMETHING part is a string that
+provides context about the reason for the creation of the snapshot zip file, and the # is a number that is incremented 
+each time a new snapshot zip file is created for the same troubleshooting purpose.
 
 
 TODO consider replacing "utils" folder with frontend, serviceworker, and shared folders
