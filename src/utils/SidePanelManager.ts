@@ -127,7 +127,7 @@ export class SidePanelManager {
     private readonly startButton: HTMLButtonElement;
     private readonly taskSpecField: HTMLTextAreaElement;
     private readonly agentStatusDiv: HTMLDivElement;
-    private readonly statusPopup: HTMLSpanElement;
+    private readonly agentStatusPopup: HTMLSpanElement;
     private readonly killButton: HTMLButtonElement;
     private readonly historyList: HTMLOListElement;
     private readonly pendingActionDiv: HTMLDivElement;
@@ -176,7 +176,7 @@ export class SidePanelManager {
         this.startButton = elements.startButton;
         this.taskSpecField = elements.taskSpecField;
         this.agentStatusDiv = elements.agentStatusDiv;
-        this.statusPopup = elements.statusPopup;
+        this.agentStatusPopup = elements.statusPopup;
         this.killButton = elements.killButton;
         this.historyList = elements.historyList;
         this.pendingActionDiv = elements.pendingActionDiv;
@@ -771,14 +771,18 @@ export class SidePanelManager {
 
     private setAgentStatusWithDelayedClear(status: string, delay: number = 10, hovertext?: string) {
         this.agentStatusDiv.textContent = status;
+        let hovertextAsHtml = '';
         if (hovertext) {
-            this.statusPopup.innerHTML = marked.setOptions({async: false}).parse(hovertext) as string;
+            hovertextAsHtml = marked.setOptions({async: false}).parse(hovertext) as string;
+            this.agentStatusPopup.innerHTML = hovertextAsHtml;
         }
         setTimeout(() => {
-            this.logger.trace(`after ${delay} seconds, clearing agent status ${status} with hovertext ${hovertext?.slice(0, 100)}...`);
-            this.agentStatusDiv.textContent = 'No status update available at the moment.';
-            this.statusPopup.innerHTML = '';
-            this.statusPopup.style.display = "none";
+            if (this.agentStatusDiv.textContent === status && this.agentStatusPopup.innerHTML === hovertextAsHtml) {
+                this.logger.trace(`after ${delay} seconds, clearing agent status ${status} with hovertext ${hovertext?.slice(0, 100)}...`);
+                this.agentStatusDiv.textContent = 'No status update available at the moment.';
+                this.agentStatusPopup.innerHTML = '';
+                this.agentStatusPopup.style.display = "none";
+            } else {this.logger.trace(`skipping delayed-clear for status ${status} with hovertext ${hovertext?.slice(0, 100)}... which was already replaced by another status`);}
         }, delay * 1000)
     }
 
@@ -788,9 +792,11 @@ export class SidePanelManager {
             this.annotatorStatusDiv.title = hovertext;
         }
         setTimeout(() => {
-            this.logger.trace(`after ${delay} seconds, clearing annotator status ${status} with hovertext ${hovertext?.slice(0, 100)}...`);
-            this.annotatorStatusDiv.textContent = 'No status update available at the moment.';
-            this.annotatorStatusDiv.title = '';
+            if (this.annotatorStatusDiv.textContent === status && this.annotatorStatusDiv.title === hovertext) {
+                this.logger.trace(`after ${delay} seconds, clearing annotator status ${status} with hovertext ${hovertext?.slice(0, 100)}...`);
+                this.annotatorStatusDiv.textContent = 'No status update available at the moment.';
+                this.annotatorStatusDiv.title = '';
+            } else {this.logger.trace(`skipping delayed-clear for status ${status} with hovertext ${hovertext?.slice(0, 100)}... which was already replaced by another status`);}
         }, delay * 1000)
     }
 
@@ -818,31 +824,31 @@ export class SidePanelManager {
     }
 
     displayStatusPopup = (): void => {
-        if (this.statusPopup.style.display !== "block" && this.statusPopup.innerHTML.trim() !== "") {
-            this.statusPopup.style.display = "block";
+        if (this.agentStatusPopup.style.display !== "block" && this.agentStatusPopup.innerHTML.trim() !== "") {
+            this.agentStatusPopup.style.display = "block";
             const statusRect = this.agentStatusDiv.getBoundingClientRect();
-            this.statusPopup.style.maxHeight = `${statusRect.top}px`;
-            this.statusPopup.style.left = `0px`;
+            this.agentStatusPopup.style.maxHeight = `${statusRect.top}px`;
+            this.agentStatusPopup.style.left = `0px`;
             //the addition of 7 is so the details popup overlaps a little with the status div and so you can move
             // the mouse from the div to the popup without the popup sometimes disappearing
-            this.statusPopup.style.top = `${statusRect.y + 7 - this.statusPopup.offsetHeight + window.scrollY}px`;
+            this.agentStatusPopup.style.top = `${statusRect.y + 7 - this.agentStatusPopup.offsetHeight + window.scrollY}px`;
         }
     }
 
     handleMouseLeaveStatus = (elementThatWasLeft: HTMLElement): void => {
         //using referential equality intentionally here
-        const otherStatusElemRect = (elementThatWasLeft == this.agentStatusDiv ? this.statusPopup : this.agentStatusDiv).getBoundingClientRect();
+        const otherStatusElemRect = (elementThatWasLeft == this.agentStatusDiv ? this.agentStatusPopup : this.agentStatusDiv).getBoundingClientRect();
         const mX = this.mouseClientX;
         const mY = this.mouseClientY;
         const isMouseOutsideOtherElem = mX < otherStatusElemRect.left || mX > otherStatusElemRect.right
             || mY < otherStatusElemRect.top || mY > otherStatusElemRect.bottom;
         const divRect = this.agentStatusDiv.getBoundingClientRect();
-        const popupRect = this.statusPopup.getBoundingClientRect();
+        const popupRect = this.agentStatusPopup.getBoundingClientRect();
         //don't hide the popup if the mouse coords are in between the status div and the popup
         const isMouseBetweenElems = mX > divRect.left && mX > popupRect.left && mX < divRect.right
             && mX < popupRect.right && ((mY > divRect.bottom && mY < popupRect.top)
                 || (mY > popupRect.bottom && mY < divRect.top));
-        if (isMouseOutsideOtherElem && !isMouseBetweenElems) {this.statusPopup.style.display = 'none';}
+        if (isMouseOutsideOtherElem && !isMouseBetweenElems) {this.agentStatusPopup.style.display = 'none';}
     }
 
     handleMonitorModeCacheUpdate = (newMonitorModeVal: boolean) => {
