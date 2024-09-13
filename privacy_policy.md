@@ -13,7 +13,7 @@ This is because screenshots (and under-the-hood webpage information called 'HTML
 These screenshots and HTML data may contain personal information (e.g. from the user previously filling some things in, a password manager automatically filling things in, or the user already being signed in to a given website).
 
 ## How customer information is used
-This data is only ever sent to a server of the user's choice (see "AI Model Provider" [configuration option](#configuration)). Even then, it is only sent so that it can be fed to an AI model to make decisions on the user's behalf.   
+This data is only ever sent to a server of the user's choice (see "AI Model Provider" configuration option). Even then, it is only sent so that it can be fed to an AI model to make decisions on the user's behalf.   
 The user should consult the privacy policy of their chosen AI Model Provider for how it handles customer data that is sent to its API's. Many of them commit to not training their models on data sent to their API's (a guarantee they frequently do not make for use of their chatbot web pages).
 
 The data is stored _locally_ on the user's machine to allow for review of the agent's decisions and of the behavior of the extension. However, a given screenshot or other piece of stored information is automatically deleted after 14-28 days.   
