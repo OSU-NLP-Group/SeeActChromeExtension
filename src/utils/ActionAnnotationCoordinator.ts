@@ -290,7 +290,7 @@ export class ActionAnnotationCoordinator {
         //todo? export all logs for this batch (would need substantial changes here; plus either substantially change 
         // the logger/db code or adapt it to allow storing/using annotation-batch id instead of agent-task id sometimes 
         // (they are both UUID's, but it could be quite confusing; maybe add a new field to distinguish annotation batch vs agent task))
-        this.resetAnnotationCaptureCoordinator("action annotation batch successfully exported", `batch id: ${this.batchId}; batch start timestamp: ${renderTs(this.batchStartTimestamp)}`, false);
+        this.resetAnnotationCaptureCoordinator("action annotation batch completed (compression and download started", `batch id: ${this.batchId}; batch start timestamp: ${renderTs(this.batchStartTimestamp)}`, false);
     }
 
     validateAndStoreAnnotationDetails = (message: any): string | undefined => {

@@ -61,7 +61,7 @@ module.exports = {
                  // major version's currently 0 b/c project is still experimental and not yet released to public
                  // The -SNAPSHOT suffix is a Maven convention to indicate that the version is a development version,
                  //  and should be temporarily snipped off when doing a build for an official release version
-                        BUILD_VERSION: "0.4.3-SNAPSHOT",
+                        BUILD_VERSION: "0.5.0",
                   })
          }),
         new CleanWebpackPlugin({cleanOnceBeforeBuildPatterns: pathsToClean}),
