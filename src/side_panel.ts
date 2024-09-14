@@ -53,6 +53,9 @@ if (!(statusPopup && statusPopup instanceof HTMLSpanElement)) throw new Error('v
 const killButton = document.getElementById('end-task');
 if (!(killButton && killButton instanceof HTMLButtonElement)) throw new Error('valid endTask button not found');
 
+const logsTimeScopeSelect = document.getElementById('logs-time-scope');
+if (!(logsTimeScopeSelect && logsTimeScopeSelect instanceof HTMLSelectElement)) throw new Error('valid logs-time-scope select not found');
+
 const optionsButton = document.getElementById('options');
 if (!(optionsButton && optionsButton instanceof HTMLButtonElement)) throw new Error('valid options button not found');
 
@@ -97,7 +100,8 @@ const manager = new SidePanelManager({
     monitorFeedbackField: monitorFeedbackField as HTMLTextAreaElement,
     monitorApproveButton: monitorApproveButton as HTMLButtonElement,
     monitorRejectButton: monitorRejectButton as HTMLButtonElement,
-    unaffiliatedLogsExportButton: unaffiliatedLogsExportButton as HTMLButtonElement
+    unaffiliatedLogsExportButton: unaffiliatedLogsExportButton as HTMLButtonElement,
+    logsExportTimeScopeSelect: logsTimeScopeSelect as HTMLSelectElement,
 });
 
 document.addEventListener('mousemove', (e) => {

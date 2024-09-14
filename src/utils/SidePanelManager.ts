@@ -100,6 +100,7 @@ export interface SidePanelElements {
     monitorApproveButton: HTMLButtonElement;
     monitorRejectButton: HTMLButtonElement;
     unaffiliatedLogsExportButton: HTMLButtonElement;
+    logsExportTimeScopeSelect: HTMLSelectElement;
 }
 
 /**
@@ -137,6 +138,7 @@ export class SidePanelManager {
     private readonly monitorFeedbackField: HTMLTextAreaElement;
     private readonly monitorApproveButton: HTMLButtonElement;
     private readonly monitorRejectButton: HTMLButtonElement;
+    private readonly logsExportTimeScopeSelect: HTMLSelectElement;
     private readonly unaffiliatedLogsExportButton: HTMLButtonElement;
 
     private readonly chromeWrapper: ChromeWrapper;
@@ -187,6 +189,7 @@ export class SidePanelManager {
         this.monitorApproveButton = elements.monitorApproveButton;
         this.monitorRejectButton = elements.monitorRejectButton;
         this.unaffiliatedLogsExportButton = elements.unaffiliatedLogsExportButton;
+        this.logsExportTimeScopeSelect = elements.logsExportTimeScopeSelect;
 
         this.chromeWrapper = chromeWrapper ?? new ChromeWrapper();
         this.logger = logger ?? createNamedLogger('side-panel-mgr', false);
@@ -390,7 +393,10 @@ export class SidePanelManager {
             } else {
                 this.logger.trace("sending message to service worker to export non-task-specific logs");
                 try {
-                    this.agentControllerPort.postMessage({type: Panel2AgentControllerPortMsgType.EXPORT_UNAFFILIATED_LOGS});
+                    this.agentControllerPort.postMessage({
+                        type: Panel2AgentControllerPortMsgType.EXPORT_UNAFFILIATED_LOGS,
+                        timeScope: this.logsExportTimeScopeSelect.value
+                    });
                 } catch (error: any) {
                     this.logger.error(`error while sending "export non-task-specific logs" command to service worker: ${error.message}`);
                     this.reset();

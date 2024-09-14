@@ -83,7 +83,6 @@ export class ActionAnnotationCoordinator {
     mouseElemsInBatch: Array<SerializableElementData | undefined> = [];
     highlitElemsInBatch: Array<SerializableElementData | undefined> = [];
     contextScreenshotsInBatch: string[] = [];
-    targetedScreenshotsInBatch: Array<string | undefined> = [];
     //each annotation in the batch has its own collection of interactive elements at that point in time
     interactiveElementsSetsForAnnotationsInBatch: SerializableElementData[][] = [];
     annotationHtmlDumpsInBatch: string[] = [];
@@ -103,8 +102,6 @@ export class ActionAnnotationCoordinator {
     highlitElement: SerializableElementData | undefined;
 
     currActionContextScreenshotBase64: string | undefined;
-
-    currActionTargetedScreenshotBase64: string | undefined;
 
     currActionInteractiveElements: SerializableElementData[] | undefined;
     currActionHtmlDump: string | undefined;
@@ -276,17 +273,16 @@ export class ActionAnnotationCoordinator {
         const numMouseCoords = this.mouseCoordsInBatch.length, numMouseElems = this.mouseElemsInBatch.length;
         const numHighlitElems = this.highlitElemsInBatch.length;
         const numContextScreenshots = this.contextScreenshotsInBatch.length;
-        const numTargetedScreenshots = this.targetedScreenshotsInBatch.length;
         const numSetsOfInteractiveElements = this.interactiveElementsSetsForAnnotationsInBatch.length;
         const numHtmlDumps = this.annotationHtmlDumpsInBatch.length;
         if (numIds !== numActionTypes || numActionTypes !== numSeverities || numSeverities !== numDescriptions
             || numDescriptions !== numUrls || numUrls !== numTargetElems || numTargetElems !== numViewportInfos
             || numViewportInfos !== numMouseCoords || numMouseCoords !== numMouseElems
             || numMouseElems !== numHighlitElems || numHighlitElems !== numContextScreenshots
-            || numContextScreenshots !== numTargetedScreenshots || numTargetedScreenshots !== numSetsOfInteractiveElements
+            || numContextScreenshots !== numSetsOfInteractiveElements
             || numSetsOfInteractiveElements !== numHtmlDumps) {
             this.resetAnnotationCaptureCoordinator("at end of batch, the lists for accumulating the different parts of each annotation in the batch had different lengths!",
-                `# annotations: ${numIds}, # action types: ${numActionTypes}, # severities: ${numSeverities}, # descriptions: ${numDescriptions}, # url's: ${numUrls}, # target elements (including entries where target element is undefined): ${numTargetElems}, # viewport info's: ${numViewportInfos}, # mouse coordinates: ${numMouseCoords}, # mouse elements: ${numMouseElems}; # highlighted elements: ${numHighlitElems}, # context screenshots: ${numContextScreenshots}, # targeted screenshots: ${numTargetedScreenshots}, # sets of interactive elements: ${numSetsOfInteractiveElements}, # html dumps: ${numHtmlDumps}`);
+                `# annotations: ${numIds}, # action types: ${numActionTypes}, # severities: ${numSeverities}, # descriptions: ${numDescriptions}, # url's: ${numUrls}, # target elements (including entries where target element is undefined): ${numTargetElems}, # viewport info's: ${numViewportInfos}, # mouse coordinates: ${numMouseCoords}, # mouse elements: ${numMouseElems}; # highlighted elements: ${numHighlitElems}, # context screenshots: ${numContextScreenshots}, # sets of interactive elements: ${numSetsOfInteractiveElements}, # html dumps: ${numHtmlDumps}`);
             return;
         }
 
@@ -294,7 +290,7 @@ export class ActionAnnotationCoordinator {
         //todo? export all logs for this batch (would need substantial changes here; plus either substantially change 
         // the logger/db code or adapt it to allow storing/using annotation-batch id instead of agent-task id sometimes 
         // (they are both UUID's, but it could be quite confusing; maybe add a new field to distinguish annotation batch vs agent task))
-        this.resetAnnotationCaptureCoordinator("action annotation batch successfully exported", `batch id: ${this.batchId}; batch start timestamp: ${renderTs(this.batchStartTimestamp)}`, false);
+        this.resetAnnotationCaptureCoordinator("action annotation batch completed (compression and download started", `batch id: ${this.batchId}; batch start timestamp: ${renderTs(this.batchStartTimestamp)}`, false);
     }
 
     validateAndStoreAnnotationDetails = (message: any): string | undefined => {
@@ -381,22 +377,6 @@ export class ActionAnnotationCoordinator {
             return;
         }
 
-        if (this.currActionTargetElement) {
-            //data collector in content script highlighted the target element before sending info back
-            const screenshotCapture = await this.swHelper.captureScreenshot("annotation_action_targeted");
-            if (screenshotCapture.error) {
-                if (screenshotCapture.error.includes(this.chromeScreenshotThrottleMsgSubstring)) {
-                    this.resetCurrAnnotationDetails();
-                    this.logger.info("Chrome's screenshot API is throttling the extension's requests; ending the annotation attempt (but not the batch) and notifying user");
-                    try {//null check performed at top of function
-                        this.portToSidePanel!.postMessage({type: AnnotationCoordinator2PanelPortMsgType.NOTIFICATION, msg: "Error capturing 'targeted' screenshot", details: "Chrome's screenshot API is throttling the extension's requests; please try again in a few seconds"});
-                    } catch (error) {this.logger.error(`error while sending notification to side panel about problem with taking 'targeted' screenshot as part of annotation: ${renderUnknownValue(error)}`);}
-                } else { this.resetAnnotationCaptureCoordinator(`error capturing screenshot of target element for action annotation: ${screenshotCapture.error}`); }
-                return;
-            }
-            this.currActionTargetedScreenshotBase64 = screenshotCapture.screenshotBase64;
-        }
-
         if (!this.currAnnotationId) {
             this.logger.error("no current annotation id when storing a completed action annotation");
         } else if (!this.currAnnotationAction) {
@@ -430,7 +410,6 @@ export class ActionAnnotationCoordinator {
             this.mouseElemsInBatch.push(this.mousePosElement);
             this.highlitElemsInBatch.push(this.highlitElement);
             this.contextScreenshotsInBatch.push(this.currActionContextScreenshotBase64);
-            this.targetedScreenshotsInBatch.push(this.currActionTargetedScreenshotBase64);
             this.interactiveElementsSetsForAnnotationsInBatch.push(this.currActionInteractiveElements);
             this.annotationHtmlDumpsInBatch.push(this.currActionHtmlDump);
 
@@ -639,7 +618,6 @@ export class ActionAnnotationCoordinator {
             const mousePosElementData = this.mouseElemsInBatch[annotationIdx];
             const highlitElementData = this.highlitElemsInBatch[annotationIdx];
             const contextScreenshotBase64 = this.contextScreenshotsInBatch[annotationIdx];
-            const targetedScreenshotBase64 = this.targetedScreenshotsInBatch[annotationIdx];
             const interactiveElements = this.interactiveElementsSetsForAnnotationsInBatch[annotationIdx];
             const htmlDump = this.annotationHtmlDumpsInBatch[annotationIdx];
 
@@ -665,10 +643,6 @@ export class ActionAnnotationCoordinator {
             if (contextScreenshotBase64) {
                 currAnnotationFolder.file("context_screen.png", base64ToByteArray(contextScreenshotBase64))
             } else {this.logger.error(`no context screenshot found for action annotation ${annotationId}`);}
-
-            if (targetedScreenshotBase64) {
-                currAnnotationFolder.file("targeted_screen.png", base64ToByteArray(targetedScreenshotBase64))
-            } else {this.logger.warn(`no targeted screenshot found for action annotation ${annotationId}`);}
 
             if (htmlDump) {
                 currAnnotationFolder.file("pg_dump.html", htmlDump);
@@ -804,7 +778,6 @@ export class ActionAnnotationCoordinator {
         this.mouseElemsInBatch = [];
         this.highlitElemsInBatch = [];
         this.contextScreenshotsInBatch = [];
-        this.targetedScreenshotsInBatch = [];
         this.interactiveElementsSetsForAnnotationsInBatch = [];
         this.annotationHtmlDumpsInBatch = [];
 
@@ -823,7 +796,6 @@ export class ActionAnnotationCoordinator {
         this.mousePosElement = undefined;
         this.highlitElement = undefined;
         this.currActionContextScreenshotBase64 = undefined;
-        this.currActionTargetedScreenshotBase64 = undefined;
         this.currActionInteractiveElements = undefined;
         this.currActionHtmlDump = undefined;
     }

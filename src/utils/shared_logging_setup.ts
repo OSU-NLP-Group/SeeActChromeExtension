@@ -166,13 +166,17 @@ export const createNamedLogger = (loggerName: string, inServiceWorker: boolean):
         newLogger.methodFactory = function (methodName, logLevel, loggerName) {
             const rawMethod = origLoggerFactory(methodName, logLevel, loggerName);
             return function (...args: unknown[]) {
-                let timestampStr = new Date().toISOString();
+                const timestampMs = Date.now();
+                let timestampStr = new Date(timestampMs).toISOString();
                 if (window?.crossOriginIsolated) {
                     const preciseTimestamp = performance.timeOrigin + performance.now();
-                    const fractionOfMs = preciseTimestamp % 1;
-                    timestampStr = new Date(preciseTimestamp).toISOString();
-                    timestampStr = timestampStr.slice(0, timestampStr.length - 1)
-                        + fractionOfMs.toFixed(3).slice(2) + "Z";
+                    const normalVsPerfDiffInMs = timestampMs - preciseTimestamp;
+                    if (Math.abs(normalVsPerfDiffInMs) < 1000) {
+                        const fractionOfMs = preciseTimestamp % 1;
+                        timestampStr = new Date(preciseTimestamp).toISOString();
+                        timestampStr = timestampStr.slice(0, timestampStr.length - 1)
+                            + fractionOfMs.toFixed(3).slice(2) + "Z";
+                    } else { console.warn(`anomaly at time ${timestampStr}- timestampMs from Date.now() was ${timestampMs} while preciseTimestamp (from performance's timeOrigin and now() ) was ${preciseTimestamp}, with a delta of ${normalVsPerfDiffInMs}ms; performance.timeOrigin is ${performance.timeOrigin}; disregarding the value from performance and using Date.now() (based on prior experience, this might be some quirky behavior with performance.timeOrigin suddenly becoming the very beginning of the calendar day)`); }
                 }
                 const msg = augmentLogMsg(timestampStr, loggerName, methodName, args);
                 rawMethod(msg);

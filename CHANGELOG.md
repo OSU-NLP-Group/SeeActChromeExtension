@@ -9,6 +9,13 @@ Nontrivial changes to the extension are documented here.
 
 ### Removed
 
+## [0.5.0] - 2024-09-14
+### Added
+- Ability to limit misc logs download to just the last hour
+### Removed
+- The capturing of the second screenshot ('targeted' type) for a given annotation
+  - this ultimately isn't needed for creating the needed datasets from the annotation batch zips, and it was making Chrome's limitation of only 2 captures of the visible tab per second even more annoying than it had to be
+
 ## [0.4.2] - 2024-09-11
 ### Updated
 - Fix for Github issue 16 (large batches failing during the 'end batch and download zip file' step because of Chrome limitation on size of messages over extension 'ports')
