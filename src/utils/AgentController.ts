@@ -1219,8 +1219,13 @@ export class AgentController {
             if (this.isDisabledUntilEulaAcceptance) {
                 this.logger.warn("cannot export logs until user accepts EULA");
             } else if (dbConnHolder.dbConn && this.portToSidePanel) {
+                const timeScopeVal = parseFloat(message.timeScope);
+                if (!Number.isFinite(timeScopeVal) || timeScopeVal === 0) {
+                    this.logger.error(`invalid time scope value for non-task-specific logs export: ${message.timeScope}`);
+                    return;
+                }
                 const zip = new JSZip();
-                const logFileContents = await this.retrieveLogsForTaskId(dbConnHolder.dbConn, taskIdPlaceholderVal);
+                const logFileContents = await this.retrieveLogsForTaskId(dbConnHolder.dbConn, taskIdPlaceholderVal, timeScopeVal);
                 if (logFileContents != undefined) {
                     const fileSafeTimestampStr = new Date().toISOString().split(":").join("-").split(".").join("_");
                     zip.file(`non_task_specific_${fileSafeTimestampStr}.log`, logFileContents);
@@ -1546,7 +1551,7 @@ export class AgentController {
             AgentController2PanelPortMsgType.ABORT_CHUNKED_DOWNLOAD);
     }
 
-    retrieveLogsForTaskId = async (dbConnection: IDBPDatabase<AgentDb>, taskId: string): Promise<string | undefined> => {
+    retrieveLogsForTaskId = async (dbConnection: IDBPDatabase<AgentDb>, taskId: string, timeScopeInHours: number = -1): Promise<string | undefined> => {
         let logsForTask: LogMessage[];
         try {
             logsForTask = await dbConnection.getAllFromIndex(LOGS_OBJECT_STORE, "by-task", taskId);
@@ -1561,6 +1566,14 @@ export class AgentController {
             if (msg1.timestamp > msg2.timestamp) return 1;
             return 0;
         });
+        if (timeScopeInHours > 0) {
+            const logsTemporalFilterStart = performance.now();
+            const cutoffTsStr = new Date(Date.now() - timeScopeInHours * 3600000).toISOString().slice(0, -1);//removing Z
+            logsForTask = logsForTask.filter(log => log.timestamp >= cutoffTsStr);
+            const logsTemporalFilterDuration = performance.now() - logsTemporalFilterStart;
+            (logsTemporalFilterDuration > 100 ? this.logger.warn : this.logger.debug)(
+                `filtering logs for task ${taskId} by time scope of ${timeScopeInHours} hours took ${logsTemporalFilterDuration}ms`);
+        }
 
         //note - if prof or users request, can add the Z's back into the timestamps when exporting from db to log file,
         // to make clear that they're in UTC+0
