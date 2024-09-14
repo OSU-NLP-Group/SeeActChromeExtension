@@ -292,14 +292,17 @@ export class BrowserHelper {
      * @return data about the element
      */
     getElementData = (element: HTMLElementWithDocumentHost): ElementData => {
+        const tagName = element.tagName.toLowerCase();
         let description = this.getElementDescription(element);
         if (!description) {
             this.logger.trace(`UNABLE TO GENERATE DESCRIPTION FOR ELEMENT; outerHTML: ${element.outerHTML.slice(0, 300)}; parent outerHTML: ${this.getRealParentElement(element)
                 ?.outerHTML.slice(0, 300)}`);
             description = "description_unavailable";
+            if (tagName === "iframe" && !this.getIframeContent(element as HTMLIFrameElement)) {
+                description = "cross_origin_iframe";
+            }
         }
 
-        const tagName = element.tagName.toLowerCase();
         const roleValue = element.getAttribute("role");
         const typeValue = element.getAttribute("type");
         const tagHead = tagName + (roleValue ? ` role="${roleValue}"` : "") + (typeValue ? ` type="${typeValue}"` : "");
@@ -505,7 +508,10 @@ export class BrowserHelper {
      */
     getIframeContent = (iframe: HTMLIFrameElement): Document | null => {
         try {
-            return iframe.contentDocument || iframe.contentWindow?.document || null;
+            const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document || null;
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars -- guarantees that SecurityError will be thrown if it's cross-origin
+            const iframeHtml = iframeDoc?.documentElement.outerHTML;
+            return iframeDoc;
         } catch (error: any) {
             if (error.name === "SecurityError") {
                 this.logger.debug(`Cross-origin (${iframe.src}) iframe detected while grabbing iframe content: ${
