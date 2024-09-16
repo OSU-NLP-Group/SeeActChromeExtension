@@ -481,7 +481,7 @@ export class BrowserHelper {
         const elemFetchDuration = performance.now() - elemsFetchStartTs;//ms
         //todo move this threshold to 250 or 500 ms after there's time to investigate/remediate the recent jump in fetch time
         // this isn't a perf bottleneck in agent use case, but it is in the action annotation/data-collection use case
-        (elemFetchDuration < 500 ? this.logger.debug : this.logger.info)(`time to fetch interactive elements: ${elemFetchDuration} ms`);
+        (elemFetchDuration < 500 ? this.logger.debug : this.logger.info)(`time to fetch interactive elements: ${elemFetchDuration.toFixed(5)} ms`);
 
         const interactiveElementsData = Array.from(uniqueInteractiveElements)
             .map(element => this.getElementData(element))

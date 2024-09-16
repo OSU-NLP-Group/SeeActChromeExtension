@@ -696,7 +696,7 @@ export class AgentController {
                 this.terminateTask(`error getting safety judgment from ai; error: ${renderUnknownValue(error)}`);
                 return false;
             }
-            this.logger.debug(`ai querying for judge took ${Date.now() - startOfAiJudgeQuerying}ms`);
+            this.logger.debug(`ai querying for judge took ${(Date.now() - startOfAiJudgeQuerying).toFixed(5)}ms`);
             this.logger.info("judge output: " + judgeOutput);
             try {
                 this.portToSidePanel.postMessage({
@@ -805,7 +805,7 @@ export class AgentController {
             this.terminateTask(`error getting next step from ai; error: ${renderUnknownValue(error)}`);
             return [LmmOutputReaction.ABORT_TASK, "", ""];
         }
-        this.logger.debug(`ai querying for agent took ${Date.now() - startOfAiAgentQuerying}ms`);
+        this.logger.debug(`ai querying for agent took ${(Date.now() - startOfAiAgentQuerying).toFixed(5)}ms`);
         this.logger.info("grounding output: " + groundingOutput);
 
         const [element, action, value, explanation] = postProcessActionLlm(groundingOutput);
@@ -1572,7 +1572,7 @@ export class AgentController {
             logsForTask = logsForTask.filter(log => log.timestamp >= cutoffTsStr);
             const logsTemporalFilterDuration = performance.now() - logsTemporalFilterStart;
             (logsTemporalFilterDuration > 100 ? this.logger.warn : this.logger.debug)(
-                `filtering logs for task ${taskId} by time scope of ${timeScopeInHours} hours took ${logsTemporalFilterDuration}ms`);
+                `filtering logs for task ${taskId} by time scope of ${timeScopeInHours} hours took ${logsTemporalFilterDuration.toFixed(5)}ms`);
         }
 
         //note - if prof or users request, can add the Z's back into the timestamps when exporting from db to log file,

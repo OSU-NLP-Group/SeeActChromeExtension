@@ -176,7 +176,7 @@ export const createNamedLogger = (loggerName: string, inServiceWorker: boolean):
                         timestampStr = new Date(preciseTimestamp).toISOString();
                         timestampStr = timestampStr.slice(0, timestampStr.length - 1)
                             + fractionOfMs.toFixed(3).slice(2) + "Z";
-                    } else { console.warn(`anomaly at time ${timestampStr}- timestampMs from Date.now() was ${timestampMs} while preciseTimestamp (from performance's timeOrigin and now() ) was ${preciseTimestamp}, with a delta of ${normalVsPerfDiffInMs}ms; performance.timeOrigin is ${performance.timeOrigin}; disregarding the value from performance and using Date.now() (based on prior experience, this might be some quirky behavior with performance.timeOrigin suddenly becoming the very beginning of the calendar day)`); }
+                    } else { console.warn(`anomaly at time ${timestampStr}- timestampMs from Date.now() was ${timestampMs} while preciseTimestamp (from performance's timeOrigin and now() ) was ${preciseTimestamp}, with a delta of ${normalVsPerfDiffInMs.toFixed(5)}ms; performance.timeOrigin is ${performance.timeOrigin}; disregarding the value from performance and using Date.now() (based on prior experience, this might be some quirky behavior with performance.timeOrigin suddenly becoming the very beginning of the calendar day)`); }
                 }
                 const msg = augmentLogMsg(timestampStr, loggerName, methodName, args);
                 rawMethod(msg);

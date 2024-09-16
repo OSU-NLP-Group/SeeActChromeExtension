@@ -56,7 +56,7 @@ async function notifyControllerOnceLoadedPageIsStable() {
 
     logger.trace('page has loaded and become stable, sending READY message to background');
     await sleep(20);//just in case page loaded super-quickly and the service worker was delayed in setting up the port's listeners
-    logger.debug(`total length of page load wait: ${(Date.now() - startOfPageLoadWait)}ms`);
+    logger.debug(`total length of page load wait: ${(Date.now() - startOfPageLoadWait).toFixed(5)}ms`);
     if (wasReadyMsgSent) {
         logger.warn("READY message was already sent to background by the time the page became stable, not sending it again");
         return;

@@ -517,7 +517,7 @@ export class PageActor {
             }
         }
 
-        this.logger.debug(`waited ${(Date.now() - startOfPostActionStabilityWait)}ms for page to become stable before ${reasonForWait}`);
+        this.logger.debug(`waited ${(Date.now() - startOfPostActionStabilityWait).toFixed(5)}ms for page to become stable before ${reasonForWait}`);
         return false;
     }
 

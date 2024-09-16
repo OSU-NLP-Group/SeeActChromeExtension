@@ -110,7 +110,7 @@ export class ElementHighlighter {
     private async waitForElemHighlightChangeAnimation(element: HTMLElement) {
         const animationWaitStart = performance.now();
         await new Promise((resolve) => window.requestAnimationFrame(resolve));
-        this.logger.trace(`Time to wait for top-level animation frame after setting outline: ${performance.now() - animationWaitStart} ms`);
+        this.logger.trace(`Time to wait for top-level animation frame after setting outline: ${(performance.now() - animationWaitStart).toFixed(5)} ms`);
 
         const iframeContextNode = this.cachedIframeTreeGetter().findIframeNodeForElement(element);
         if (iframeContextNode && iframeContextNode.iframe) {
@@ -123,7 +123,7 @@ export class ElementHighlighter {
                         .slice(0, 100)}`);
                 } else {throw error;}
             }
-            this.logger.trace(`Time to wait for animation frame in iframe context after setting outline: ${performance.now() - iframeAnimationWaitStart} ms`);
+            this.logger.trace(`Time to wait for animation frame in iframe context after setting outline: ${(performance.now() - iframeAnimationWaitStart).toFixed(5)} ms`);
         }
 
         await sleep(elementHighlightRenderDelay);
