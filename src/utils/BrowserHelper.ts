@@ -463,6 +463,7 @@ export class BrowserHelper {
 
     /**
      * @description Get interactive elements in the DOM, including links, buttons, inputs, selects, textareas, and elements with certain roles
+     * todo for PageDataCollector's sake, consider adding flag to exclude all elements outside viewport?
      * @return data about the interactive elements
      */
     getInteractiveElements = (): ElementData[] => {
@@ -475,7 +476,7 @@ export class BrowserHelper {
 
         const elemsFetchStartTs = performance.now();
         //todo somehow want to also grab elements which are scrollable (i.e. they have overflow auto and there're
-        // scrollbar(s) on the right and/or bottom sides of the element)
+        // scrollbar(s) on the right and/or bottom sides of the element; that might be too restrictive- look for scrollHeight > clientHeight)
         const uniqueInteractiveElements = this.enhancedQuerySelectorAll(interactiveElementSelectors,
             elem => !this.calcIsDisabled(elem), true);
         const elemFetchDuration = performance.now() - elemsFetchStartTs;//ms
@@ -616,7 +617,7 @@ export class BrowserHelper {
             }));
         const clickableElementsBasedOnProperty = this.domHelper.fetchElementsByCss('*', root)
             .filter(elem => Boolean(elem.onclick)).filter(elemFilter);
-        if (clickableElementsBasedOnProperty.length > 0) { this.logger.debug(`Found ${clickableElementsBasedOnProperty.length} clickable elements based on the onclick property within context: ${callIdentifier}`); }
+        if (clickableElementsBasedOnProperty.length > 0) { this.logger.debug(`Found ${clickableElementsBasedOnProperty.length} CLICKABLE ELEMENTS BASED ON THE ONCLICK PROPERTY within context: ${callIdentifier}`); }
         clickableElementsBasedOnProperty.forEach(elem => {
             if (!shouldIgnoreHidden || !this.calcIsHidden(elem, iframeContextNode)) {
                 currScopeResults.add(elem);

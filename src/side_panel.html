@@ -28,6 +28,10 @@
             End Batch
         </button>
     </div>
+    <div class="flex items-center">
+        <input type="checkbox" id="batch-in-dialog" class="mr-2">
+        <label for="batch-in-dialog" class="font-semibold" title="Please check this when you're starting a batch to annotate unsafe elements inside a dialog or other modal UI that blocks interaction with the rest of the page's content. If you do not set this correctly for each batch, the start-of-batch collection of information about all of the page's interactive elements will malfunction">Is Batch in a Dialog?</label>
+    </div>
     <label for="action-type" class="block text-base font-medium">Action Type</label>
     <select id="action-type" class="p-2">
         <option value="CLICK" selected>Click</option>
