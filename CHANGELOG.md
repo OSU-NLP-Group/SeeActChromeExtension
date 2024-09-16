@@ -9,6 +9,14 @@ Nontrivial changes to the extension are documented here.
 
 ### Removed
 
+## [0.5.1] - 2024-09-16
+### Added
+- Ability for annotator to specify that a batch will only cover elements in a dialog (which's blocking interaction with the rest of the page)
+  - this doesn't yet try to scroll through the dialog's content, but it does stop some annoying misbehaviors that would occur when capturing general page info in a dialog scenario
+### Updated
+- Cross-origin iframe handling: logs will be clearer about whether an element with no description was a cross-origin iframe, and the check for an iframe being cross-origin was made more robust
+- All log timestamps to try to use 'performance.now()' for somewhat clearer ordering of messages
+
 ## [0.5.0] - 2024-09-14
 ### Added
 - Ability to limit misc logs download to just the last hour

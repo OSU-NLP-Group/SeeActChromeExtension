@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "SeeAct Web Agent for Chrome",
-    "version": "0.5.1.58495",
+    "version": "0.5.1",
     "minimum_chrome_version": "120",
     "description": "Allows the user to invoke the SeeAct web agent to perform tasks in the current browser tab/window.",
     "permissions": [
