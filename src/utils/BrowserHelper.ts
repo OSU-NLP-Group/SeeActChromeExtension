@@ -5,7 +5,13 @@ import log, {Logger} from "loglevel";
 import * as fuzz from "fuzzball";
 import {
     ElementData,
-    HTMLElementWithDocumentHost, isDocument, isHtmlElement, isIframeElement, isShadowRoot, maybeUpperCase,
+    HTMLElementWithDocumentHost,
+    isDocument,
+    isHtmlElement,
+    isIframeElement,
+    isInputElement,
+    isShadowRoot,
+    maybeUpperCase,
     renderUnknownValue,
     SerializableElementData,
 } from "./misc";
@@ -292,14 +298,17 @@ export class BrowserHelper {
      * @return data about the element
      */
     getElementData = (element: HTMLElementWithDocumentHost): ElementData => {
+        const tagName = element.tagName.toLowerCase();
         let description = this.getElementDescription(element);
         if (!description) {
             this.logger.trace(`UNABLE TO GENERATE DESCRIPTION FOR ELEMENT; outerHTML: ${element.outerHTML.slice(0, 300)}; parent outerHTML: ${this.getRealParentElement(element)
                 ?.outerHTML.slice(0, 300)}`);
             description = "description_unavailable";
+            if (tagName === "iframe" && !this.getIframeContent(element as HTMLIFrameElement)) {
+                description = "cross_origin_iframe";
+            }
         }
 
-        const tagName = element.tagName.toLowerCase();
         const roleValue = element.getAttribute("role");
         const typeValue = element.getAttribute("type");
         const tagHead = tagName + (roleValue ? ` role="${roleValue}"` : "") + (typeValue ? ` type="${typeValue}"` : "");
@@ -368,16 +377,16 @@ export class BrowserHelper {
         }
         if (!doesElemSeemInvisible && !isDocHostElem) {
             //skipping this for elements that are fully outside the viewport
-            const elemRect = this.domHelper.grabClientBoundingRect(element);
-            const elemXRelToViewport = elemRect.x + iframeNode.coordsOffsetFromViewport.x;
-            const elemYRelToViewport = elemRect.y + iframeNode.coordsOffsetFromViewport.y;
-            const {width, height} = this.domHelper.getViewportInfo();
-            if (elemXRelToViewport + elemRect.width > 0 && elemYRelToViewport + elemRect.height > 0
-                && elemXRelToViewport < width && elemYRelToViewport < height) {
-                this.logger.trace(`testing whether element is buried in background: ${this.getFullXpath(element)}; with iframe context ${iframeNode.iframe?.outerHTML.slice(0, 300)}`);
-                isElemBuried = this.isBuriedInBackground(element, iframeNode);
+            if (!this.isFullyOutsideViewport(element, iframeNode)) {
+                let backgroundCheckMsg = ``;
+                if (shouldDebug) {
+                    backgroundCheckMsg = `testing whether element is buried in background: ${this.getFullXpath(element)}; with iframe context ${iframeNode.iframe?.outerHTML.slice(0, 300)}`;
+                    this.logger.trace(backgroundCheckMsg);
+                }
+                isElemBuried = this.isBuriedInBackground(element, iframeNode, shouldDebug);
+                if (shouldDebug) { this.logger.trace(`finished ${backgroundCheckMsg}; result was ${isElemBuried}`); }
                 doesElemSeemInvisible = isElemBuried;
-            }
+            } else if (shouldDebug) { this.logger.trace(`skipping 'buried in background' test for element: ${this.getFullXpath(element)}; with iframe context ${iframeNode.iframe?.outerHTML.slice(0, 300)} because it's outside the viewport (and so the check wouldn't work): elem rect: ${JSON.stringify(this.domHelper.grabClientBoundingRect(element))}, iframe context offsets: (${iframeNode.coordsOffsetFromViewport.x}, ${iframeNode.coordsOffsetFromViewport.y}), viewport info: ${JSON.stringify(this.domHelper.getViewportInfo())}`); }
         }
 
         //if an element is inline and non-childless, its own width and height may not actually be meaningful (since its children
@@ -405,13 +414,13 @@ export class BrowserHelper {
         // https://css-tricks.com/comparing-various-ways-to-hide-things-in-css/
     }
 
-    isBuriedInBackground = (element: HTMLElement, iframeNode: IframeNode): boolean => {
+    isBuriedInBackground = (element: HTMLElement, iframeNode: IframeNode, shouldDebug: boolean = false): boolean => {
         const boundRect = this.domHelper.grabClientBoundingRect(element);
         if (boundRect.width === 0 || boundRect.height === 0) { return false; }
         //select elements are often partially hidden behind clickable spans and yet are still entirely feasible to interact with through javascript
         // similar problem with checkbox input elements
         const tag = element.tagName.toLowerCase();
-        if (tag === "select" || tag === "input") { return false;}
+        if (tag === "select" || (isInputElement(element) && element.type === "checkbox")) { return false;}
 
         //todo experiment with whether there are problems from restricting this to solely the center point (There are)
         // maybe make that a toggleable option to boost performance when dealing with elements that behave conveniently
@@ -431,7 +440,7 @@ export class BrowserHelper {
 
         for (let i = 0; i < queryPoints.length && isBuried; i++) {
             const queryPoint = queryPoints[i];
-            const foregroundElemAtQueryPoint = this.actualElementFromPoint(queryPoint[0], queryPoint[1], searchContext, undefined, false);
+            const foregroundElemAtQueryPoint = this.actualElementFromPoint(queryPoint[0], queryPoint[1], searchContext, shouldDebug, false);
             if (element.contains(foregroundElemAtQueryPoint)) {
                 isBuried = false;
             }
@@ -447,6 +456,15 @@ export class BrowserHelper {
         return 'readOnly' in element && typeof element.readOnly === "boolean";
     }
 
+    isFullyOutsideViewport = (element: HTMLElement, iframeNode: IframeNode): boolean => {
+        const elemRect = this.domHelper.grabClientBoundingRect(element);
+        const elemXRelToViewport = elemRect.x + iframeNode.coordsOffsetFromViewport.x;
+        const elemYRelToViewport = elemRect.y + iframeNode.coordsOffsetFromViewport.y;
+        const {width, height} = this.domHelper.getViewportInfo();
+        return elemXRelToViewport + elemRect.width <= 0 || elemYRelToViewport + elemRect.height <= 0
+            || elemXRelToViewport >= width || elemYRelToViewport >= height;
+    }
+
     /**
      * @description Determine whether an element is disabled, based on its attributes and properties
      * @param element the element which might be disabled
@@ -460,9 +478,10 @@ export class BrowserHelper {
 
     /**
      * @description Get interactive elements in the DOM, including links, buttons, inputs, selects, textareas, and elements with certain roles
+     * @param excludeElemsOutsideViewport whether to exclude elements which are fully outside the viewport
      * @return data about the interactive elements
      */
-    getInteractiveElements = (): ElementData[] => {
+    getInteractiveElements = (excludeElemsOutsideViewport: boolean = false): ElementData[] => {
         const interactiveElementSelectors = ['a', 'button', 'input', 'select', 'textarea', 'adc-tab',
             '[role="button"]', '[role="radio"]', '[role="option"]', '[role="combobox"]', '[role="textbox"]',
             '[role="listbox"]', '[role="menu"]', '[role="link"]', '[type="button"]', '[type="radio"]', '[type="combobox"]',
@@ -472,13 +491,13 @@ export class BrowserHelper {
 
         const elemsFetchStartTs = performance.now();
         //todo somehow want to also grab elements which are scrollable (i.e. they have overflow auto and there're
-        // scrollbar(s) on the right and/or bottom sides of the element)
+        // scrollbar(s) on the right and/or bottom sides of the element; that might be too restrictive- look for scrollHeight > clientHeight)
         const uniqueInteractiveElements = this.enhancedQuerySelectorAll(interactiveElementSelectors,
-            elem => !this.calcIsDisabled(elem), true);
+            (elem, iframeNode) => !(this.calcIsDisabled(elem) || (excludeElemsOutsideViewport && this.isFullyOutsideViewport(elem, iframeNode))), true);
         const elemFetchDuration = performance.now() - elemsFetchStartTs;//ms
         //todo move this threshold to 250 or 500 ms after there's time to investigate/remediate the recent jump in fetch time
         // this isn't a perf bottleneck in agent use case, but it is in the action annotation/data-collection use case
-        (elemFetchDuration < 500 ? this.logger.debug : this.logger.info)(`time to fetch interactive elements: ${elemFetchDuration} ms`);
+        (elemFetchDuration < 500 ? this.logger.debug : this.logger.info)(`time to fetch interactive elements: ${elemFetchDuration.toFixed(5)} ms`);
 
         const interactiveElementsData = Array.from(uniqueInteractiveElements)
             .map(element => this.getElementData(element))
@@ -505,7 +524,10 @@ export class BrowserHelper {
      */
     getIframeContent = (iframe: HTMLIFrameElement): Document | null => {
         try {
-            return iframe.contentDocument || iframe.contentWindow?.document || null;
+            const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document || null;
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars -- guarantees that SecurityError will be thrown if it's cross-origin
+            const iframeHtml = iframeDoc?.documentElement.outerHTML;
+            return iframeDoc;
         } catch (error: any) {
             if (error.name === "SecurityError") {
                 this.logger.debug(`Cross-origin (${iframe.src}) iframe detected while grabbing iframe content: ${
@@ -534,7 +556,7 @@ export class BrowserHelper {
      *          this is a static view of the elements (not live access that would allow modification)
      */
     enhancedQuerySelectorAll = (cssSelectors: string[],
-                                elemFilter: (elem: HTMLElement) => boolean, shouldIgnoreHidden: boolean = true
+                                elemFilter: (elem: HTMLElement, iframeNode: IframeNode) => boolean, shouldIgnoreHidden: boolean = true
     ): Array<HTMLElementWithDocumentHost> => {
         const topWindow = this.domHelper.window as Window;
         if (this.cachedShadowRootHostChildrenOfMainDoc === undefined) {this.cachedShadowRootHostChildrenOfMainDoc = this.initializeCacheOfShadowRootHostChildrenOfMainDoc();}
@@ -548,7 +570,7 @@ export class BrowserHelper {
     }
 
     enhancedQuerySelectorAllHelper = (cssSelectors: string[], root: ShadowRoot | Document, iframeContextNode: IframeNode,
-                                      elemFilter: (elem: HTMLElement) => boolean,
+                                      elemFilter: (elem: HTMLElement, iframeNode: IframeNode) => boolean,
                                       cachedShadowRootHostChildren?: HTMLElement[], shouldIgnoreHidden: boolean = true
     ): Array<HTMLElementWithDocumentHost> => {
         let callIdentifier = '';
@@ -602,15 +624,15 @@ export class BrowserHelper {
         //based on https://developer.mozilla.org/en-US/docs/Web/API/Node/isSameNode, I'm pretty confident that simple
         // element === element checks by the Set class will prevent duplicates
         const currScopeResults: Set<HTMLElement> = new Set();
-        cssSelectors.forEach(selector => this.domHelper.fetchElementsByCss(selector, root).filter(elemFilter)
+        cssSelectors.forEach(selector => this.domHelper.fetchElementsByCss(selector, root).filter(elem => elemFilter(elem, iframeContextNode))
             .forEach(elem => {
                 if (!shouldIgnoreHidden || !this.calcIsHidden(elem, iframeContextNode)) {
                     currScopeResults.add(elem);
                 } else {this.logger.trace(`Ignoring hidden element ${elem.outerHTML.slice(0, 300)} that was found with css selector ${selector}`);}
             }));
         const clickableElementsBasedOnProperty = this.domHelper.fetchElementsByCss('*', root)
-            .filter(elem => Boolean(elem.onclick)).filter(elemFilter);
-        if (clickableElementsBasedOnProperty.length > 0) { this.logger.debug(`Found ${clickableElementsBasedOnProperty.length} clickable elements based on the onclick property within context: ${callIdentifier}`); }
+            .filter(elem => Boolean(elem.onclick)).filter(elem => elemFilter(elem, iframeContextNode));
+        if (clickableElementsBasedOnProperty.length > 0) { this.logger.debug(`Found ${clickableElementsBasedOnProperty.length} CLICKABLE ELEMENTS BASED ON THE ONCLICK PROPERTY within context: ${callIdentifier}`); }
         clickableElementsBasedOnProperty.forEach(elem => {
             if (!shouldIgnoreHidden || !this.calcIsHidden(elem, iframeContextNode)) {
                 currScopeResults.add(elem);

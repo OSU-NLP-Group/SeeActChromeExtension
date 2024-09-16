@@ -163,6 +163,13 @@ export function isHtmlElement(node: Node | null | undefined): node is HTMLElemen
             && methodsAlwaysAndOnlyInHtmlElements.every(method => typeof (node as any)[method] === "function"));
 }
 
+export function isInputElement(element: HTMLElement): element is HTMLInputElement {
+    if (element instanceof HTMLInputElement || element.tagName.toLowerCase() === "input") { return true; }
+    const elemType = getInternalClass(element).toLowerCase();
+    if (elemType.includes("input") && elemType.includes("element")) { return true;}
+    return 'value' in element && 'type' in element;
+}
+
 export function isIframeElement(element: HTMLElement): element is HTMLIFrameElement {
     if (element instanceof HTMLIFrameElement || element.tagName.toLowerCase() === "iframe") { return true; }
     const elemType = getInternalClass(element).toLowerCase();

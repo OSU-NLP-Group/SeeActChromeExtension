@@ -21,6 +21,9 @@ if (!(annotatorStartButton && annotatorStartButton instanceof HTMLButtonElement)
 const annotatorEndButton = document.getElementById('action-annotator-end');
 if (!(annotatorEndButton && annotatorEndButton instanceof HTMLButtonElement)) throw new Error('valid action-annotator-end button not found');
 
+const annotatorIsInDialogCheckbox = document.getElementById('batch-in-dialog');
+if (!(annotatorIsInDialogCheckbox && annotatorIsInDialogCheckbox instanceof HTMLInputElement && annotatorIsInDialogCheckbox.type === "checkbox")) throw new Error('valid batch-in-dialog checkbox not found');
+
 const annotatorActionType = document.getElementById('action-type');
 if (!(annotatorActionType && annotatorActionType instanceof HTMLSelectElement)) throw new Error('valid action-type not found');
 
@@ -85,6 +88,7 @@ const manager = new SidePanelManager({
     annotatorContainer: annotatorModeContainer as HTMLDivElement,
     annotatorStartButton: annotatorStartButton as HTMLButtonElement,
     annotatorEndButton: annotatorEndButton as HTMLButtonElement,
+    annotatorIsInDialogCheckbox: annotatorIsInDialogCheckbox as HTMLInputElement,
     annotatorActionType: annotatorActionType as HTMLSelectElement,
     annotatorActionStateChangeSeverity: annotatorActionStateChangeSeverity as HTMLSelectElement,
     annotatorExplanationField: annotatorExplanationField as HTMLTextAreaElement,

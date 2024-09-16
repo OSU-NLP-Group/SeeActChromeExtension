@@ -84,6 +84,7 @@ export interface SidePanelElements {
     annotatorContainer: HTMLDivElement,
     annotatorStartButton: HTMLButtonElement,
     annotatorEndButton: HTMLButtonElement,
+    annotatorIsInDialogCheckbox: HTMLInputElement,
     annotatorActionType: HTMLSelectElement,
     annotatorActionStateChangeSeverity: HTMLSelectElement,
     annotatorExplanationField: HTMLTextAreaElement,
@@ -122,6 +123,7 @@ export class SidePanelManager {
     private readonly annotatorContainer: HTMLDivElement;
     private readonly annotatorStartButton: HTMLButtonElement;
     private readonly annotatorEndButton: HTMLButtonElement;
+    private readonly annotatorIsInDialogCheckbox: HTMLInputElement;
     private readonly annotatorActionType: HTMLSelectElement;
     private readonly annotatorActionStateChangeSeverity: HTMLSelectElement;
     private readonly annotatorExplanationField: HTMLTextAreaElement;
@@ -173,6 +175,7 @@ export class SidePanelManager {
         this.annotatorContainer = elements.annotatorContainer;
         this.annotatorStartButton = elements.annotatorStartButton;
         this.annotatorEndButton = elements.annotatorEndButton;
+        this.annotatorIsInDialogCheckbox = elements.annotatorIsInDialogCheckbox;
         this.annotatorActionType = elements.annotatorActionType;
         this.annotatorActionStateChangeSeverity = elements.annotatorActionStateChangeSeverity;
         this.annotatorExplanationField = elements.annotatorExplanationField;
@@ -635,6 +638,7 @@ export class SidePanelManager {
         if (isEndOfBatch) {
             this.annotatorStartButton.disabled = false;
             this.annotatorEndButton.disabled = true;
+            this.annotatorIsInDialogCheckbox.checked = false;
         }
     }
 
@@ -789,7 +793,7 @@ export class SidePanelManager {
                 this.agentStatusDiv.textContent = 'No status update available at the moment.';
                 this.agentStatusPopup.innerHTML = '';
                 this.agentStatusPopup.style.display = "none";
-            } else {this.logger.trace(`skipping delayed-clear for status ${status} with hovertext ${hovertext?.slice(0, 100)}... which was already replaced by another status`);}
+            } else {this.logger.trace(`skipping delayed-clear for status ${status} with hovertext ${hovertext?.slice(0, 100)}... which was already replaced by another status: ${this.agentStatusDiv.textContent}`);}
         }, delay * 1000)
     }
 
@@ -799,11 +803,11 @@ export class SidePanelManager {
             this.annotatorStatusDiv.title = hovertext;
         }
         setTimeout(() => {
-            if (this.annotatorStatusDiv.textContent === status && this.annotatorStatusDiv.title === hovertext) {
+            if (this.annotatorStatusDiv.textContent === status && (hovertext === undefined || this.annotatorStatusDiv.title === hovertext)) {
                 this.logger.trace(`after ${delay} seconds, clearing annotator status ${status} with hovertext ${hovertext?.slice(0, 100)}...`);
                 this.annotatorStatusDiv.textContent = 'No status update available at the moment.';
                 this.annotatorStatusDiv.title = '';
-            } else {this.logger.trace(`skipping delayed-clear for status ${status} with hovertext ${hovertext?.slice(0, 100)}... which was already replaced by another status`);}
+            } else {this.logger.trace(`skipping delayed-clear for status ${status} with hovertext ${hovertext?.slice(0, 100)}... which was already replaced by another status that had text ${this.annotatorStatusDiv.textContent} and hovertext ${this.annotatorStatusDiv.title}`);}
         }, delay * 1000)
     }
 
@@ -950,7 +954,10 @@ export class SidePanelManager {
 
     startActionAnnotationBatch = (): void => {
         if (this.annotationCoordinatorPort) {
-            this.annotationCoordinatorPort.postMessage({type: PanelToAnnotationCoordinatorPortMsgType.START_ANNOTATION_BATCH});
+            this.annotationCoordinatorPort.postMessage({
+                type: PanelToAnnotationCoordinatorPortMsgType.START_ANNOTATION_BATCH,
+                isInDialog: this.annotatorIsInDialogCheckbox.checked
+            });
             this.annotatorEndButton.disabled = false;
             this.annotatorStartButton.disabled = true;
         } else {

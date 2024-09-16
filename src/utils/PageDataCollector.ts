@@ -49,7 +49,7 @@ export class PageDataCollector {
             if (message.type === AnnotationCoordinator2PagePortMsgType.REQ_ACTION_DETAILS_AND_CONTEXT) {
                 await this.mutex.runExclusive(async () => {await this.collectActionDetailsAndContext();});
             } else if (message.type === AnnotationCoordinator2PagePortMsgType.REQ_GENERAL_PAGE_INFO_FOR_BATCH) {
-                await this.mutex.runExclusive(async () => {await this.collectGeneralPageInfoForBatch();});
+                await this.mutex.runExclusive(async () => {await this.collectGeneralPageInfoForBatch(message);});
             } else {
                 this.logger.warn(`unknown message from annotation coordinator: ${JSON.stringify(message)}`);
             }
@@ -64,31 +64,38 @@ export class PageDataCollector {
         }
     }
 
-    collectGeneralPageInfoForBatch = async () => {
+    collectGeneralPageInfoForBatch = async (message: any) => {
+        const isInDialog = message.isInDialog;
+        if (typeof isInDialog !== "boolean") { throw new Error(`isInDialog value from annotation coordinator is not a boolean: ${isInDialog}`); }
+
         await this.browserHelper.clearElementHighlightingEarly();
         const initialVertScrollPos = this.domWrapper.getVertScrollPos();
-        this.domWrapper.scrollBy(0, -initialVertScrollPos, "instant");
-        await sleep(50);//just in case 'instant' scroll animation is still slower than js execution
-
+        if (!isInDialog) {//todo once scrolling of dialog content is implemented, this will need to be updated
+            this.domWrapper.scrollBy(0, -initialVertScrollPos, "instant");
+            await sleep(50);//just in case 'instant' scroll animation is still slower than js execution
+        }
         const generalViewportDetailsCaptures: Array<ViewportDetails> = [];
         const generalInteractiveElementsCaptures: Array<SerializableElementData[]> = [];
 
+        //todo once scrolling of dialog content is implemented, this will all need to be updated
         const viewportHeight = this.domWrapper.getDocumentElement().clientHeight;
         const scrollDist = viewportHeight * scrollFractionOfViewport;
         const viewportInfo = this.domWrapper.getViewportInfo();
         let numCaptures = 1;
         const totalDistToScroll = viewportInfo.pageScrollHeight - viewportHeight;
-        if (totalDistToScroll > 1) {numCaptures += Math.ceil(totalDistToScroll / scrollDist);}
-        this.logger.debug(`scrolling through page to capture general page info for batch; viewport height: ${viewportHeight}; scroll distance: ${scrollDist}; num captures: ${numCaptures}; dist to scroll: ${totalDistToScroll}; argument to ceil(): ${totalDistToScroll / scrollDist}; viewport info: ${JSON.stringify(viewportInfo)}`);
+        //todo once scrolling of dialog content is implemented, this will need to be updated
+        if (totalDistToScroll > 1 && !isInDialog) {numCaptures += Math.ceil(totalDistToScroll / scrollDist);}
+        this.logger.debug(`scrolling through page to capture general page info for batch; viewport height: ${viewportHeight}; scroll distance: ${scrollDist}; num captures: ${numCaptures}; dist to scroll: ${totalDistToScroll}; argument to ceil(): ${totalDistToScroll / scrollDist}; viewport info: ${JSON.stringify(viewportInfo)}; is in dialog?: ${isInDialog}`);
 
         const checkAtBottom = (): boolean => {
             const currViewportInfo = this.domWrapper.getViewportInfo();
+            //todo once scrolling of dialog content is implemented, this will need to be updated
             return currViewportInfo.pageScrollHeight - currViewportInfo.height - currViewportInfo.scrollY < 1;
         }
 
         for (let captureIdx = 0; captureIdx < numCaptures; captureIdx++) {
             const resp = await this.chromeWrapper.sendMessageToServiceWorker(
-                {reqType: PageRequestType.GENERAL_SCREENSHOT_FOR_SAFE_ELEMENTS,});
+                {reqType: PageRequestType.GENERAL_SCREENSHOT_FOR_SAFE_ELEMENTS});
             if (resp.success) {
                 this.logger.trace(`successfully got service worker to take general screenshot at scroll position ${this.domWrapper.getVertScrollPos()}`);
             } else {
@@ -97,9 +104,13 @@ export class PageDataCollector {
             }
             const tsAfterScreenshot = performance.now();
             generalViewportDetailsCaptures.push(this.domWrapper.getViewportInfo());
-            generalInteractiveElementsCaptures.push(this.browserHelper.getInteractiveElements()
+            //when a dialog is open, elements outside the viewport will in fact be buried in background (blocked by
+            // the dialog's overlay) but code for detecting an element being buried in background won't work for them
+            // so we just don't capture them
+            generalInteractiveElementsCaptures.push(this.browserHelper.getInteractiveElements(isInDialog)
                 .map(makeElementDataSerializable));
             if (captureIdx < numCaptures - 1) {//i.e. didn't just complete the last capture
+                //todo once scrolling of dialog content is implemented, this will need to be updated
                 this.domWrapper.scrollBy(0, scrollDist, "instant");
                 // wait before next screenshot or the final scroll position check, in case 'instant' in ui terms is still
                 // slower than javascript execution
@@ -116,8 +127,9 @@ export class PageDataCollector {
             ) {this.logger.warn(`final viewport info before last general page info capture doesn't indicate that we reached the bottom of the page; final viewport info: ${JSON.stringify(this.domWrapper.getViewportInfo())}`);}
         }
 
-        this.domWrapper.scrollBy(0, initialVertScrollPos - this.domWrapper.getVertScrollPos());//scroll back to initial position
-
+        if (!isInDialog) {//todo once scrolling of dialog content is implemented, this will need to be updated
+            this.domWrapper.scrollBy(0, initialVertScrollPos - this.domWrapper.getVertScrollPos());//scroll back to initial position
+        }
         try {
             this.portToBackground.postMessage({
                 type: Page2AnnotationCoordinatorPortMsgType.GENERAL_PAGE_INFO_FOR_BATCH,

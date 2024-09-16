@@ -62,6 +62,7 @@ export class ActionAnnotationCoordinator {
 
     batchId: string | undefined;
     batchStartTimestamp: number | undefined;
+    isBatchInDialog: boolean = false;
 
     //start-of-batch data collection (to allow later creation of training data points for 'safe' elements/actions from
     // the batch's zip archive)
@@ -155,7 +156,7 @@ export class ActionAnnotationCoordinator {
 
     handleMessageFromSidePanel = async (message: any, sidePanelPort: Port): Promise<void> => {
         if (message.type === PanelToAnnotationCoordinatorPortMsgType.START_ANNOTATION_BATCH) {
-            await this.mutex.runExclusive(async () => await this.ensureScriptInjectedAndStartBatch(sidePanelPort));
+            await this.mutex.runExclusive(async () => await this.ensureScriptInjectedAndStartBatch(message, sidePanelPort));
         } else if (message.type === PanelToAnnotationCoordinatorPortMsgType.ANNOTATION_DETAILS) {
             await this.mutex.runExclusive(async () => this.processAnnotationDetails(message));
         } else if (message.type === PanelToAnnotationCoordinatorPortMsgType.END_ANNOTATION_BATCH) {
@@ -187,7 +188,7 @@ export class ActionAnnotationCoordinator {
         this.portToContentScript.postMessage({type: AnnotationCoordinator2PagePortMsgType.REQ_ACTION_DETAILS_AND_CONTEXT});
     }
 
-    private async ensureScriptInjectedAndStartBatch(sidePanelPort: Port) {
+    private async ensureScriptInjectedAndStartBatch(message: any, sidePanelPort: Port) {
         if (this.batchId) {
             this.logger.warn(`asked to start annotations batch while batch id ${this.batchId} is still defined; ignoring`);
             sidePanelPort.postMessage({
@@ -204,7 +205,13 @@ export class ActionAnnotationCoordinator {
             });
             return;
         }
+        let inDialogVal = message.isInDialog;
+        if (typeof inDialogVal !== "boolean") {
+            this.logger.error(`asked to start annotations batch with invalid flag ${renderUnknownValue(inDialogVal)} for whether the batch is for capturing elements in a dialog; defaulting to assumption that it isn't in dialog`);
+            inDialogVal = false;
+        }
 
+        this.isBatchInDialog = inDialogVal;
         const currTabInfo = await this.swHelper.getActiveTab();
         if (this.idOfTabWithCapturer === undefined || currTabInfo.id !== this.idOfTabWithCapturer) {
             this.logger.trace(`injecting content script in tab ${currTabInfo.id} for batch of annotation captures`);
@@ -243,8 +250,10 @@ export class ActionAnnotationCoordinator {
             details: `batch id: ${this.batchId}; batch start timestamp: ${renderTs(this.batchStartTimestamp)}`
         });
         this.state = AnnotationCoordinatorState.WAITING_FOR_GENERAL_PAGE_INFO_FOR_BATCH;
-        this.portToContentScript.postMessage(
-            {type: AnnotationCoordinator2PagePortMsgType.REQ_GENERAL_PAGE_INFO_FOR_BATCH});
+        this.portToContentScript.postMessage({
+            type: AnnotationCoordinator2PagePortMsgType.REQ_GENERAL_PAGE_INFO_FOR_BATCH,
+            isInDialog: this.isBatchInDialog
+        });
     }
 
     concludeAnnotationsBatch = async () => {
@@ -556,6 +565,7 @@ export class ActionAnnotationCoordinator {
         const zip = new JSZip();
         const batchDetailsObj = {
             batchId: this.batchId,
+            isInDialog: this.isBatchInDialog,
             startTimestamp: this.batchStartTimestamp ? new Date(this.batchStartTimestamp).toISOString() : undefined,
             endTimestamp: new Date().toISOString(),
             pageUrl: this.pageUrlForBatch, pageTitle: this.pageTitleForBatch,
@@ -758,6 +768,7 @@ export class ActionAnnotationCoordinator {
         this.portToSidePanel?.postMessage(
             {type: AnnotationCoordinator2PanelPortMsgType.NOTIFICATION, msg: reason, details: details});
         this.state = AnnotationCoordinatorState.IDLE;
+        this.isBatchInDialog = false;
         this.batchId = undefined;
         this.batchStartTimestamp = undefined;
         this.startOfBatchScreenshots = [];

@@ -112,7 +112,7 @@ export class IframesMonitor {
             iframePositionsToCheck.forEach(
                 (_, iframe) => {this.checkIframePosition(iframe);});
             const positionCheckDuration = performance.now() - iframePositionsCheckStart;
-            if (positionCheckDuration > 100) {this.logger.warn(`Iframe positions check took ${positionCheckDuration}ms`);}
+            if (positionCheckDuration > 100) {this.logger.warn(`Iframe positions check took ${positionCheckDuration.toFixed(5)}ms`);}
         }, this.checkInterval);
     }
 
