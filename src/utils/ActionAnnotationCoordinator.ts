@@ -565,6 +565,7 @@ export class ActionAnnotationCoordinator {
         const zip = new JSZip();
         const batchDetailsObj = {
             batchId: this.batchId,
+            isInDialog: this.isBatchInDialog,
             startTimestamp: this.batchStartTimestamp ? new Date(this.batchStartTimestamp).toISOString() : undefined,
             endTimestamp: new Date().toISOString(),
             pageUrl: this.pageUrlForBatch, pageTitle: this.pageTitleForBatch,

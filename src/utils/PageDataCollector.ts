@@ -104,7 +104,10 @@ export class PageDataCollector {
             }
             const tsAfterScreenshot = performance.now();
             generalViewportDetailsCaptures.push(this.domWrapper.getViewportInfo());
-            generalInteractiveElementsCaptures.push(this.browserHelper.getInteractiveElements()
+            //when a dialog is open, elements outside the viewport will in fact be buried in background (blocked by
+            // the dialog's overlay) but code for detecting an element being buried in background won't work for them
+            // so we just don't capture them
+            generalInteractiveElementsCaptures.push(this.browserHelper.getInteractiveElements(isInDialog)
                 .map(makeElementDataSerializable));
             if (captureIdx < numCaptures - 1) {//i.e. didn't just complete the last capture
                 //todo once scrolling of dialog content is implemented, this will need to be updated
