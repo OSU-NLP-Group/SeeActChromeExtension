@@ -499,11 +499,14 @@ export class BrowserHelper {
         // this isn't a perf bottleneck in agent use case, but it is in the action annotation/data-collection use case
         (elemFetchDuration < 500 ? this.logger.debug : this.logger.info)(`time to fetch interactive elements: ${elemFetchDuration.toFixed(5)} ms`);
 
-        const interactiveElementsData = Array.from(uniqueInteractiveElements)
-            .map(element => this.getElementData(element))
-            .filter(Boolean) as ElementData[];
-        //only add index after filtering b/c some interactive elements are discarded when not able to generate descriptions for them
-        interactiveElementsData.forEach((elementData, index) => { elementData.interactivesIndex = index; })
+        const interactiveElementsData = uniqueInteractiveElements.map((element, index) => {
+            const elementData = this.getElementData(element);
+            elementData.interactivesIndex = index;
+            return elementData;
+        })
+        //todo consider filtering based on elements having excessively high overlap % in their bounding boxes, at which
+        // point this should pick one using this.judgeOverlappingElementsForForeground()
+        // can reuse some logic from PageDataCollector.sortBestTargetElemFirst()
 
         return interactiveElementsData;
     }
