@@ -377,6 +377,12 @@ export class BrowserHelper {
         }
         if (!doesElemSeemInvisible && !isDocHostElem) {
             //skipping this for elements that are fully outside the viewport
+            //todo this performance boost can lead to elements being incorrectly included in weird scenarios:
+            // on amazon.com, if a modal dialog is open, grabbing the bounding client rect for an element in the main
+            // page (i.e. buried in background behind the dialog) can at least sometimes yield coordinates that are
+            // relative to the page origin (rather than the normal behavior of coordinates relative to the viewport);
+            // this can lead to the element being incorrectly treated as outside the viewport and thus not being checked
+            // for being buried in the background
             if (!this.isFullyOutsideViewport(element, iframeNode)) {
                 let backgroundCheckMsg = ``;
                 if (shouldDebug) {
