@@ -143,7 +143,7 @@ export class ElementHighlighter {
             this.highlightedElementStyle = undefined;
             this.highlightedElementOriginalOutline = undefined;
 
-            await sleep(elementHighlightRenderDelay);
+            await sleep(3*elementHighlightRenderDelay);
         } else { this.logger.trace("unable to clear element highlighting because no temporary style object is stored for a highlighted element"); }
     }
 

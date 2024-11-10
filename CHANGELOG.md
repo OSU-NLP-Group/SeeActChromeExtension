@@ -6,7 +6,7 @@ Nontrivial changes to the extension are documented here.
 ### Added
 
 ### Updated
-
+-  reduce risk of previous annotation's element highlighting still being visible in the context screenshot of the next annotation
 ### Removed
 
 ## [0.5.1] - 2024-09-16

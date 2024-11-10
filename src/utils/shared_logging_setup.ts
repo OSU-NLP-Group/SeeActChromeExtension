@@ -30,10 +30,14 @@ chrome.storage.local.get(storageKeyForLogLevel).then((items) => {
 });
 
 //todo rename this to activityIdHolder so it can hold either a taskId uuid (for agent scaffolding)
-// or a batchId uuid (for action annotation);
+//  or a batchId uuid (for action annotation);
 // This would be part of splitting the log export code out of AgentController and into ServiceWorkerHelper (or even
-// a separate class that ServiceWorkerHelper delegated to) and making the log export code able to also constrain the
-// timeframe (e.g. to last 1 hour)
+//  a separate class that ServiceWorkerHelper delegated to) and making the log export code able to more flexibly
+//  constrain the timeframe
+// Better idea is to stop indexing by some temporary-activity's id and just index by timestamp. Then, when exporting
+//  logs, the relevant class (i.e. AgentController or ActionAnnotationCoordinator) can use starting and ending
+//  timestamps that it had captured for the task or batch it was finishing up, and then it can filter the logs by
+//  timestamp range. Another nice thing is that I could eliminate this ugly/risky global variable
 export const taskIdHolder: { currTaskId: string | undefined } = {currTaskId: undefined};
 export const taskIdPlaceholderVal = "UNAFFILIATED";
 
@@ -56,7 +60,7 @@ export interface AgentDb extends DBSchema {
             taskId: string;
             msg: string;
         };
-        indexes: { 'by-ts': string, 'by-task': string };
+        indexes: { 'by-ts': string, 'by-task': string };//todo remove task index
     };
     screenshots: {
         key: string;
