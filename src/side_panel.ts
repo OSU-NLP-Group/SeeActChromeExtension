@@ -36,8 +36,10 @@ if (!(annotatorExplanationField && annotatorExplanationField instanceof HTMLText
 const annotatorStatusDiv = document.getElementById('annotator-status');
 if (!(annotatorStatusDiv && annotatorStatusDiv instanceof HTMLDivElement)) throw new Error('valid annotator status div not found');
 
+//buttons rather than links b/c we want to open in new tab and <a> behaves unintuitively in side panel
+const annotationGuideButton = document.getElementById('annotation-guide');
+if (!(annotationGuideButton && annotationGuideButton instanceof HTMLButtonElement)) throw new Error('valid annotation-guide button not found');
 
-//button rather than link b/c we want to open in new tab and <a> behaves unintuitively in side panel
 const userGuideButton = document.getElementById('user-guide');
 if (!(userGuideButton && userGuideButton instanceof HTMLButtonElement)) throw new Error('valid user-guide button not found');
 
@@ -114,6 +116,7 @@ document.addEventListener('mousemove', (e) => {
 });
 
 eulaReviewButton.addEventListener('click', () => chrome.tabs.create({url: './src/installation_greeting.html'}));
+annotationGuideButton.addEventListener('click', () => chrome.tabs.create({url: 'How_to_annotate_state_changing_actions_with_SeeAct_Chrome_Extension.pdf'}));
 userGuideButton.addEventListener('click', () => chrome.tabs.create({url: 'user_manual.pdf'}));
 
 annotatorStartButton.addEventListener('click', manager.startActionAnnotationBatch);

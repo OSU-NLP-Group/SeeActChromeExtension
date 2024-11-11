@@ -6,12 +6,16 @@
 </head>
 <body class="h-full bg-gray-100 p-2 space-y-1">
 <div id="eula-complaint" hidden="hidden">
-    <span class="text-xl block">Extension functionality is disabled until EULA and Privacy Policy have been reviewed and agreed to</span>
-    <button id="eula-review" class="border-2 p-1 m-1 font-bold">Review EULA and Privacy Policy</button>
+    <span class="text-xl block">Extension functionality is disabled until License Agreement and Privacy Policy have been reviewed and agreed to</span>
+    <button id="eula-review" class="border-2 p-1 m-1 font-bold">Review License Agreement and Privacy Policy</button>
 </div>
 
 <div id="annotator-mode-container" class="space-y-1 bg-fuchsia-100/50 border p-1 rounded-lg" style="display: none">
-    <h2 class="text-xl font-bold text-center">Annotator Mode</h2>
+
+    <div class="flex justify-between">
+        <h2 class="text-xl font-bold text-center">Annotator Mode</h2>
+        <button id="annotation-guide" class="border-2 px-0.5 py-0 rounded-lg font-bold">Annotation Tool Guide</button>
+    </div>
     <div class="flex justify-evenly">
         <button id="action-annotator-start"
                 class="flex items-center border-2 px-2 py-1 bg-fuchsia-200 hover:bg-fuchsia-300 rounded-lg"
@@ -75,7 +79,7 @@ Meanwhile, deleting any file, post, task, message, etc. in a way that cannot fea
                title="the task should be completable when starting from the website which is loaded in the current tab">
             Agent Task Specification
         </label>
-        <button id="user-guide" class="border-2 px-0.5 py-0 rounded-lg font-bold">User Guide</button>
+        <button id="user-guide" class="border-2 px-0.5 py-0 rounded-lg font-bold">General User Guide</button>
     </div>
     <textarea id="task-spec" class="w-full h-24 p-2 mb-1 border bg-emerald-100/50 rounded resize-y"
               placeholder="Enter a task specification for the SeeAct agent"></textarea>
