@@ -15,9 +15,12 @@ These screenshots and HTML data may contain personal information (e.g. from the 
 ## How customer information is used
 This data is only ever sent to a server of the user's choice (see "AI Model Provider" configuration option). Even then, it is only sent so that it can be fed to an AI model to make decisions on the user's behalf.   
 The user should consult the privacy policy of their chosen AI Model Provider for how it handles customer data that is sent to its API's. Many of them commit to not training their models on data sent to their API's (a guarantee they frequently do not make for use of their chatbot web pages).
-Please be aware that the Google Gemini API's [Free Tier will train on user data](https://ai.google.dev/pricing#1_5pro) (as of 2024Nov11), but the Google Gemini API's [Paid Tier will not](https://ai.google.dev/gemini-api/terms#data-use-paid).  
 
-The data is stored _locally_ on the user's machine to allow for review of the agent's decisions and of the behavior of the extension. However, a given screenshot or other piece of stored information is automatically deleted after 14-28 days.   
+As of 2024 November 11th:  
+OpenAI [commits to not training on data sent to its API's](https://help.openai.com/en/articles/5722486-how-your-data-is-used-to-improve-model-performance#h_8899b17988) unless you opt into that. Likewise, Anthropic commits to [not training on data sent to its API's](https://privacy.anthropic.com/en/articles/7996868-i-want-to-opt-out-of-my-prompts-and-results-being-used-for-training-models) unless you opt into that.
+Please be aware that the Google Gemini API's [Free Tier will train on user data](https://ai.google.dev/pricing#1_5pro), but the Google Gemini API's [Paid Tier will not](https://ai.google.dev/gemini-api/terms#data-use-paid). 
+
+The data is stored _locally_ on the user's machine to allow for review of the agent's decisions and of the behavior of the extension. However, a given screenshot or other piece of stored information is automatically deleted after 14-28 days. In rare cases, data may persist for several weeks longer than this if the browser interferes with the extension's delayed-action triggers.   
 Finally, the collection of potentially-sensitive data only occurs during a user-initiated task or batch of annotations, and the user can terminate the task or annotation batch at any time.
 Technically, after the end of an annotation-batch and before page reload or navigation, the extension still passively monitors mouse movements and page state changes to allow for the user to start another annotation batch with less delay. This monitoring would only cause the storage of log messages containing snippets of information about HTML 'iframes' and it would be unlikely for those snippets to contain sensitive data.  
 
