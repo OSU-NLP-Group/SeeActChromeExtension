@@ -730,6 +730,9 @@ export class AgentController {
             this.isMonitorModeTempEnabled = true;
             this.cachedMonitorMode = true;
 
+            //todo could improve UX here by making the browser generate a sound effect from the computer's speakers
+            // (to alert the user to return to the computer if they'd been doing something else while waiting for the
+            // agent to complete a task independently in a low-risk context)
             try {
                 this.portToSidePanel.postMessage({
                     type: AgentController2PanelPortMsgType.AUTO_MONITOR_ESCALATION, severity: severity,
