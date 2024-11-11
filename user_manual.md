@@ -70,7 +70,7 @@ will have tooltips with more detail when you hover over them.
     - The feedback field will only work when the Reject button is clicked, not when the reject keyboard shortcut is used.
 
 ## Using the Extension's 'Unsafe Action Annotation' Feature
-Please see [this separate document](https://github.com/BareBeaverBat/SeeActChromeExtension/blob/How_to_annotate_state_changing_actions_with_SeeAct_Chrome_Extension.pdf).
+Please see [this separate document](https://github.com/BareBeaverBat/SeeActChromeExtension/blob/main/How_to_annotate_state_changing_actions_with_SeeAct_Chrome_Extension.pdf).
 
 ## Troubleshooting
 
