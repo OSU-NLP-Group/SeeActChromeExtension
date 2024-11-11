@@ -4,13 +4,20 @@ Nontrivial changes to the extension are documented here.
 
 ## [Unreleased]
 ### Added
+
+### Updated
+
+### Removed
+
+
+## [1.0.0] - 2024-11-11
+### Added
 - User docs for annotator mode, which can be accessed from within the extension's side panel
 - Open RAIL-S license
 ### Updated
-- reduce risk of previous annotation's element highlighting still being visible in the context screenshot of the next annotation
-- update installation instructions in README.md
-- update various details in README.md, user manual, and privacy policy 
-### Removed
+- Reduce risk of previous annotation's element highlighting still being visible in the context screenshot of the next annotation
+- Installation instructions in README.md
+- Various details in README.md, user manual, and privacy policy
 
 ## [0.5.1] - 2024-09-16
 ### Added
