@@ -1,84 +1,68 @@
-# OsuNlpGrpSeeActChromeExtension
+# SeeActChromeExtension
 
-Chrome extension to allow end-users to leverage the logic/behavior of the Python code in the SeeAct repository (i.e.
-just installing a chrome extension from chrome web store rather than having to install python and playwright locally and
-then download/run SeeAct). It also allows them to use their own login sessions (since it runs in their existing Chrome
-window/tab rather than in a separate/playwright-created browser window).
-
-TODO before chrome-web-store submission: copy the user_manual.md, privacy_policy.pdf, and rail_a_eula.pdf files 
-  to a chrome_extension folder in the main branch of OSU-NLP-Group/SeeAct repo
+Chrome extension to allow end-users to leverage the logic/behavior of the Python code in 
+the [SeeAct repository](https://github.com/OSU-NLP-Group/SeeAct/tree/main) (i.e. just loading a chrome extension 
+rather than having to install python and playwright locally and then download/run SeeAct). It also allows them to use 
+their own login sessions (since it runs in their existing Chrome window/tab rather than in a separate/playwright-created 
+browser window).
 
 # Setup
 
-The zip of this repo included the dist folder for ease of installing the built extension. However, the zip omits the 
-node_modules folder as it's irrelevant for quick installation.
+## End users of Chrome extension
+
+A prepared zip file of each official version of the extension can be found in the [releases section](https://github.com/BareBeaverBat/SeeActChromeExtension/releases) of this repo.
+Once you download the zip file for a version of your choice, you can extract its contents to a folder on your computer.
 ![unzipping archive](images/unzipping.png)
 
 The below installation instructions err on the side of excessive detail on the theory that people for whom this is excessive
-can probably figure out most of the installation process without this guide.
+can probably figure out most of the installation process without this guide. Click [here](#developers) to jump past this
 
-Once you have extracted the contents of the repo, please follow these steps to load the extension into Chrome:
+Once you have extracted the contents of the release zip, please follow these steps to load the extension into Chrome:
 1. Open a new tab in Chrome.
-2. Enter "chrome://extensions" in the address bar and press enter.
+2. Enter "chrome://extensions" in the address bar and press Enter.
 3. Ensure that the "Developer mode" switch in the upper right corner is turned on.
 4. Click the "Load unpacked" button.
-![button for loading extension](images/setup_step4.png)
-5. Navigate to the dist folder in the extracted contents of the repo, and click the "Select Folder" button.
-![Loading dist folder into Chrome](images/loading_dist_into_chrome.png)
-6. Switch to another tab and click on the "Extensions" puzzle-piece icon near upper right corner of window
-![Opening Extensions dropdown](images/setup_step6.png)
-7. Click the pin icon next to the "SeeAct Web Agent for Chrome" extension to make its icon show up in the browser's upper right corner. 
-![Pin extension to toolbar](images/pinning_extension.png)
-8. Click the extension's icon (robot next to monitor) to open the extension's side-panel.
-![Opening extension's side panel](images/open_side_panel.png)
-9. Open the Options menu by clicking the button with that name in upper left corner of the side panel
-![Opening options menu](images/open_options_menu.png)
-10. Enter your API key for the OpenAI API so that the extension's web agent can run on GPT-4 models.
-![Entering OpenAI API key](images/set_openai_api_key.png)
-11. Save the options changes with the "Save" button
-![Saving options changes](images/save_options_changes.png)
+   ![button for loading extension](images/click_load_unpacked.png)
+5. Navigate to the dist folder in the release zip and click the "Select Folder" button.
+   ![Loading dist folder into Chrome](images/loading_dist_into_chrome.png)
+6. In the resulting "installation greeting" page, review the privacy policy and license agreement, then click the "I agree ..." button at the bottom to enable the extension's functionality.
+   ![Accepting Privacy Policy and License Agreement](images/accepting_privacy_policy.png)
+7. Click on the "Extensions" puzzle-piece icon near upper right corner of window
+   ![Opening Extensions dropdown](images/opening_extensions_dropdown.png)
+8. Click the pin icon next to the "SeeAct Web Agent for Chrome" extension to make its icon show up in the browser's upper right corner.
+   ![Pin extension to toolbar](images/pinning_extension.png)
+9. Click the extension's icon (robot next to monitor) to open the extension's side-panel.
+   ![Opening extension's side panel](images/open_side_panel.png)
+10. Open the Options menu by clicking the button with that name in lower left corner of the side panel
+    ![Opening options menu](images/open_options_menu.png)
+11. If you intend to use the web agent functionality, choose an AI provider and enter your API key for that provider's API
+- If you don't have an API key, you can get one from the provider's website after making an account with them (note that this would be a separate account from any account you may have already made for use of that company's chatbot page):
+ - [OpenAI](https://platform.openai.com/signup)
+ - [Anthropic](https://console.anthropic.com/)
+ - [Google DeepMind](https://ai.google.dev/gemini-api/docs/api-key/)
+ ![Entering OpenAI API key](images/set_ai_api_key.png)
+12. Save the options changes with the "Save" button
+    ![Saving options changes](images/save_options_changes.png)
+
+## Developers
+Clone the repository to your local machine and run `npm install` (in a shell where the repository's root directory is the current working directory) to install the necessary dependencies.
 
 # Usage
-Most UI elements (in side panel and options menu) have more explanation of their purpose and behavior in the form of
+Many UI elements (in side panel and options menu) have more explanation of their purpose and behavior in the form of
 tooltips that appear when hovering over the elements' labels.
 
 Also, text blocks in the side panel (under "Action History" or "Pending Action" headings, plus some of the temporary status messages that appear just above the "Pending Action" section) 
 will have tooltips with more detail when you hover over them.
 
-## Opening the Extension's DevTools Window
-This is needed for real-time viewing of logs but is no longer necessary for most use cases because logging is stored and automatically-exported (in the case of a task's logging) or easy-to-export (in the case of non-task-specific logging)
-
-1. Open a new tab in Chrome.
-2. Enter "chrome://extensions" in the address bar and press enter.
-3. Find the "SeeAct Web Agent for Chrome" extension in the list of extensions.
-4. There will be a line "Inspect views: service worker"; with the "service worker" part being a link. Click that link.
-![Inspecting Service Worker](images/open_service_worker_console.png)
-
-TODO? add updated screenshots that reflect side-panel-based ui
-## Starting a Task
-1. To ensure that the browser's focus is in the appropriate tab, please click somewhere in the tab which you want the 
-agent to act in, just before starting a task.
-2. Click the extension's icon (robot next to monitor) to open the extension's side-panel.
-3. Type a task description into the "Task Specification" text box and click the "Start Task" button.  
-
-Please be sure not to click anything outside the web agent's window/tab while a task is running, as this
-will cause an error and the task will be terminated.
-
-## Terminating a Task
-If the agent does something undesirable, becomes stuck in a loop, goes in a non-viable direction, etc.,
-you can terminate the task by clicking the "Terminate Task" button in the side panel. This will ensure that the agent
-does not initiate any further actions in the current task (including when it is partway through planning a next action).
-
-## Hover Action
-In order for the agent to be able to perform a hover action, the user's actual mouse cursor must be moved outside the
-bounds of the window which the web agent is operating in, immediately after the "start task" button had been clicked 
-in the extension's side panel. Alternatively, the user's actual cursor can be kept in the side panel in the current window.
+Please see the [user manual](user_manual.pdf) for more details.
 
 ## Logs
 For a given task, almost all of the logs related to it will have been associated with its task id and will be automatically
 exported upon task termination (whether by task-completion, error, or user intervention) to a zip file in the downloads folder (along with screenshots and a few summary json files about the task).
 
 However, logs related to the options menu will only be accessible by clicking the "Download misc logs" button near the bottom right corner of the side panel.
+
+Likewise, logs related to a batch of annotations of unsafe actions will only be accessible by clicking the "Download misc logs" button.
 
 Also, more troublesomely, a handful of the first logs that're conceptually/temporally related to a task and several of the last logs that're conceptually/temporally related to a task will not be associated with the task id and will not be exported in that task's zip file. These logs can be found based on timestamp in the "non-task-specific" logs export by clicking the "Export non-task-specific logs" button (in the upper right corner of the side panel) again a bit after the task ended.
 
@@ -95,7 +79,7 @@ White-box as well as black-box types of unit tests (both using jest).
 
 ## Logging
 
-TRACE log level has the same meaning as in java/c#/etc, not the meaning it has in js console.trace() (which prints out 
+TRACE log level has the same meaning as in Java/C#/etc, not the meaning it has in JavaScript console.trace() (which prints out 
 a stack trace to the calling line of code)
 
 Use WARN for problems from user input or AI model outputs being bad (even if those problems cause task failure)  
@@ -116,10 +100,10 @@ Regex for finding log messages that are trying to tell the developer about somet
 I'm using ".58495" (as a 4th number in the chrome extension version in the manifest.json) to indicate that the current
 unpacked extension install is a snapshot version (not an official/finalized release). This is needed because the
 version number in the chrome extension's manifest.json file must be a string that matches the regex
-`^(\d+\.\d+\.\d+\.\d+)$` (i.e. 4 numbers separated by periods).
+`^(\d+(\.\d+){0,3})$` (i.e. up to 4 numbers separated by periods).
 
-The official distributed zip files are being named like this `OsuNlpGrpSeeActChromeExtn-A-B-C.zip`
-and the snapshot distributed zip files like this `OsuNlpGrpSeeActChromeExtn-A-B-C-SOMETHING-SNAPSHOT-#.zip`
+The official distributed zip files are being named like this `SeeActChromeExtension-A-B-C.zip`
+and the snapshot distributed zip files like this `SeeActChromeExtension-A-B-C-SOMETHING-SNAPSHOT-#.zip`
 where A, B, and C are the major, minor, and patch version numbers respectively. The SOMETHING part is a string that
 provides context about the reason for the creation of the snapshot zip file, and the # is a number that is incremented 
 each time a new snapshot zip file is created for the same troubleshooting purpose.

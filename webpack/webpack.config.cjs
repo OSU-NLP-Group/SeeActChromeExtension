@@ -69,14 +69,15 @@ module.exports = {
             patterns: [
                 {from: path.resolve(root, "manifest.json"), to: path.resolve(root, "dist")},
                 {from: path.resolve(root, "privacy_policy.pdf"), to: path.resolve(root, "dist")},
-                // {from: path.resolve(root, "rail_a_eula.pdf"), to: path.resolve(root, "dist")}, todo uncomment this line when the EULA is ready
+                {from: path.resolve(root, "How_to_annotate_state_changing_actions_with_SeeAct_Chrome_Extension.pdf"), to: path.resolve(root, "dist")},
                 {from: path.resolve(root, "user_manual.pdf"), to: path.resolve(root, "dist")},
                 {
                     from: "images", to: path.resolve(root, "dist", "images"), context: root,
                     globOptions: {
-                        ignore: ["**/loading_dist_into_chrome.png", "**/open_options_menu.png",
-                            "**/open_service_worker_console.png", "**/open_side_panel.png", "**/pinning_extension.png",
-                            "**/set_openai_api_key.png", "**/setup_step*.png", "**/unzipping.png", "**/save_options_changes.png"]
+                        ignore: ["**/accepting_privacy_policy.png", "**/click_load_unpacked.png",
+                            "**/loading_dist_into_chrome.png", "**/open_options_menu.png", "**/open_side_panel.png",
+                            "**/opening_extensions_dropdown.png", "**/pinning_extension.png", "**/save_options_changes.png",
+                            "**/set_ai_api_key.png", "**/unzipping.png"]
                     }
                 },
             ]
