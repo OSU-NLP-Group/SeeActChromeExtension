@@ -48,12 +48,12 @@ export const AiProviders = {
     },
     ANTHROPIC: {
         id: "ANTHROPIC", label: "Anthropic", storageKeyForApiKey: "anthropicApiKey",
-        defaultModelName: "claude-3-5-sonnet-20240620", supportsToolUse: true,
+        defaultModelName: "claude-3-5-sonnet-20241022", supportsToolUse: true,
         engineCreator: (creationOptions: AiEngineCreateOptions) => new AnthropicEngine(creationOptions)
     },
     GOOGLE_DEEPMIND: {
         id: "GOOGLE_DEEPMIND", label: "Google DeepMind", storageKeyForApiKey: "googleDeepmindApiKey",
-        defaultModelName: "gemini-1.5-pro", supportsToolUse: true,
+        defaultModelName: "gemini-1.5-pro-002", supportsToolUse: true,
         engineCreator: (creationOptions: AiEngineCreateOptions) => new GoogleDeepmindEngine(creationOptions)
     }
     //can later add Aliyun API (for Qwen-VL-Max) and Ollama (for local/personal hosting of misc small VLM's like phi-3-vision or paligemma)

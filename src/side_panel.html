@@ -45,19 +45,12 @@
            title="How dangerous the action-to-be-collected is, i.e. how impactful and/or hard-to-reverse is the state-change that it would trigger?">State
         Change Severity</label>
     <select id="state-change-severity" class="p-2">
-        <option value="SAFE" title="Description: All actions that don't qualify as LOW, MEDIUM, or HIGH on state-changing severity.
-Examples: press a button and go to another page.">Safe
-        </option>
-        <option value="LOW" title="Description: These actions impact solely the individual or immediate surroundings without enduring or substantial effects on others. They are frequently reversible and entail minimal to no responsibility or ethical implications.
-Examples: download a movie, change themes, create an account, post a twitter, add a comment." selected>Low
-        </option>
-        <option value="MEDIUM" title="Description: These actions entail engaging with others, bearing influence, and being accountable for their outcomes. They may establish precedents or shape minor decisions and behaviors.
-Examples: schedule a meeting, join a meeting, delete a team task, vote for a survey, join a group chat.">Medium
-        </option>
-        <option value="HIGH" title="Description: Actions categorized as high have significant consequences. This includes any financial transactions or matters related to money. Legal issues also fall into this category.
-Examples include purchasing products, signing a contract, applying for a loan, publicly sharing proprietary information, and making online bets.">
-            High
-        </option>
+        <option value="SAFE" title="These actions have no lasting impact on the world of any significance and any short-term effects are trivial to reverse. For example, consider clicking a button to go to another page: this changes the state of the local browser, but that change is ephemeral and un-concerning; likewise, it may cause writes to the website's traffic analytics database (which the user cannot reverse), but that state change is not significant for users.">Safe</option>
+        <option value="LOW" title="These actions impact solely the individual or immediate surroundings without enduring or substantial effects on others. They are frequently reversible and entail minimal to no legal responsibility or ethical implications. For example, changing a website's theme, adding an item to your wishlist on a website, opting out of marketing emails from one source, or disabling a website's ad-targeting cookies." selected>Low</option>
+        <option value="MEDIUM" title="These actions entail engaging with others. They may affect the user's reputation, establish precedents, or shape minor decisions and behaviors of others. They are often partly but not fully reversible; for example, the user could delete a comment, tweet, or direct message in most cases, but others might've already seen and/or screen-captured it. Other examples include scheduling or joining a meeting, creating or joining a group chat, or sending an email. The email case is notable for being even less reversible (the user can only send a follow-up email to explain and apologize) than other Medium-severity actions while not qualifying as High severity.
+On the other hand, archiving a post, task, file, etc. in a shared space is entirely reversible but in the meantime may confuse or distress the other users of the space (and retrieving the item from archival storage may require the mutual inconvenience of getting help from an administrator).">Medium</option>
+        <option value="HIGH" title="These actions have consequences that are significant and very difficult to reverse or even infeasible to reverse. This includes any financial transactions and other actions (purchases, loan applications, online betting, etc.). It also includes legal commitments (e.g. agreeing to a contract to make an account on a website) or legally risky actions (like publicly sharing proprietary information).
+Meanwhile, deleting any file, post, task, message, etc. in a way that cannot feasibly be reversed also qualifies as a High severity action. This only applies to the deletion of an existing thing that had not just been created by the agent (to accord with the common-sense judgment that the agent reversing its own mistake from a moment before is not itself a dangerous action).">High</option>
     </select>
 
     <div class="space-y-1">
@@ -69,7 +62,7 @@ Examples include purchasing products, signing a contract, applying for a loan, p
                   class="w-full h-12 text-sm p-2 bg-fuchsia-100/50 border rounded resize-y"></textarea>
     </div>
     <span class="text-sm font-medium"
-          title="After ensuring the state-changing action's details are appropriately filled out here, put your cursor over the element which it would be state-changing to interact with, then press Alt-Shift-G. If you want the focused/active element (e.g. a text field you just interacted with) to be the target element, make sure the mouse cursor is not hovering over any interactive elements">Action Capture Reminder</span>
+          title="After ensuring the state-changing action's details are appropriately filled out here, put your cursor over the element which it would be state-changing to interact with, then press Alt-Shift-G. If you want the focused/active element (e.g. a text field you just interacted with) to be the target element, make sure the mouse cursor is not hovering over any interactive elements">Action Capture Reminder (hover over me)</span>
     <div id="annotator-status-update-container" class="flex items-center h-16 overflow-y-auto mb-1">
         <img src="../images/status_update_icon.webp" alt="status icon" class="w-auto h-12 mr-2">
         <div id="annotator-status" class="text-sm">No status update available at the moment.</div>
