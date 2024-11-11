@@ -60,7 +60,7 @@ module.exports = {
                  // Semantic Versioning
                  // The -SNAPSHOT suffix is a Maven convention to indicate that the version is a development version,
                  //  and should be temporarily snipped off when doing a build for an official release version
-                        BUILD_VERSION: "1.0.0",
+                        BUILD_VERSION: "1.0.1-SNAPSHOT",
                   })
          }),
         new CleanWebpackPlugin({cleanOnceBeforeBuildPatterns: pathsToClean}),
