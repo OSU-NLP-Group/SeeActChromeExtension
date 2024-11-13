@@ -1,0 +1,64 @@
+{
+    "manifest_version": 3,
+    "name": "SeeAct Web Agent for Chrome",
+    "version": "1.0.1.58495",
+    "minimum_chrome_version": "120",
+    "description": "Allows the user to invoke the SeeAct web agent to perform tasks in the current browser tab/window.",
+    "permissions": [
+        "scripting", "tabs", "debugger", "storage", "sidePanel", "alarms"
+    ],
+    "host_permissions": [
+        "<all_urls>"
+    ],
+    "icons": {
+        "16": "images/seeact_icon_16.png",
+        "32": "images/seeact_icon_32.png",
+        "48": "images/seeact_icon_48.png",
+        "128": "images/seeact_icon_128.png"
+    },
+    "options_page": "src/options.html",
+    "background": {
+        "service_worker": "src/background.js",
+        "type": "module"
+    },
+    "side_panel": {
+        "default_path": "src/side_panel.html",
+        "width": 400,
+        "height": 1000
+    },
+    "action": {
+        "default_title": "Click to open side panel for directing/supervising ML web agent",
+        "default_icon": {
+            "16": "images/seeact_icon_16.png",
+            "32": "images/seeact_icon_32.png",
+            "48": "images/seeact_icon_48.png",
+            "128": "images/seeact_icon_128.png"
+        }
+    },
+    "commands": {
+        "monitor_approve": {
+            "suggested_key": {
+                "default": "Alt+Shift+J"
+            },
+            "description": "Approve the pending action (in monitor mode)"
+        },
+        "monitor_reject": {
+            "suggested_key": {
+                "default": "Alt+Shift+U"
+            },
+            "description": "Reject the pending action (in monitor mode)"
+        },
+        "capture_annotation": {
+            "suggested_key": {
+                "default": "Alt+Shift+G"
+            },
+            "description": "Capture an annotation of the current pending action (requires annotator mode to be enabled)"
+        }
+    },
+    "cross_origin_embedder_policy": {
+        "value": "require-corp"
+    },
+    "cross_origin_opener_policy": {
+        "value": "same-origin"
+    }
+}

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>SeeAct web agent install</title>
+</head>
+<body class="pl-0.5">
+<h1 class="block text-xl font-bold">Have fun with the SeeAct web agent!</h1>
+
+<label for="install-warnings" class="block text-lg font-semibold">Installation issues:</label>
+<ol id="install-warnings" class="list-decimal"></ol>
+<div id="reassurance"></div>
+<hr>
+<div id="eula-privacy-policy-container">
+    <h2 class="block text-lg font-semibold">Privacy Policy</h2>
+    <object data="../privacy_policy.pdf" type="application/pdf" width="1000" height="1000">
+        This browser does not support PDFs. Please download the Privacy Policy PDF to view it:
+        <a href="../privacy_policy.pdf">Download Privacy Policy</a>.
+    </object>
+
+    <h2 class="block text-lg font-semibold">License Agreement</h2>
+    <span>This extension's source code and all software artifacts generated from it (e.g. an unpacked extension folder that can be loaded into Chrome) are covered by</span>
+    <a href="https://github.com/BareBeaverBat/SeeActChromeExtension/blob/main/LICENSE">an Open RAIL-S license</a>
+    <br>
+    <button id="accept-eula-and-privacy-policy" class="text-lg border-4 m-2 px-4 py-2 "
+            title="~All extension functionality will be disabled until this is clicked">I accept the License Agreement and Privacy Policy
+    </button>
+    <hr>
+</div>
+
+<h1 class="block text-lg font-semibold">Usage advice</h1>
+See the <a href="../user_manual.pdf">User Guide</a> for full details.
+<h2 class="text-base font-medium">Keyboard Shortcuts</h2>
+<div>
+    <ul class="list-inside list-disc">
+        <!--        todo maybe add this later-->
+        <!--        <li>Press <code>Ctrl + Shift + S</code> to start a new task</li>-->
+        <!--        <li>Press <code>Ctrl + Shift + E</code> to end the current task</li>-->
+        <li>In monitor mode, press <code>Alt + Shift + J</code> to approve the agent's proposed next action</li>
+        <li title="this method of rejection does not pass the feedback field's text to the model">In monitor mode, press
+            <code>Alt + Shift + U</code> to reject the agent's proposed next action
+        </li>
+    </ul>
+</div>
+</body>
+</html>

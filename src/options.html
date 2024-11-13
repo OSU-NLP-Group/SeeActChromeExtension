@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <title>SeeAct Agent Options</title>
+</head>
+<body class="h-full w-fit bg-gray-100 p-4 space-y-6">
+<section class="space-y-4 rounded-lg bg-blue-100 p-2">
+    <h1 class="text-2xl font-bold" title="the agent will not be able to run unless these settings are configured">Required Settings</h1>
+    <div class="space-y-2 flex items-center">
+        <label for="model-provider" class="block font-semibold mr-2" title="The provider of the AI model that the agent will use">AI Model Provider</label>
+        <!-- options' value strings must exactly match the 'id' strings in utils/misc.ts!/AiProviders, but display text
+                here doesn't have to match the 'label' string there -->
+        <select id="model-provider" class="w-96 p-2 border rounded">
+            <option value="OPEN_AI" title="currently chosen model is GPT-4o" selected>OpenAI (e.g. ChatGPT)</option>
+            <option value="ANTHROPIC" title="currently chosen model is Claude 3.5 Sonnet">Anthropic (e.g. Claude)</option>
+            <option value="GOOGLE_DEEPMIND"  title="currently chosen model is Gemini 1.5 Pro">Google DeepMind (e.g. Gemini)</option>
+        </select>
+    </div>
+
+    <div class="space-y-2 flex items-center">
+        <label for="open-ai-api-key" class="block font-semibold mr-2" title="Allows the web agent in your browser to leverage Open AI's GPT AI models for analysis and decision-making. This is required if Open AI is selected as the AI model provider">OpenAI API Key</label>
+        <input type="text" id="open-ai-api-key" placeholder="Enter OpenAI API key here" class="w-96 p-2 border rounded">
+    </div>
+
+    <div class="space-y-2 flex items-center">
+        <label for="anthropic-api-key" class="block font-semibold mr-2" title="Allows the web agent in your browser to leverage Anthropic's Claude AI models for analysis and decision-making. This is required if Anthropic is selected as the AI model provider">Anthropic API Key</label>
+        <input type="text" id="anthropic-api-key" placeholder="Enter Anthropic API key here" class="w-96 p-2 border rounded">
+    </div>
+
+    <div class="space-y-2 flex items-center">
+        <label for="google-deepmind-api-key" class="block font-semibold mr-2" title="Allows the web agent in your browser to leverage Google Deepmind's Gemini AI models for analysis and decision-making. This is required if Google Deepmind is selected as the AI model provider">Google Deepmind API Key</label>
+        <input type="text" id="google-deepmind-api-key" placeholder="Enter Google Deepmind API key here" class="w-96 p-2 border rounded">
+    </div>
+
+</section>
+
+<section class="space-y-4 rounded-lg bg-cyan-100 p-2">
+    <h1 class="text-2xl font-bold">Side Panel Behavior</h1>
+    <div class="space-y-2">
+        <div class="flex items-center">
+            <input type="checkbox" id="monitor-mode" class="mr-2">
+            <label for="monitor-mode" class="font-semibold" title="Turning this on will force the web agent to confirm with you before each action">Monitor Mode</label>
+        </div>
+        <div class="flex items-center">
+            <input type="checkbox" id="wipe-prior-history-on-task-start" class="mr-2">
+            <label for="wipe-prior-history-on-task-start" class="font-semibold" title="Turning this on will cause the side panel to wipe the display of prior tasks' actions when starting a new task">Wipe History Display on Task Start</label>
+        </div>
+        <div class="flex items-center">
+            <input type="checkbox" id="annotator-mode" class="mr-2">
+            <label for="annotator-mode" class="font-semibold" title="Turning this on will expose a UI for manual annotation/collection of exhaustive data about state-changing actions (for training is-proposed-action-safe classifier)">Annotator Mode</label>
+        </div>
+    </div>
+</section>
+
+<section class="space-y-4 rounded-lg bg-indigo-100 p-2">
+    <h1 class="text-2xl font-bold" title="How trusting you want to be with the web agent">Agent Controls</h1>
+    <div class="space-y-2">
+        <div class="flex items-center">
+            <label for="max-operations" class="w-64 font-semibold" title="The maximum number of operations that the agent will perform before stopping">Max Operations</label>
+            <input type="number" id="max-operations" min="1" value="100" step="1" class="p-1 border rounded">
+        </div>
+        <div class="flex items-center">
+            <label for="max-noops" class="w-64 font-semibold" title="The maximum number of times that the agent can fail to produce a valid action without being immediately terminated">Max No-Ops</label>
+            <input type="number" id="max-noops" min="0" value="20" step="1" class="p-1 border rounded">
+        </div>
+        <div class="flex items-center">
+            <label for="max-failures" class="w-64 font-semibold" title="The maximum number of times that the agent can choose an action whose execution fails without being immediately terminated">Max Failed Actions</label>
+            <input type="number" id="max-failures" min="0" value="20" step="1" class="p-1 border rounded">
+        </div>
+        <div class="flex items-center">
+            <label for="max-failure-or-noop-streak" class="w-64 font-semibold" title="The maximum number of times in a row that the agent can produce an invalid action or choose an action whose execution fails without being immediately terminated">Max Length of Failure-or-No-Op Streak</label>
+            <input type="number" id="max-failure-or-noop-streak" min="0" value="10" step="1" class="p-1 border rounded">
+        </div>
+        <div class="flex items-center">
+            <label for="auto-monitor-threshold" class="w-64 block font-semibold" title="the lowest level of risk for a proposed action which should trigger the automated monitor to block the action and wait for human review">Safety Monitor Threshold</label>
+            <select id="auto-monitor-threshold" class="w-32 p-1 border rounded">
+                <option value="LOW" title="Description: These actions impact solely the individual or immediate surroundings without enduring or substantial effects on others. They are frequently reversible and entail minimal to no responsibility or ethical implications.
+Examples: download a movie, change themes, create an account, post a twitter, add a comment." selected>Low</option>
+                <option value="MEDIUM" title="Description: These actions entail engaging with others, bearing influence, and being accountable for their outcomes. They may establish precedents or shape minor decisions and behaviors.
+Examples: schedule a meeting, join a meeting, delete a team task, vote for a survey, join a group chat.">Medium</option>
+                <option value="HIGH" title="Description: Actions categorized as high have significant consequences. This includes any financial transactions or matters related to money. Legal issues also fall into this category.
+Examples include purchasing products, signing a contract, applying for a loan, publicly sharing proprietary information, and making online bets.">High</option>
+            </select>
+        </div>
+    </div>
+</section>
+
+<section class="space-y-4 rounded-lg bg-sky-100 p-2">
+    <h1 class="text-2xl font-bold ">Technical/Troubleshooting Options</h1>
+    <div class="space-y-2 flex items-center">
+        <label for="log-level" class="block font-semibold mr-2" title="the minimum level of logs which will be saved (SILENT means no logs will be saved); Setting this to higher values will make it easier to skim through the logs, while setting it to lower values will give more thorough information that is often necessary for troubleshooting">Log Level</label>
+        <select id="log-level" class="w-fit p-2 border rounded">
+            <option value="SILENT">SILENT</option>
+            <option value="ERROR">ERROR</option>
+            <option value="WARN">WARN</option>
+            <option value="INFO">INFO</option>
+            <option value="DEBUG">DEBUG</option>
+            <option value="TRACE" selected>TRACE</option>
+        </select>
+    </div>
+</section>
+
+<!--todo add options for the following:
+        maybe some configurability around how the target-element highlighting works in monitor mode (e.g. outline color, thickness, highlighting-timeout, etc.)
+        maybe configure compression level for saving history at end of task?
+        maybe a flag to disable the exporting of history at end of each task?
+            Adding this would require also introducing ui somewhere to enter a task id and get the history for that task
+            Since user probably wouldn't store task id's, it might really only be nice from user perspective if there
+             was a dropdown with timestamps and task specifications instead of a text field to enter the task id
+-->
+
+
+<hr class="my-6 border-gray-300">
+
+<div id="status-container" class="flex items-center">
+    <label class="font-semibold mr-2">Status:</label>
+    <div id="status-display">Initializing</div>
+</div>
+
+<button id="save" class="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">Save</button>
+<div class="flex justify-around">
+    <a href="https://github.com/BareBeaverBat/SeeActChromeExtension/blob/main/LICENSE">License Agreement</a>
+    <a href="../privacy_policy.pdf">Privacy Policy</a>
+</div>
+</body>
+</html>
