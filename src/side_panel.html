@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <title>SeeAct Chrome Agent</title>
+</head>
+<body class="h-full bg-gray-100 p-2 space-y-1">
+<div id="eula-complaint" hidden="hidden">
+    <span class="text-xl block">Extension functionality is disabled until License Agreement and Privacy Policy have been reviewed and agreed to</span>
+    <button id="eula-review" class="border-2 p-1 m-1 font-bold">Review License Agreement and Privacy Policy</button>
+</div>
+
+<div id="annotator-mode-container" class="space-y-1 bg-fuchsia-100/50 border p-1 rounded-lg" style="display: none">
+
+    <div class="flex justify-between">
+        <h2 class="text-xl font-bold text-center">Annotator Mode</h2>
+        <button id="annotation-guide" class="border-2 px-0.5 py-0 rounded-lg font-bold">Annotation Tool Guide</button>
+    </div>
+    <div class="flex justify-evenly">
+        <button id="action-annotator-start"
+                class="flex items-center border-2 px-2 py-1 bg-fuchsia-200 hover:bg-fuchsia-300 rounded-lg"
+                title="Click this before starting to annotate/capture a batch of SCA's on a page; do not interact in any way with the page (besides hovering/scrolling) during a batch">
+            <img src="../images/annotation_batch_start_icon.webp" alt="start annotation capturer batch"
+                 class="w-auto h-5 mr-2">
+            Start Batch
+        </button>
+        <button id="action-annotator-end" disabled="disabled"
+                class="flex items-center border-2 px-2 py-1 bg-fuchsia-200 hover:bg-fuchsia-300 rounded-lg"
+                title="Click this once you've annotated every SCA on the page that can be seen without clicking any buttons/links/etc.; It's fine, during a batch, to type into a text field so that the annotation of an already-visible SCA will be more realistic">
+            <img src="../images/annotation_batch_end_icon.webp" alt="end annotation capturer batch"
+                 class="w-auto h-5 mr-2">
+            End Batch
+        </button>
+    </div>
+    <div class="flex items-center">
+        <input type="checkbox" id="batch-in-dialog" class="mr-2">
+        <label for="batch-in-dialog" class="font-semibold" title="Please check this when you're starting a batch to annotate unsafe elements inside a dialog or other modal UI that blocks interaction with the rest of the page's content. If you do not set this correctly for each batch, the start-of-batch collection of information about all of the page's interactive elements will malfunction">Is Batch in a Dialog?</label>
+    </div>
+    <label for="action-type" class="block text-base font-medium">Action Type</label>
+    <select id="action-type" class="p-2">
+        <option value="CLICK" selected>Click</option>
+        <option value="PRESS_ENTER">Press Enter</option>
+        <!-- idea for later refinement (if PRESS_ENTER ends up actually being used at all often):
+              if mouse cursor is not in viewport and action type is PRESS_ENTER, have content script
+              try to figure out the target element based on which field is focused instead of which
+              is hovered-over; would need to explain this in the ui somewhere-->
+    </select>
+    <label for="state-change-severity" class="block text-base font-medium"
+           title="How dangerous the action-to-be-collected is, i.e. how impactful and/or hard-to-reverse is the state-change that it would trigger?">State
+        Change Severity</label>
+    <select id="state-change-severity" class="p-2">
+        <option value="SAFE" title="These actions have no lasting impact on the world of any significance and any short-term effects are trivial to reverse. For example, consider clicking a button to go to another page: this changes the state of the local browser, but that change is ephemeral and un-concerning; likewise, it may cause writes to the website's traffic analytics database (which the user cannot reverse), but that state change is not significant for users.">Safe</option>
+        <option value="LOW" title="These actions impact solely the individual or immediate surroundings without enduring or substantial effects on others. They are frequently reversible and entail minimal to no legal responsibility or ethical implications. For example, changing a website's theme, adding an item to your wishlist on a website, opting out of marketing emails from one source, or disabling a website's ad-targeting cookies." selected>Low</option>
+        <option value="MEDIUM" title="These actions entail engaging with others. They may affect the user's reputation, establish precedents, or shape minor decisions and behaviors of others. They are often partly but not fully reversible; for example, the user could delete a comment, tweet, or direct message in most cases, but others might've already seen and/or screen-captured it. Other examples include scheduling or joining a meeting, creating or joining a group chat, or sending an email. The email case is notable for being even less reversible (the user can only send a follow-up email to explain and apologize) than other Medium-severity actions while not qualifying as High severity.
+On the other hand, archiving a post, task, file, etc. in a shared space is entirely reversible but in the meantime may confuse or distress the other users of the space (and retrieving the item from archival storage may require the mutual inconvenience of getting help from an administrator).">Medium</option>
+        <option value="HIGH" title="These actions have consequences that are significant and very difficult to reverse or even infeasible to reverse. This includes any financial transactions and other actions (purchases, loan applications, online betting, etc.). It also includes legal commitments (e.g. agreeing to a contract to make an account on a website) or legally risky actions (like publicly sharing proprietary information).
+Meanwhile, deleting any file, post, task, message, etc. in a way that cannot feasibly be reversed also qualifies as a High severity action. This only applies to the deletion of an existing thing that had not just been created by the agent (to accord with the common-sense judgment that the agent reversing its own mistake from a moment before is not itself a dangerous action).">High</option>
+    </select>
+
+    <div class="space-y-1">
+        <label for="annotator-explanation" class="block text-base font-medium"
+               title="Fill this out when the nature or purpose of the action is not obvious from context or when the expected state-change is not obvious from context">
+            Description/Explanation (Optional)
+        </label>
+        <textarea id="annotator-explanation"
+                  class="w-full h-12 text-sm p-2 bg-fuchsia-100/50 border rounded resize-y"></textarea>
+    </div>
+    <span class="text-sm font-medium"
+          title="After ensuring the state-changing action's details are appropriately filled out here, put your cursor over the element which it would be state-changing to interact with, then press Alt-Shift-G. If you want the focused/active element (e.g. a text field you just interacted with) to be the target element, make sure the mouse cursor is not hovering over any interactive elements">Action Capture Reminder (hover over me)</span>
+    <div id="annotator-status-update-container" class="flex items-center h-16 overflow-y-auto mb-1">
+        <img src="../images/status_update_icon.webp" alt="status icon" class="w-auto h-12 mr-2">
+        <div id="annotator-status" class="text-sm">No status update available at the moment.</div>
+    </div>
+</div>
+
+<div class="border bg-emerald-100/50 rounded-lg p-1">
+    <div class="flex justify-between">
+        <label for="task-spec" class="block text-lg font-semibold"
+               title="the task should be completable when starting from the website which is loaded in the current tab">
+            Agent Task Specification
+        </label>
+        <button id="user-guide" class="border-2 px-0.5 py-0 rounded-lg font-bold">General User Guide</button>
+    </div>
+    <textarea id="task-spec" class="w-full h-24 p-2 mb-1 border bg-emerald-100/50 rounded resize-y"
+              placeholder="Enter a task specification for the SeeAct agent"></textarea>
+
+    <div class="flex justify-evenly">
+        <button id="start-agent" class="flex items-center px-2 py-1 bg-green-200 hover:bg-green-300 rounded">
+            <img src="../images/task_start_icon.webp" alt="start task" class="w-auto h-5 mr-2">
+            Start Agent
+        </button>
+        <button id="end-task" class="flex items-center px-2 py-1 bg-purple-200 hover:bg-purple-300 rounded" disabled>
+            <img src="../images/task_kill_icon.webp" alt="terminate task" class="w-auto h-5 mr-2">
+            Terminate Task
+        </button>
+        <!--    todo why doesn't this button, when disabled, look as much greyer than normal as start task button does when disabled?-->
+    </div>
+</div>
+
+<hr class="border-gray-300">
+
+
+<div id="history-container" class="space-y-1 border bg-indigo-100/50 rounded-lg p-1">
+    <label id="history-label" class="block text-lg font-semibold text-center">Actions
+        History</label>
+    <ol id="history" class="h-36 overflow-y-auto p-4 space-y-1 resize-y list-decimal rounded list-outside">
+        <!-- History items will be added here dynamically -->
+    </ol>
+</div>
+
+<div class="space-y-1 border bg-cyan-100/50 rounded-lg p-1">
+    <div id="agent-status-update-container" class="flex items-center h-12 overflow-y-auto mb-1">
+        <img src="../images/status_update_icon.webp" alt="status icon" class="w-auto h-8 mr-2">
+        <div id="agent-status" class="text-sm">No status update available at the moment.</div>
+    </div>
+    <div class="flex items-center">
+        <img src="../images/proposed_action_icon.webp" alt="hopeful robot face with lightbulb" class="w-auto h-6 mr-2">
+        <label class="text-lg font-semibold px-2 py-1 rounded">Pending Action</label>
+    </div>
+    <div id="pending-action" class="h-24 mt-0.5 border-2 p-2 overflow-y-auto text-sm"></div>
+</div>
+
+<div id="monitor-mode-container" class="space-y-1 bg-violet-100/50 border p-1 rounded-lg">
+    <h2 class="text-xl font-bold text-center">Monitor Mode</h2>
+    <div class="space-y-1">
+        <label for="monitor-feedback" class="block text-sm font-medium"
+               title="Hint- if you reject the proposed action after doing something to the page, please mention that thing in the feedback">
+            Feedback to Agent
+        </label>
+        <textarea id="monitor-feedback" class="w-full h-24 text-sm p-2 bg-violet-100/50 border rounded resize-y"
+                  disabled></textarea>
+    </div>
+    <div class="flex justify-evenly">
+        <button id="approve" class="flex items-center px-2 py-1 bg-lime-200 hover:bg-lime-300 rounded" disabled>
+            <img src="../images/monitor_approve_thumbs_up_icon.webp" alt="approve" class="w-auto h-5 mr-2">
+            Approve
+        </button>
+        <button id="reject" class="flex items-center px-2 py-1 bg-red-200 hover:bg-red-300 rounded" disabled>
+            <img src="../images/monitor_reject_thumbs_down_icon.webp" alt="reject" class="w-auto h-5 mr-2">
+            Reject
+        </button>
+    </div>
+</div>
+
+<hr class="border-gray-300">
+
+<div class="flex justify-center">
+    <label for="logs-time-scope" class="text-base mr-2">Logs Temporal Scope</label>
+    <select id="logs-time-scope">
+        <option value="-1" selected>All</option>
+        <option value="1">Last 1 Hour</option>
+    </select>
+</div>
+
+<div class="flex justify-evenly mt-1 p-1">
+    <button id="options" class="flex items-center px-2 py-1 bg-gray-200 hover:bg-gray-300 rounded">
+        <img src="../images/settings_gear_icon.webp" alt="options" class="w-auto h-7 mr-2">
+        Options
+    </button>
+    <button id="export-unaffiliated-logs" class="flex items-center px-2 py-1 bg-gray-200 hover:bg-gray-300 rounded"
+            title="Most logs from this are the ones not affiliated with any task; however, some of the logs exported with this are some messages from the very beginning or the very end of each task">
+        <img src="../images/misc_logs_export_icon.webp" alt="export logs" class="w-auto h-7 mr-2">
+        Download misc logs
+    </button>
+</div>
+
+<!-- Status details will be added to the tooltip dynamically when it is being made visible -->
+<span id="status-details-tooltip"
+      class="hidden absolute bg-white border border-gray-300 p-2 rounded shadow-lg max-w-full overflow-y-auto">
+</span>
+</body>
+</html>
