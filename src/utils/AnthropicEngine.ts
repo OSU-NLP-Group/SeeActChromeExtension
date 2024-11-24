@@ -51,7 +51,7 @@ export class AnthropicEngine extends AiEngine {
     constructor(creationOptions: AiEngineCreateOptions, anthropic?: Anthropic) {
         //todo maybe validate model string against accepted (i.e. VLM) anthropic model names, which would be stored as static constants in this class?
         super(creationOptions);
-        this.anthropic = anthropic ?? new Anthropic({apiKey: this.apiKeys[0]});
+        this.anthropic = anthropic ?? new Anthropic({apiKey: this.apiKeys[0], dangerouslyAllowBrowser: true});
     }
 
 
