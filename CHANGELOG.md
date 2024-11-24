@@ -10,6 +10,13 @@ Nontrivial changes to the extension are documented here.
 ### Removed
 
 
+## [1.0.1] - 2024-11-24
+### Updated
+- Fix problem from Anthropic API update which prevented use of Claude as agent
+- Fix links not having special rendering
+- Fix URL's pointing to personal repository rather than OSU NLP Group repository
+- Fix installation greeting page not alerting the user when keyboard shortcuts weren't loaded correctly
+
 ## [1.0.0] - 2024-11-11
 ### Added
 - User docs for annotator mode, which can be accessed from within the extension's side panel

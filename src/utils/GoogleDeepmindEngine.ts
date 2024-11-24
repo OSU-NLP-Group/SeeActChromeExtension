@@ -19,7 +19,6 @@ import {
 } from "./ai_misc";
 import {
     FunctionCallingMode,
-    FunctionDeclarationSchemaType,
     GenerateContentRequest,
     GenerateContentResult,
     GoogleGenerativeAI,
@@ -28,7 +27,7 @@ import {
     HarmCategory,
     HarmProbability,
     Part,
-    SafetyRating
+    SafetyRating, SchemaType
 } from "@google/generative-ai";
 
 
@@ -77,18 +76,18 @@ export class GoogleDeepmindEngine extends AiEngine {
                     name: "browser_action",
                     description: browserActionFuncDesc,
                     parameters: {
-                        type: FunctionDeclarationSchemaType.OBJECT,
+                        type: SchemaType.OBJECT,
                         properties: {
                             explanation: {
-                                type: FunctionDeclarationSchemaType.STRING,
+                                type: SchemaType.STRING,
                                 description: groundingPromptExplanationParamDesc
                             },
                             element: {
-                                type: FunctionDeclarationSchemaType.STRING, nullable: true,
+                                type: SchemaType.STRING, nullable: true,
                                 description: groundingPromptElementParamDesc
                             },
                             action: {
-                                type: FunctionDeclarationSchemaType.STRING,
+                                type: SchemaType.STRING,
                                 //todo try reenabling this and removing the hacky addition to the description once the
                                 // function calling feature is no longer in beta (and so is more likely to actually
                                 // follow its API schema)
@@ -97,7 +96,7 @@ export class GoogleDeepmindEngine extends AiEngine {
                                     .join(", ")}`
                             },
                             value: {
-                                type: FunctionDeclarationSchemaType.STRING, nullable: true,
+                                type: SchemaType.STRING, nullable: true,
                                 description: groundingPromptValueParamDesc
                             },
                         },
@@ -107,10 +106,10 @@ export class GoogleDeepmindEngine extends AiEngine {
                     name: "action_judgment",
                     description: actionJudgmentFuncDesc,
                     parameters: {
-                        type: FunctionDeclarationSchemaType.OBJECT,
+                        type: SchemaType.OBJECT,
                         properties: {
                             severity: {
-                                type: FunctionDeclarationSchemaType.STRING,
+                                type: SchemaType.STRING,
                                 //todo try reenabling this and removing the hacky addition to the description once the
                                 // function calling feature is no longer in beta (and so is more likely to actually
                                 // follow its API schema)
@@ -120,7 +119,7 @@ export class GoogleDeepmindEngine extends AiEngine {
 
                             },
                             explanation: {
-                                type: FunctionDeclarationSchemaType.STRING,
+                                type: SchemaType.STRING,
                                 description: actionJudgmentExplanationParamDesc
                             }
                         },

@@ -1,8 +1,6 @@
 import OpenAI from "openai";
 import {APIConnectionError, APIConnectionTimeoutError, InternalServerError, RateLimitError} from "openai/error";
 import {AiEngine} from "./AiEngine";
-import ChatCompletionMessageParam = OpenAI.ChatCompletionMessageParam;
-import ChatCompletionContentPart = OpenAI.ChatCompletionContentPart;
 import {AiEngineCreateOptions, AiProviderDetails, AiProviders, GenerateMode, GenerateOptions} from "./ai_misc";
 
 export class OpenAiEngine extends AiEngine {
@@ -51,12 +49,12 @@ export class OpenAiEngine extends AiEngine {
          */
         this.openAi.apiKey = this.apiKeys[this.currKeyIdx];
 
-        const messages: Array<ChatCompletionMessageParam> = [
+        const messages: Array<OpenAI.ChatCompletionMessageParam> = [
             {role: "system", content: prompts.sysPrompt},
             {role: "user", content: [{type: "text", text: prompts.queryPrompt}]}
         ];
         if (imgDataUrl) {
-            (messages[1].content as Array<ChatCompletionContentPart>)
+            (messages[1].content as Array<OpenAI.ChatCompletionContentPart>)
                 .push({type: "image_url", image_url: {url: imgDataUrl, detail: "high"}});
         }
 

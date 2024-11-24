@@ -112,7 +112,7 @@ chrome.runtime.onInstalled.addListener(async function (details) {
         });
 
         centralLogger.info("This is a first install! checking keyboard shortcuts");
-        checkCommandShortcutsOnInstall(initErrMsgs);
+        await checkCommandShortcutsOnInstall(initErrMsgs);
 
         const greetingUrlSearchParams = new URLSearchParams({});
         if (initErrMsgs.length > 0) {
@@ -139,30 +139,29 @@ chrome.runtime.onInstalled.addListener(async function (details) {
     isOnInstalledRunning = false;
 });
 
-function checkCommandShortcutsOnInstall(initErrorMessages: string[]) {
+async function checkCommandShortcutsOnInstall(initErrorMessages: string[]) {
     centralLogger.info("starting to check command shortcuts on install");
-    chrome.commands.getAll(async (commands) => {
-        centralLogger.info("query for chrome commands completed, analyzing results");
-        const missingShortcuts: string[] = [];
+    const commands = await chrome.commands.getAll();
+    centralLogger.info("query for chrome commands completed, analyzing results");
+    const missingShortcuts: string[] = [];
 
-        for (const {name, shortcut, description} of commands) {
-            if (shortcut === '') {
-                if (name === undefined) {
-                    centralLogger.error(`a chrome extension command's name is undefined (description: ${description})`);
-                } else if (name === "_execute_action") {
-                    centralLogger.info("as intended, the _execute_action command has no keyboard shortcut");
-                } else {missingShortcuts.push(`Shortcut name: ${name}; description: ${description}`);}
-            }
+    for (const {name, shortcut, description} of commands) {
+        if (shortcut === '') {
+            if (name === undefined) {
+                centralLogger.error(`a chrome extension command's name is undefined (description: ${description})`);
+            } else if (name === "_execute_action") {
+                centralLogger.info("as intended, the _execute_action command has no keyboard shortcut");
+            } else {missingShortcuts.push(`Shortcut name: ${name}; description: ${description}`);}
         }
+    }
 
-        if (missingShortcuts.length > 0) {
-            centralLogger.error("the following commands are missing keyboard shortcuts:", missingShortcuts.join("\n"));
-            missingShortcuts.unshift("The following commands are missing keyboard shortcuts:");
+    if (missingShortcuts.length > 0) {
+        centralLogger.error("the following commands are missing keyboard shortcuts:", missingShortcuts.join("\n"));
+        missingShortcuts.unshift("The following commands are missing keyboard shortcuts:");
 
-            initErrorMessages.push(...missingShortcuts)
-            initErrorMessages.push("--------------");
-        }
-    });
+        initErrorMessages.push(...missingShortcuts)
+        initErrorMessages.push("--------------");
+    }
 }
 
 chrome.runtime.onSuspend.addListener(() => {
