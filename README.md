@@ -10,7 +10,7 @@ browser window).
 
 ## End users of Chrome extension
 
-A prepared zip file of each official version of the extension can be found in the [releases section](https://github.com/BareBeaverBat/SeeActChromeExtension/releases) of this repo.
+A prepared zip file of each official version of the extension can be found in the [releases section](https://github.com/OSU-NLP-Group/SeeActChromeExtension/releases) of this repo.
 Once you download the zip file for a version of your choice, you can extract its contents to a folder on your computer.
 ![unzipping archive](images/unzipping.png)
 

@@ -32,7 +32,7 @@ Whether you're looking to automate a tedious web task (while you do something el
 Please be aware that using this extension with a given AI cloud provider incurs modest costs (e.g. several cents per task) for the AI model's usage. The extension will not perform tasks without your explicit instruction, so you can control the costs by limiting the number of tasks you ask the agent to perform. There are also [configuration options](#configuration) that can limit costs in cases where the agent gets stuck or confused.
 
 ## Initial Setup
-Once the extension is loaded into Chrome, please follow steps 6-12 of the README's [installation instructions](https://github.com/BareBeaverBat/SeeActChromeExtension/blob/main/README.md#end-users-of-chrome-extension) to prepare the extension for use.
+Once the extension is loaded into Chrome, please follow steps 6-12 of the README's [installation instructions](https://github.com/OSU-NLP-Group/SeeActChromeExtension/blob/main/README.md#end-users-of-chrome-extension) to prepare the extension for use.
 
 ## Extension tips
 Many UI elements (in side panel and options menu) have more explanation of their purpose and behavior in the form of
@@ -70,7 +70,7 @@ will have tooltips with more detail when you hover over them.
     - The feedback field will only work when the Reject button is clicked, not when the reject keyboard shortcut is used.
 
 ## Using the Extension's 'Unsafe Action Annotation' Feature
-Please see [this separate document](https://github.com/BareBeaverBat/SeeActChromeExtension/blob/main/How_to_annotate_state_changing_actions_with_SeeAct_Chrome_Extension.pdf).
+Please see [this separate document](https://github.com/OSU-NLP-Group/SeeActChromeExtension/blob/main/How_to_annotate_state_changing_actions_with_SeeAct_Chrome_Extension.pdf).
 
 ## Troubleshooting
 
@@ -125,7 +125,7 @@ If you aren't sure what a setting does, hover over the option's label for an exp
 
 ## Feedback
 
-We value your input! If you encounter issues, have suggestions, or want to share your experience, the best avenue is creating a GitHub Issue in the extension's [repository](https://github.com/BareBeaverBat/SeeActChromeExtension/issues).
+We value your input! If you encounter issues, have suggestions, or want to share your experience, the best avenue is creating a GitHub Issue in the extension's [repository](https://github.com/OSU-NLP-Group/SeeActChromeExtension/issues).
 
 This enables easier tracking of issues and makes them visible to other users who may have similar problems. It requires creating a (free) Github account but does not require any coding knowledge.
 
@@ -144,7 +144,7 @@ In general, it may be safer to provide the zip file and log file to the develope
 
 ## Contributing
 
-If you're interested in contributing to the development of the SeeAct Chrome Web Agent, please fork the extension's [GitHub repository](https://github.com/BareBeaverBat/SeeActChromeExtension), commit your changes in the fork, and make a pull request back to the main repository.
+If you're interested in contributing to the development of the SeeAct Chrome Web Agent, please fork the extension's [GitHub repository](https://github.com/OSU-NLP-Group/SeeActChromeExtension), commit your changes in the fork, and make a pull request back to the main repository.
 
 If you contribute to the project, you agree to license your contributions under the [Open RAIL-S](https://www.licenses.ai/ai-pubs-open-rails-vz1) license. You also agree to follow the [SeeAct project's code of conduct](https://github.com/OSU-NLP-Group/SeeAct/blob/main/CODE_OF_CONDUCT.md)
 
@@ -154,7 +154,7 @@ This extension is made available to users under an [Open RAIL-S](https://www.lic
 
 ## Privacy Policy
 
-Please see the [full privacy policy](https://github.com/BareBeaverBat/SeeActChromeExtension/blob/main/privacy_policy.pdf). This can also be accessed from a link at the bottom of the extension's Options menu.
+Please see the [full privacy policy](https://github.com/OSU-NLP-Group/SeeActChromeExtension/blob/main/privacy_policy.pdf). This can also be accessed from a link at the bottom of the extension's Options menu.
 
 ## Acknowledgements
 
