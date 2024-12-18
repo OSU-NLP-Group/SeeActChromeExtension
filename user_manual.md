@@ -32,7 +32,7 @@ Whether you're looking to automate a tedious web task (while you do something el
 Please be aware that using this extension with a given AI cloud provider incurs modest costs (e.g. several cents per task) for the AI model's usage. The extension will not perform tasks without your explicit instruction, so you can control the costs by limiting the number of tasks you ask the agent to perform. There are also [configuration options](#configuration) that can limit costs in cases where the agent gets stuck or confused.
 
 ## Initial Setup
-Once the extension is loaded into Chrome, please follow steps 6-12 of the README's [installation instructions](https://github.com/OSU-NLP-Group/SeeActChromeExtension/blob/main/README.md#end-users-of-chrome-extension) to prepare the extension for use.
+Once the extension is loaded into Chrome, please follow steps 3-5 of the README's [installation instructions](https://github.com/OSU-NLP-Group/SeeActChromeExtension/blob/main/README.md#end-users-of-chrome-extension) to prepare the extension for use (steps 6-12 of the exhaustive walkthrough).
 
 ## Extension tips
 Many UI elements (in side panel and options menu) have more explanation of their purpose and behavior in the form of

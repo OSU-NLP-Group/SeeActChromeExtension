@@ -6,16 +6,40 @@ rather than having to install python and playwright locally and then download/ru
 their own login sessions (since it runs in their existing Chrome window/tab rather than in a separate/playwright-created 
 browser window).
 
+## Features
+
+The SeeAct Chrome Web Agent is a powerful browser extension that allows you to instruct an AI 'agent' to perform tasks on your behalf through the browser. This agent can navigate websites, find information, and even fill out forms to prepare transactions, all based on your instructions.
+
+Key features:
+
+* AI-powered web navigation and interaction
+* Ability to perform complex, multi-step tasks
+* Monitor mode for supervised operation
+* Task history and logging for transparency
+
+Whether you're looking to automate a tedious web task (while you do something else away from the computer) or simply to explore the capabilities of AI-assisted browsing, SeeAct is here to help.  
+More details [in the user manual](user_manual.pdf).
+
 # Setup
 
 ## End users of Chrome extension
 
 A prepared zip file of each official version of the extension can be found in the [releases section](https://github.com/OSU-NLP-Group/SeeActChromeExtension/releases) of this repo.
+
+1. Open the "Chrome Extensions" menu and ensure "Developer Mode" is enabled (in upper right corner of page).
+2. _Load_ the dist folder in the (downloaded and decompressed) release zip as an _unpacked_ extension.
+3. Review and agree to the privacy policy and license agreement in the "installation greeting" page.
+4. Pin the extension's icon, open its sidebar by clicking the pinned icon, and then open the Options menu (lower left 
+corner of sidebar).
+5. Configure the extension to support your desired use case and click Save
+   1. Web Agent: choose an AI provider and enter your API key for that provider's API
+   2. Unsafe Actions Annotation: enable Annotator Mode
+
+<details>
+<summary>Exhaustive Installation Walkthrough (friendly to non-software-'technical' people)</summary>
+
 Once you download the zip file for a version of your choice, you can extract its contents to a folder on your computer.
 ![unzipping archive](images/unzipping.png)
-
-The below installation instructions err on the side of excessive detail on the theory that people for whom this is excessive
-can probably figure out most of the installation process without this guide. Click [here](#developers) to jump past this
 
 Once you have extracted the contents of the release zip, please follow these steps to load the extension into Chrome:
 1. Open a new tab in Chrome.
@@ -43,6 +67,7 @@ Once you have extracted the contents of the release zip, please follow these ste
  ![Entering OpenAI API key](images/set_ai_api_key.png)
 12. Save the options changes with the "Save" button
     ![Saving options changes](images/save_options_changes.png)
+</details>
 
 ## Developers
 Clone the repository to your local machine and run `npm install` (in a shell where the repository's root directory is the current working directory) to install the necessary dependencies.
@@ -107,20 +132,3 @@ and the snapshot distributed zip files like this `SeeActChromeExtension-A-B-C-SO
 where A, B, and C are the major, minor, and patch version numbers respectively. The SOMETHING part is a string that
 provides context about the reason for the creation of the snapshot zip file, and the # is a number that is incremented 
 each time a new snapshot zip file is created for the same troubleshooting purpose.
-
-
-TODO consider replacing "utils" folder with frontend, serviceworker, and shared folders
-
-
-TODO explore use of desktopCapture permission when adding support for voice input during tasks
-
-TODO really need to standardize naming conventions for certain entities at some point (not just variable/enum-entry names but also comments and strings like log messages)
- - agent controller in background script- "Controller"/"AgentController"/"ServiceWorker"/"Background"
- - page actor in content script- "Actor"/"Page"/"PageActor"/"ContentScript"
- - manager in side panel- "SidePanelManager"/"Panel"/"SidePanel"
- - task_history_entry vs action_performed_record  etc.
- - etc.
-
-
-Open question for chrome.debugger api: how to handle the case where the tab is already being
- debugged by another extension? tell the LLM that it can't use HOVER for now and must try to click instead?
