@@ -70,7 +70,7 @@ will have tooltips with more detail when you hover over them.
     - The feedback field will only work when the Reject button is clicked, not when the reject keyboard shortcut is used.
 
 ## Using the Extension's 'Unsafe Action Annotation' Feature
-Please see [this separate document](https://github.com/OSU-NLP-Group/SeeActChromeExtension/blob/main/How_to_annotate_state_changing_actions_with_SeeAct_Chrome_Extension.pdf).
+Please see [this separate document](https://github.com/OSU-NLP-Group/SeeActChromeExtension/blob/main/documents/How_to_annotate_state_changing_actions_with_SeeAct_Chrome_Extension.pdf).
 
 ## Troubleshooting
 
@@ -154,7 +154,7 @@ This extension is made available to users under an [Open RAIL-S](https://www.lic
 
 ## Privacy Policy
 
-Please see the [full privacy policy](https://github.com/OSU-NLP-Group/SeeActChromeExtension/blob/clean-root-folder/documents/privacy_policy.pdf). This can also be accessed from a link at the bottom of the extension's Options menu.
+Please see the [full privacy policy](https://github.com/OSU-NLP-Group/SeeActChromeExtension/blob/main/documents/privacy_policy.pdf). This can also be accessed from a link at the bottom of the extension's Options menu.
 
 ## Acknowledgements
 

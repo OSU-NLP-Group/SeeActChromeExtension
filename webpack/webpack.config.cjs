@@ -68,7 +68,7 @@ module.exports = {
             patterns: [
                 {from: path.resolve(root, "manifest.json"), to: path.resolve(root, "dist")},
                 {from: path.resolve(root, "documents", "privacy_policy.pdf"), to: path.resolve(root, "dist")},
-                {from: path.resolve(root, "How_to_annotate_state_changing_actions_with_SeeAct_Chrome_Extension.pdf"), to: path.resolve(root, "dist")},
+                {from: path.resolve(root, "documents", "How_to_annotate_state_changing_actions_with_SeeAct_Chrome_Extension.pdf"), to: path.resolve(root, "dist")},
                 {from: path.resolve(root, "documents", "user_manual.pdf"), to: path.resolve(root, "dist")},
                 {
                     from: "images", to: path.resolve(root, "dist", "images"), context: root,
