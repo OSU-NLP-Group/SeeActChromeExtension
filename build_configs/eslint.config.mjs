@@ -9,13 +9,14 @@ const tsParser = require('@typescript-eslint/parser');
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const root = path.resolve(__dirname, "..");
+
 const compat = new FlatCompat(
   {
-    baseDirectory: __dirname,
+    baseDirectory: root,
     recommendedConfig: js.configs.recommended,
     allConfig: js.configs.all
   });
-
 
 export default [
   {
