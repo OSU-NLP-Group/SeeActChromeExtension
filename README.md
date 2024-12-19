@@ -1,6 +1,6 @@
-# SeeActChromeExtension
+# SeeAct Web Agent (Chrome Extension)
 
-Chrome extension to allow end-users to leverage the logic/behavior of the Python code in 
+Chrome extension to allow users to leverage the logic/behavior of the Python code in 
 the [SeeAct repository](https://github.com/OSU-NLP-Group/SeeAct/tree/main) (i.e. just loading a chrome extension 
 rather than having to install python and playwright locally and then download/run SeeAct). It also allows them to use 
 their own login sessions (since it runs in their existing Chrome window/tab rather than in a separate/playwright-created 
