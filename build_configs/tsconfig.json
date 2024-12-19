@@ -30,7 +30,7 @@
         /* Specify what module code is generated. */
         "module": "es2022",
         /* Specify the root folder within your source files. */
-        "rootDir": ".",
+        "rootDir": "..",
         "moduleResolution": "bundler",                     /* Specify how TypeScript looks up a file from a given module specifier. */
         // "baseUrl": "./",                                  /* Specify the base directory to resolve non-relative module names. */
         // "paths": {},                                      /* Specify a set of entries that re-map imports to additional lookup locations. */
@@ -61,7 +61,7 @@
         // "inlineSourceMap": true,                          /* Include sourcemap files inside the emitted JavaScript. */
         // "outFile": "./",                                  /* Specify a file that bundles all outputs into one JavaScript file. If 'declaration' is true, also designates a file that bundles all .d.ts output. */
         /* Specify an output folder for all emitted files. */
-        "outDir": "./dist",
+        "outDir": "../dist",
         // "removeComments": true,                           /* Disable emitting comments. */
         // "noEmit": true,                                   /* Disable emitting files from a compilation. */
         // "importHelpers": true,                            /* Allow importing helper functions from tslib once per project, instead of including them per-file. */
@@ -115,6 +115,6 @@
         /* Skip type checking all .d.ts files. */
         "skipLibCheck": true
     },
-    "include": ["src/**/*.ts", "tests/**/*.ts"],//to compile files like tests/test_utils.ts
-    "exclude": ["node_modules", "dist", "*.cjs", "**/*.cjs", "tests/**/*.test.ts"]
+    "include": ["../src/**/*.ts", "../tests/**/*.ts"],//to compile files like tests/test_utils.ts
+    "exclude": ["../node_modules", "../dist", "../*.cjs", "../**/*.cjs", "../tests/**/*.test.ts"]
 }

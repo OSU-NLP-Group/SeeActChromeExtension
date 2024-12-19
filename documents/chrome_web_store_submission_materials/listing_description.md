@@ -15,6 +15,6 @@ You can also turn on 'monitor mode' and confirm _each_ action before it's taken 
 
 When monitor mode is off, the agent still has an experimental 'safety monitor' feature that watches for risky actions and, when it 'thinks' the agent's next action would be risky, it pauses the agent and waits for user confirmation before proceeding. It is customizable (so you can tell it to not bother you about low risk actions) but currently cannot be relied upon to always recognize a dangerous action.
 
-Please be aware that use of this extension is subject to a [privacy policy](https://github.com/OSU-NLP-Group/SeeAct/blob/main/chrome_extension/privacy_policy.pdf), 
+Please be aware that use of this extension is subject to a [privacy policy](https://github.com/OSU-NLP-Group/SeeActChromeExtension/blob/main/documents/privacy_policy.pdf), 
 and that you are legally responsible for any consequences if you start an agent on a task in a legally or financially sensitive context (with monitor mode off)
 and the agent makes an undesired purchase or does something illegal as a result of misunderstanding your intent.

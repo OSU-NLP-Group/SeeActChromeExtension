@@ -18,7 +18,7 @@ Key features:
 * Task history and logging for transparency
 
 Whether you're looking to automate a tedious web task (while you do something else away from the computer) or simply to explore the capabilities of AI-assisted browsing, SeeAct is here to help.  
-More details [in the user manual](user_manual.pdf).
+More details [in the user manual](documents/user_manual.pdf).
 
 # Setup
 
@@ -79,7 +79,7 @@ tooltips that appear when hovering over the elements' labels.
 Also, text blocks in the side panel (under "Action History" or "Pending Action" headings, plus some of the temporary status messages that appear just above the "Pending Action" section) 
 will have tooltips with more detail when you hover over them.
 
-Please see the [user manual](user_manual.pdf) for more details.
+Please see the [user manual](documents/user_manual.pdf) for more details.
 
 ## Logs
 For a given task, almost all of the logs related to it will have been associated with its task id and will be automatically

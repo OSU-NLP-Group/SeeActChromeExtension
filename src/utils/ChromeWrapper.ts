@@ -78,8 +78,7 @@ export class ChromeWrapper {
      * @param commandParams a json object with the arguments for the method
      * @return Promise that resolves with the result of the command
      */
-    //eslint-disable-next-line @typescript-eslint/ban-types -- this is a chrome API function, so we can't change the type
-    sendCommand = (target: FakeDebuggee, method: string, commandParams: Object|undefined): Promise<Object> => {
+    sendCommand = (target: FakeDebuggee, method: string, commandParams: object|undefined): Promise<object> => {
         return chrome.debugger.sendCommand(target, method, commandParams);
     }
 

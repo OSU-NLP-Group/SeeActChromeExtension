@@ -14,7 +14,7 @@ import {
     SCREENSHOTS_OBJECT_STORE,
 } from "./utils/shared_logging_setup";
 
-import log from "loglevel";
+import {LogLevelNames} from "loglevel";
 import {AgentController, AgentControllerState} from "./utils/AgentController";
 import {renderUnknownValue, sleep, storageKeyForEulaAcceptance} from "./utils/misc";
 import {openDB} from "idb";
@@ -226,7 +226,7 @@ function handleMsgFromPage(request: any, sender: MessageSender, sendResponse: (r
         const level = request.level;
         const args = request.args as unknown[];
         assertIsValidLogLevelName(level);
-        let consoleMethodNm: log.LogLevelNames = level;
+        let consoleMethodNm: LogLevelNames = level;
         if (level === "trace") {
             consoleMethodNm = "debug";
         }
