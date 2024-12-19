@@ -154,7 +154,7 @@ This extension is made available to users under an [Open RAIL-S](https://www.lic
 
 ## Privacy Policy
 
-Please see the [full privacy policy](https://github.com/OSU-NLP-Group/SeeActChromeExtension/blob/main/privacy_policy.pdf). This can also be accessed from a link at the bottom of the extension's Options menu.
+Please see the [full privacy policy](https://github.com/OSU-NLP-Group/SeeActChromeExtension/blob/clean-root-folder/documents/privacy_policy.pdf). This can also be accessed from a link at the bottom of the extension's Options menu.
 
 ## Acknowledgements
 
