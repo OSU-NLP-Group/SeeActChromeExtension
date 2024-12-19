@@ -654,7 +654,7 @@ export class SidePanelManager {
         }
         this.logger.trace("agent controller notified side panel of its readiness");
         this.agentControllerReady = true;
-        this.setAgentStatusWithDelayedClear('Agent controller connection ready; you can now start a task, export non-task-specific logs, etc.');
+        this.setAgentStatusWithDelayedClear('logs exporter connection ready; you can now export logs');
 
         this.pingServiceWorkerForKeepAlive(this.agentControllerPort).catch((error) => {
             this.logger.error('error while starting keepalive pings to service worker:', renderUnknownValue(error));
@@ -790,7 +790,7 @@ export class SidePanelManager {
         setTimeout(() => {
             if (this.agentStatusDiv.textContent === status) {
                 this.logger.trace(`after ${delay} seconds, clearing agent status ${status} with hovertext ${hovertext?.slice(0, 100)}...`);
-                this.agentStatusDiv.textContent = 'No status update available at the moment.';
+                this.agentStatusDiv.textContent = 'No logs export status update available at the moment.';
                 this.agentStatusPopup.innerHTML = '';
                 this.agentStatusPopup.style.display = "none";
             } else {this.logger.trace(`skipping delayed-clear for status ${status} with hovertext ${hovertext?.slice(0, 100)}... which was already replaced by another status: ${this.agentStatusDiv.textContent}`);}

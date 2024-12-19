@@ -73,13 +73,13 @@ Meanwhile, deleting any file, post, task, message, etc. in a way that cannot fea
     </div>
 </div>
 
-<div class="border bg-emerald-100/50 rounded-lg p-1">
+<div class="border bg-emerald-100/50 rounded-lg p-1 hidden">
     <div class="flex justify-between">
         <label for="task-spec" class="block text-lg font-semibold"
                title="the task should be completable when starting from the website which is loaded in the current tab">
             Agent Task Specification
         </label>
-        <button id="user-guide" class="border-2 px-0.5 py-0 rounded-lg font-bold">General User Guide</button>
+<!--        <button id="user-guide" class="border-2 px-0.5 py-0 rounded-lg font-bold">General User Guide</button>-->
     </div>
     <textarea id="task-spec" class="w-full h-24 p-2 mb-1 border bg-emerald-100/50 rounded resize-y"
               placeholder="Enter a task specification for the SeeAct agent"></textarea>
@@ -99,8 +99,7 @@ Meanwhile, deleting any file, post, task, message, etc. in a way that cannot fea
 
 <hr class="border-gray-300">
 
-
-<div id="history-container" class="space-y-1 border bg-indigo-100/50 rounded-lg p-1">
+<div id="history-container" class="space-y-1 border bg-indigo-100/50 rounded-lg p-1 hidden">
     <label id="history-label" class="block text-lg font-semibold text-center">Actions
         History</label>
     <ol id="history" class="h-36 overflow-y-auto p-4 space-y-1 resize-y list-decimal rounded list-outside">
@@ -111,13 +110,13 @@ Meanwhile, deleting any file, post, task, message, etc. in a way that cannot fea
 <div class="space-y-1 border bg-cyan-100/50 rounded-lg p-1">
     <div id="agent-status-update-container" class="flex items-center h-12 overflow-y-auto mb-1">
         <img src="../images/status_update_icon.webp" alt="status icon" class="w-auto h-8 mr-2">
-        <div id="agent-status" class="text-sm">No status update available at the moment.</div>
+        <div id="agent-status" class="text-sm">No logs export status update available at the moment.</div>
     </div>
-    <div class="flex items-center">
+    <div class="hidden items-center"><!-- hidden replaced `flex` -->
         <img src="../images/proposed_action_icon.webp" alt="hopeful robot face with lightbulb" class="w-auto h-6 mr-2">
         <label class="text-lg font-semibold px-2 py-1 rounded">Pending Action</label>
     </div>
-    <div id="pending-action" class="h-24 mt-0.5 border-2 p-2 overflow-y-auto text-sm"></div>
+    <div id="pending-action" class="h-24 mt-0.5 border-2 p-2 overflow-y-auto text-sm hidden"></div>
 </div>
 
 <div id="monitor-mode-container" class="space-y-1 bg-violet-100/50 border p-1 rounded-lg">
@@ -163,6 +162,11 @@ Meanwhile, deleting any file, post, task, message, etc. in a way that cannot fea
         Download misc logs
     </button>
 </div>
+
+<hr class="border-gray-300">
+
+<button id="user-guide" class="border-2 px-0.5 py-0 rounded-lg font-bold">General User Guide</button>
+
 
 <!-- Status details will be added to the tooltip dynamically when it is being made visible -->
 <span id="status-details-tooltip"

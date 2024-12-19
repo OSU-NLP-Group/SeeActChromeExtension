@@ -125,10 +125,21 @@ Regex for finding log messages that are trying to tell the developer about somet
 I'm using ".58495" (as a 4th number in the chrome extension version in the manifest.json) to indicate that the current
 unpacked extension install is a snapshot version (not an official/finalized release). This is needed because the
 version number in the chrome extension's manifest.json file must be a string that matches the regex
-`^(\d+(\.\d+){0,3})$` (i.e. up to 4 numbers separated by periods).
+`^(\d+(\.\d+){0,3})$` (i.e. up to 4 numbers separated by periods).  
+Alternatively, for annotator-mode-only snapshot versions, I'll use `.458495` (as a 4th number in the chrome extension
+version in the manifest.json).
 
-The official distributed zip files are being named like this `SeeActChromeExtension-A-B-C.zip`
-and the snapshot distributed zip files like this `SeeActChromeExtension-A-B-C-SOMETHING-SNAPSHOT-#.zip`
-where A, B, and C are the major, minor, and patch version numbers respectively. The SOMETHING part is a string that
-provides context about the reason for the creation of the snapshot zip file, and the # is a number that is incremented 
-each time a new snapshot zip file is created for the same troubleshooting purpose.
+Meanwhile, I'm using ".4" (as a 4th number in the chrome extension version in the manifest.json) to indicate that the 
+current unpacked extension install is an official annotation-mode-only release, and actual version number strings (in 
+logs and the package.json and so on) will have `.A` after the patch number to indicate that they're annotator mode 
+releases.
+
+The official distributed zip files are being named like this `SeeActChromeExtension-F-G-H.zip` or 
+`SeeActChromeExtension-F-G-H-A.zip` and the snapshot distributed zip files like this 
+`SeeActChromeExtension-F-G-H-SOMETHING-SNAPSHOT-#.zip` or `SeeActChromeExtension-F-G-H-A-SOMETHING-SNAPSHOT-#.zip`
+where F, G, and H are the major, minor, and patch version numbers respectively.  
+The 'A' indicates that it's an annotator-mode-only release.  
+The SOMETHING part is a string that provides context about the reason for the creation of the snapshot zip file, and 
+the # is a number that is incremented each time a new snapshot zip file is created for the same troubleshooting purpose.
+
+
