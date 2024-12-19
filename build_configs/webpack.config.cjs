@@ -47,7 +47,18 @@ module.exports = {
             },
             {
                 test: /\.css$/i,
-                use: ['style-loader', 'css-loader', 'postcss-loader'],
+                use: [
+                    'style-loader',
+                    'css-loader',
+                    {
+                        loader: 'postcss-loader',
+                        options: {
+                            postcssOptions: {
+                                config: path.resolve(root, "build_configs", "postcss.config.cjs"),
+                            }
+                        }
+                    }
+                    ],
                 exclude: [path.resolve(root, 'node_modules'), path.resolve(root, 'tests')]
             }
         ],
