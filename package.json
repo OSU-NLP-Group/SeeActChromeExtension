@@ -3,7 +3,7 @@
     "version": "1.0.1-SNAPSHOT",
     "description": "chrome extension to allow end-users to leverage the logic/behavior of the Python code in the SeeAct repository (i.e. just installing a chrome extension from chrome web store rather than having to install python and playwright locally and then download/run SeeAct).",
     "scripts": {
-        "test": "jest",
+        "test": "jest --config=build_configs/jest.config.cjs --debug",
         "lint": "eslint . --ext .ts",
         "build": "webpack --config build_configs/webpack.config.cjs"
     },
