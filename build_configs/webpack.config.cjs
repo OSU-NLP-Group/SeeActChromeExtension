@@ -42,8 +42,11 @@ module.exports = {
         rules: [
             {
                 test: /\.ts$/,
-                use: "ts-loader",
-                exclude: [path.resolve(root, 'node_modules'), path.resolve(root, 'tests')]
+                loader: "ts-loader",
+                exclude: [path.resolve(root, 'node_modules'), path.resolve(root, 'tests')],
+                options: {
+                    configFile: path.resolve(root, "build_configs", "tsconfig.json")
+                }
             },
             {
                 test: /\.css$/i,
