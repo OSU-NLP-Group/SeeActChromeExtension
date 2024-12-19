@@ -1099,7 +1099,7 @@ export class AgentController {
                 actionInfo: this.pendingActionInfo, type: AgentController2PanelPortMsgType.TASK_HISTORY_ENTRY
             });
         } catch (error: any) {
-            this.terminateTask("error when sending action history entry to side panel");
+            this.terminateTask(`error when sending action history entry to side panel: ${renderUnknownValue(error)}`);
             return true;
         }
 

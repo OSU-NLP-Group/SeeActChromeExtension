@@ -298,7 +298,6 @@ export class ElementHighlighter {
     isNeutralColor(hsl: HSL): boolean {return hsl[1] < 10;} // Consider colors with saturation < 10% as neutral
 
     adjustNonNeutralColor(hsl: HSL): HSL {
-        // eslint-disable-next-line prefer-const -- destructuring operation
         let [hue, saturation, lightness] = hsl;
         hue = (hue + 180) % 360;
         saturation= 100;//we want the new color to be as blatant/obvious as possible; it is a mediocre sort of contrast for the new color to differ from the original color by being less vibrant

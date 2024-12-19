@@ -246,7 +246,6 @@ export class GoogleDeepmindEngine extends AiEngine {
         return "no useful details in google deepmind rate limit response message";
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- override
     checkIfNonfatalError(err: any): boolean {
         //google deepmind library doesn't break its errors into subtypes in a way that would make this easy
         return err instanceof GoogleGenerativeAIFetchError && err.status != undefined && err.status >= 500;
