@@ -10,6 +10,14 @@ Nontrivial changes to the extension are documented here.
 ### Removed
 
 
+## [1.0.2.A] - 2024-12-19
+First annotator-mode-only version 
+
+### Updated
+- Some things to just refer to logs exporting rather than agent controller (including user manual)
+### Removed
+- all UI elements related to the agent controller
+
 ## [1.0.1] - 2024-11-24
 ### Updated
 - Fix problem from Anthropic API update which prevented use of Claude as agent
