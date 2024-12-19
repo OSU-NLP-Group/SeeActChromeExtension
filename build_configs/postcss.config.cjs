@@ -1,6 +1,9 @@
+const path = require("path");
+const projectRoot = path.resolve(__dirname, "..");
+
 module.exports = {
     plugins: [
-        "tailwindcss",
+        ["tailwindcss", {config: path.resolve(projectRoot, "build_configs", "tailwind.config.cjs")}],
         "autoprefixer"
     ]
 }
