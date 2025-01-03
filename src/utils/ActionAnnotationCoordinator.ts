@@ -81,7 +81,7 @@ export class ActionAnnotationCoordinator {
     targetElementsInBatch: Array<SerializableElementData | undefined> = [];
     annotationViewportInfosInBatch: ViewportDetails[] = [];
     mouseCoordsInBatch: { x: number, y: number }[] = [];
-    //todo mouse coord-capture staleness numbers
+    mouseCaptureStalenessesInBatch: number[] = [];
     mouseElemsInBatch: Array<SerializableElementData | undefined> = [];
     highlitElemsInBatch: Array<SerializableElementData | undefined> = [];
     contextScreenshotsInBatch: string[] = [];
@@ -100,6 +100,7 @@ export class ActionAnnotationCoordinator {
     currActionTargetElement: SerializableElementData | undefined;
     currActionViewportInfo: ViewportDetails | undefined;
     currActionMouseCoords: { x: number, y: number } | undefined;
+    currActionMouseCaptureStaleness: number | undefined;
     mousePosElement: SerializableElementData | undefined;
     highlitElement: SerializableElementData | undefined;
 
@@ -315,7 +316,7 @@ export class ActionAnnotationCoordinator {
         const numTargetElems = this.targetElementsInBatch.length;
         const numViewportInfos = this.annotationViewportInfosInBatch.length;
         const numMouseCoords = this.mouseCoordsInBatch.length;
-        //todo mouse capture staleness
+        const numMouseCaptureStalenesses = this.mouseCaptureStalenessesInBatch.length;
         const numMouseElems = this.mouseElemsInBatch.length;
         const numHighlitElems = this.highlitElemsInBatch.length;
         const numContextScreenshots = this.contextScreenshotsInBatch.length;
@@ -323,9 +324,9 @@ export class ActionAnnotationCoordinator {
         const numHtmlDumps = this.annotationHtmlDumpsInBatch.length;
         if (numIds !== numActionTypes || numActionTypes !== numSeverities || numSeverities !== numDescriptions
             || numDescriptions !== numUrls || numUrls !== numTargetElems || numTargetElems !== numViewportInfos
-            || numViewportInfos !== numMouseCoords || numMouseCoords !== numMouseElems
-            || numMouseElems !== numHighlitElems || numHighlitElems !== numContextScreenshots
-            || numContextScreenshots !== numSetsOfInteractiveElements
+            || numViewportInfos !== numMouseCoords || numMouseCoords !== numMouseCaptureStalenesses
+            || numMouseCaptureStalenesses !== numMouseElems || numMouseElems !== numHighlitElems
+            || numHighlitElems !== numContextScreenshots || numContextScreenshots !== numSetsOfInteractiveElements
             || numSetsOfInteractiveElements !== numHtmlDumps) {
             this.resetAnnotationCaptureCoordinator("at end of batch, the lists for accumulating the different parts of each annotation in the batch had different lengths!",
                 `# annotations: ${numIds}, # action types: ${numActionTypes}, # severities: ${numSeverities}, # descriptions: ${numDescriptions}, # url's: ${numUrls}, # target elements (including entries where target element is undefined): ${numTargetElems}, # viewport info's: ${numViewportInfos}, # mouse coordinates: ${numMouseCoords}, # mouse elements: ${numMouseElems}; # highlighted elements: ${numHighlitElems}, # context screenshots: ${numContextScreenshots}, # sets of interactive elements: ${numSetsOfInteractiveElements}, # html dumps: ${numHtmlDumps}`);
@@ -436,8 +437,9 @@ export class ActionAnnotationCoordinator {
             this.logger.error("no current action viewport info when storing a completed action annotation");
         } else if (!this.currActionMouseCoords) {
             this.logger.error("no current action mouse coordinates when storing a completed action annotation");
-        } //mouse position element can be undefined, same with highlighted element
-            //todo mouse capture staleness
+        } else if (this.currActionMouseCaptureStaleness === undefined) {
+            this.logger.error("no current action mouse capture staleness when storing a completed action annotation");
+        }//mouse position element can be undefined, same with highlighted element
         else if (!this.currActionContextScreenshotBase64) {
             this.logger.error("no current action context screenshot when storing a completed action annotation");
         }//targeted screenshot can be undefined
@@ -454,15 +456,14 @@ export class ActionAnnotationCoordinator {
             this.targetElementsInBatch.push(this.currActionTargetElement);
             this.annotationViewportInfosInBatch.push(this.currActionViewportInfo);
             this.mouseCoordsInBatch.push(this.currActionMouseCoords);
-            //todo mouse capture staleness
+            this.mouseCaptureStalenessesInBatch.push(this.currActionMouseCaptureStaleness);
             this.mouseElemsInBatch.push(this.mousePosElement);
             this.highlitElemsInBatch.push(this.highlitElement);
             this.contextScreenshotsInBatch.push(this.currActionContextScreenshotBase64);
             this.interactiveElementsSetsForAnnotationsInBatch.push(this.currActionInteractiveElements);
             this.annotationHtmlDumpsInBatch.push(this.currActionHtmlDump);
 
-            //todo mouse capture staleness
-            let annotationSummary = `annotation id ${this.currAnnotationId}; mouse coords: ${JSON.stringify(this.currActionMouseCoords)}, scroll position: ${this.currActionViewportInfo.scrollX}, ${this.currActionViewportInfo.scrollY}`;
+            let annotationSummary = `annotation id ${this.currAnnotationId}; mouse coords: ${JSON.stringify(this.currActionMouseCoords)}, mouse capture staleness (in milliseconds): ${this.currActionMouseCaptureStaleness}, scroll position: ${this.currActionViewportInfo.scrollX}, ${this.currActionViewportInfo.scrollY}`;
             if (this.currActionTargetElement) {annotationSummary += `;\ntarget element: ${this.currActionTargetElement.description.slice(100)}`;}
             if (this.currAnnotationActionDesc) {annotationSummary += `;\naction description: ${this.currAnnotationActionDesc.slice(100)}`;}
             this.portToSidePanel!.postMessage({//null check was performed at top of function
@@ -502,7 +503,10 @@ export class ActionAnnotationCoordinator {
             return `invalid mouse coordinates ${renderUnknownValue(mouseXVal)}, ${renderUnknownValue(mouseYVal)} in annotation page info message from content script`;
         } else { this.currActionMouseCoords = {x: mouseXVal, y: mouseYVal}; }
 
-        //todo validate and store mouse capture staleness
+        const mouseCaptureStalenessVal = message.mouseCaptureStaleness;
+        if (typeof mouseCaptureStalenessVal !== "number" || mouseCaptureStalenessVal < 0) {
+            return `invalid mouse capture staleness value ${renderUnknownValue(mouseCaptureStalenessVal)} in annotation page info message from content script`;
+        } else { this.currActionMouseCaptureStaleness = mouseCaptureStalenessVal; }
 
         const htmlDumpVal: unknown = message.htmlDump;
         if (typeof htmlDumpVal !== "string") {
@@ -668,7 +672,7 @@ export class ActionAnnotationCoordinator {
             const targetElementData = this.targetElementsInBatch[annotationIdx];
             const viewportInfo = this.annotationViewportInfosInBatch[annotationIdx];
             const mouseCoords = this.mouseCoordsInBatch[annotationIdx];
-            //todo mouse capture staleness
+            const mouseCaptureStaleness = this.mouseCaptureStalenessesInBatch[annotationIdx];
             const mousePosElementData = this.mouseElemsInBatch[annotationIdx];
             const highlitElementData = this.highlitElemsInBatch[annotationIdx];
             const contextScreenshotBase64 = this.contextScreenshotsInBatch[annotationIdx];
@@ -686,7 +690,7 @@ export class ActionAnnotationCoordinator {
                 annotationId: annotationId, actionType: actionType,
                 actionStateChangeSeverity: actionStateChangeSeverity, description: actionDescription,
                 url: annotationUrl, targetElementData: targetElementData, viewportInfo: viewportInfo,
-                mousePosition: mouseCoords, //todo mouse capture staleness
+                mousePosition: mouseCoords, mouseCaptureStalenessInMs: mouseCaptureStaleness,
                 mousePosElementData: mousePosElementData,
                 actuallyHighlightedElementData: highlitElementData
             };
@@ -839,7 +843,7 @@ export class ActionAnnotationCoordinator {
         this.targetElementsInBatch = [];
         this.annotationViewportInfosInBatch = [];
         this.mouseCoordsInBatch = [];
-        //todo mouse capture staleness
+        this.mouseCaptureStalenessesInBatch = [];
         this.mouseElemsInBatch = [];
         this.highlitElemsInBatch = [];
         this.contextScreenshotsInBatch = [];
@@ -858,7 +862,7 @@ export class ActionAnnotationCoordinator {
         this.currActionTargetElement = undefined;
         this.currActionViewportInfo = undefined;
         this.currActionMouseCoords = undefined;
-        //todo reset curr mouse capture staleness
+        this.currActionMouseCaptureStaleness = undefined;
         this.mousePosElement = undefined;
         this.highlitElement = undefined;
         this.currActionContextScreenshotBase64 = undefined;

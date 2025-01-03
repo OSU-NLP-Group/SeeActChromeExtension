@@ -1,10 +1,14 @@
-// import {createNamedLogger} from "./utils/shared_logging_setup";
+import {createNamedLogger} from "./utils/shared_logging_setup";
+
+const logger = createNamedLogger('side-panel', false);
+logger.trace('side panel script loaded, beginning remainder of imports (after logging import)');
+
 import {SidePanelManager} from "./utils/SidePanelManager";
 
 import "./global_styles.css";
 import "./side_panel.css";
 
-// const logger = createNamedLogger('side-panel', false);
+logger.trace('side panel script imports finished, identifying elements by id');
 
 const eulaComplaintElem = document.getElementById('eula-complaint');
 if (!(eulaComplaintElem && eulaComplaintElem instanceof HTMLDivElement)) throw new Error('valid eula-complaint div not found');
@@ -91,6 +95,8 @@ if (!(monitorApproveButton && monitorApproveButton instanceof HTMLButtonElement)
 const monitorRejectButton = document.getElementById('reject');
 if (!(monitorRejectButton && monitorRejectButton instanceof HTMLButtonElement)) throw new Error('valid reject button not found');
 
+logger.trace('side panel script finished identifying elements by id, creating Side Panel Manager');
+
 const manager = new SidePanelManager({
     eulaComplaintContainer: eulaComplaintElem as HTMLDivElement,
     annotatorContainer: annotatorModeContainer as HTMLDivElement,
@@ -117,6 +123,8 @@ const manager = new SidePanelManager({
     unaffiliatedLogsExportButton: unaffiliatedLogsExportButton as HTMLButtonElement,
     logsExportTimeScopeSelect: logsTimeScopeSelect as HTMLSelectElement,
 });
+
+logger.trace('side panel script finished creating Side Panel Manager, adding event listeners');
 
 document.addEventListener('mousemove', (e) => {
     manager.mouseClientX = e.clientX;
@@ -148,3 +156,5 @@ monitorRejectButton.addEventListener('click', manager.monitorRejectButtonClickHa
 agentTaskStatusDiv.addEventListener('mouseenter', manager.displayStatusPopup);
 agentTaskStatusDiv.addEventListener('mouseleave', () => manager.handleMouseLeaveStatus(agentTaskStatusDiv));
 statusPopup.addEventListener('mouseleave', () => manager.handleMouseLeaveStatus(statusPopup));
+
+logger.trace('side panel script finished adding event listeners, UI logic loading done');

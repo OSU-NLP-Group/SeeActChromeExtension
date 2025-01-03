@@ -56,9 +56,11 @@ console.log("successfully loaded background script in browser");
 let centralLogger = createNamedLogger('service-worker', true);
 centralLogger.trace("central logger created in background script");
 
-chrome.sidePanel
-    .setPanelBehavior({openPanelOnActionClick: true})
-    .catch((error) => centralLogger.error(error));
+chrome.action.onClicked.addListener((tab) => {
+    centralLogger.trace("action button clicked, opening side panel");
+    chrome.sidePanel.open({windowId: tab.windowId})
+        .catch((error) => centralLogger.error(`Error while opening side panel as part of extension action: ${renderUnknownValue(error)}`));
+});
 
 let isOnInstalledRunning = false;
 chrome.runtime.onInstalled.addListener(async function (details) {
