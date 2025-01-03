@@ -9,7 +9,6 @@ export const elementHighlightRenderDelay = 15;
 export enum ActionStateChangeSeverity {
     SAFE = "SAFE",
     LOW = "LOW",
-    MEDIUM = "MEDIUM",
     HIGH = "HIGH"
 }
 
