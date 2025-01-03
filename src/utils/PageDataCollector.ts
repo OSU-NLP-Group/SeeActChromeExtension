@@ -30,6 +30,7 @@ export class PageDataCollector {
 
     public mouseClientX = -1;
     public mouseClientY = -1;
+    //todo track timestamp of last mouse position update so a given annotation capture can be evaluated later for whether the mouse position info was stale (e.g. because the mouse moved into a cross-origin iframe)
 
     constructor(portToBackground: chrome.runtime.Port, browserHelper?: BrowserHelper, logger?: Logger,
                 chromeWrapper?: ChromeWrapper, domWrapper?: DomWrapper) {
@@ -237,6 +238,7 @@ export class PageDataCollector {
                 interactiveElements: elementsDataInSerializableForm,
                 mouseX: currMouseX,
                 mouseY: currMouseY,
+                //todo mouse capture staleness calculation
                 viewportInfo: this.domWrapper.getViewportInfo(),
                 userMessage: userMessage,
                 userMessageDetails: userMessageDetails,
@@ -315,6 +317,7 @@ export class PageDataCollector {
         this.browserHelper.setupMouseMovementTracking((newMouseX: number, newMouseY: number) => {
             this.mouseClientX = newMouseX;
             this.mouseClientY = newMouseY;
+            //todo mouse capture timestamp update
         });
     }
 

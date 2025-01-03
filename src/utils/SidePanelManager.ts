@@ -7,7 +7,7 @@ import {
     buildGenericActionDesc,
     defaultIsAnnotatorMode,
     defaultIsMonitorMode,
-    defaultShouldWipeActionHistoryOnStart,
+    defaultShouldWipeActionHistoryOnStart, isActionStateChangeSeverity,
     renderUnknownValue,
     setupModeCache,
     storageKeyForAnnotatorMode,
@@ -89,6 +89,8 @@ export interface SidePanelElements {
     annotatorActionStateChangeSeverity: HTMLSelectElement,
     annotatorExplanationField: HTMLTextAreaElement,
     annotatorStatusDiv: HTMLDivElement,
+    previousAnnotationSeverity: HTMLSelectElement,
+    annotationCount: HTMLSpanElement,
     startButton: HTMLButtonElement;
     taskSpecField: HTMLTextAreaElement;
     agentStatusDiv: HTMLDivElement;
@@ -128,6 +130,8 @@ export class SidePanelManager {
     private readonly annotatorActionStateChangeSeverity: HTMLSelectElement;
     private readonly annotatorExplanationField: HTMLTextAreaElement;
     private readonly annotatorStatusDiv: HTMLDivElement;
+    private readonly previousAnnotationSeverity: HTMLSelectElement;
+    private readonly annotationCount: HTMLSpanElement;
 
     private readonly startButton: HTMLButtonElement;
     private readonly taskSpecField: HTMLTextAreaElement;
@@ -180,6 +184,9 @@ export class SidePanelManager {
         this.annotatorActionStateChangeSeverity = elements.annotatorActionStateChangeSeverity;
         this.annotatorExplanationField = elements.annotatorExplanationField;
         this.annotatorStatusDiv = elements.annotatorStatusDiv;
+        this.previousAnnotationSeverity = elements.previousAnnotationSeverity;
+        this.annotationCount = elements.annotationCount;
+
         this.startButton = elements.startButton;
         this.taskSpecField = elements.taskSpecField;
         this.agentStatusDiv = elements.agentStatusDiv;
@@ -633,12 +640,18 @@ export class SidePanelManager {
 
     private resetAnnotationUi(isEndOfBatch: boolean = true) {
         this.annotatorActionType.value = Action.CLICK;
-        this.annotatorActionStateChangeSeverity.value = ActionStateChangeSeverity.LOW;
         this.annotatorExplanationField.value = '';
         if (isEndOfBatch) {
             this.annotatorStartButton.disabled = false;
             this.annotatorEndButton.disabled = true;
             this.annotatorIsInDialogCheckbox.checked = false;
+            this.annotatorActionStateChangeSeverity.value = ActionStateChangeSeverity.LOW;
+            this.annotatorActionType.disabled = true;
+            this.annotatorActionStateChangeSeverity.disabled = true;
+            this.annotatorExplanationField.disabled = true;
+            this.annotationCount.textContent = '';
+            this.previousAnnotationSeverity.disabled = true;
+            this.previousAnnotationSeverity.value = 'blank';
         }
     }
 
@@ -929,7 +942,28 @@ export class SidePanelManager {
             this.setAnnotatorStatusWithDelayedClear(message.msg, 10, message.details);
         } else if (message.type === AnnotationCoordinator2PanelPortMsgType.ANNOTATION_CAPTURED_CONFIRMATION) {
             this.setAnnotatorStatusWithDelayedClear(`Annotation ${message.annotId.slice(0, 4)}... captured ${message.wasTargetIdentified ? `successfully${message.wasTargetNotRecognizedAsInteractive ? " but target element was not recognized as interactive (needs review by extension developer)" : ""}` : ", but target element couldn't be identified"}`, undefined, message.summary);
-            await this.mutex.runExclusive(() => this.resetAnnotationUi(false));
+            await this.mutex.runExclusive(() => {
+                this.resetAnnotationUi(false);
+                const newAnnotCount = message.annotationCount;
+                if (typeof newAnnotCount !== "number" || !Number.isInteger(newAnnotCount) || newAnnotCount < 0) {
+                    this.logger.warn(`received invalid annotation count from annotation coordinator: ${renderUnknownValue(newAnnotCount)}`);
+                } else { this.annotationCount.textContent = String(newAnnotCount); }
+
+                const newAnnotSeverity = message.severity;
+                if (!isActionStateChangeSeverity(newAnnotSeverity)) {
+                    this.logger.warn(`received invalid annotation severity from annotation coordinator: ${renderUnknownValue(newAnnotSeverity)}`);
+                } else {
+                    this.previousAnnotationSeverity.value = newAnnotSeverity;
+                    if (this.previousAnnotationSeverity.disabled) {
+                        this.previousAnnotationSeverity.disabled = false;
+                        if (newAnnotCount > 1
+                        ) {this.logger.warn(`incorrect state- previous annotation severity dropdown was disabled at the completion of an annotation partway through the batch (when it should only be disabled at the start of a batch or when no batch is in progress); 1-based annotation index was ${newAnnotCount}`);}
+                    }
+                }
+            });
+        } else if (message.type === AnnotationCoordinator2PanelPortMsgType.ABORT_ANNOTATION_BATCH) {
+            this.setAnnotatorStatusWithDelayedClear("Annotation batch aborted because of error in background script", undefined, message.error);
+            this.reset();
         } else {
             this.logger.warn(`unknown type of message from annotation coordinator: ${JSON.stringify(message)}`);
         }
@@ -960,6 +994,10 @@ export class SidePanelManager {
             });
             this.annotatorEndButton.disabled = false;
             this.annotatorStartButton.disabled = true;
+            this.annotationCount.textContent = '0';
+            this.annotatorActionType.disabled = false;
+            this.annotatorActionStateChangeSeverity.disabled = false;
+            this.annotatorExplanationField.disabled = false;
         } else {
             this.logger.error("annotation coordinator port doesn't exist, can't start action annotation capture");
             this.setAnnotatorStatusWithDelayedClear("Connection to annotation coordinator is missing, so cannot start action annotation capture (reopening the connection in background); please try again after this message disappears", 3);
@@ -974,6 +1012,18 @@ export class SidePanelManager {
         } else {
             this.logger.error("annotation coordinator port doesn't exist, can't finish action annotations batch");
             this.setAnnotatorStatusWithDelayedClear("Connection to annotation coordinator is missing, so cannot finish action annotations batch (reopening the connection in background); please try again after this message disappears", 3);
+        }
+    }
+
+    processPreviousAnnotationSeverityChange = (): void => {
+        if (this.annotationCoordinatorPort) {
+            this.annotationCoordinatorPort.postMessage({
+                type: PanelToAnnotationCoordinatorPortMsgType.REVISE_PREVIOUS_ANNOTATION_SEVERITY,
+                newSeverity: this.previousAnnotationSeverity.value
+            });
+        } else {
+            this.logger.error("annotation coordinator port doesn't exist, can't change previous annotation severity");
+            this.setAnnotatorStatusWithDelayedClear("Connection to annotation coordinator is missing, so cannot change previous annotation severity (reopening the connection in background); please try again after this message disappears", 3);
         }
     }
 

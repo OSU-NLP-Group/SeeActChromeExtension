@@ -7,3 +7,9 @@
         @apply text-blue-600 underline hover:text-blue-800 visited:text-purple-600;
     }
 }
+
+@layer base {
+    select:disabled, textarea:disabled, input:disabled, button:disabled {
+        @apply bg-gray-300 text-gray-800 cursor-not-allowed border-gray-400;
+    }
+}

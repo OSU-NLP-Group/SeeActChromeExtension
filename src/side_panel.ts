@@ -36,6 +36,12 @@ if (!(annotatorExplanationField && annotatorExplanationField instanceof HTMLText
 const annotatorStatusDiv = document.getElementById('annotator-status');
 if (!(annotatorStatusDiv && annotatorStatusDiv instanceof HTMLDivElement)) throw new Error('valid annotator status div not found');
 
+const previousAnnotationSeverity = document.getElementById('previous-annotation-severity');
+if (!(previousAnnotationSeverity && previousAnnotationSeverity instanceof HTMLSelectElement)) throw new Error('valid previous-annotation-severity not found');
+
+const annotationCount = document.getElementById('annotation-count');
+if (!(annotationCount && annotationCount instanceof HTMLSpanElement)) throw new Error('valid annotation-count not found');
+
 //buttons rather than links b/c we want to open in new tab and <a> behaves unintuitively in side panel
 const annotationGuideButton = document.getElementById('annotation-guide');
 if (!(annotationGuideButton && annotationGuideButton instanceof HTMLButtonElement)) throw new Error('valid annotation-guide button not found');
@@ -95,6 +101,8 @@ const manager = new SidePanelManager({
     annotatorActionStateChangeSeverity: annotatorActionStateChangeSeverity as HTMLSelectElement,
     annotatorExplanationField: annotatorExplanationField as HTMLTextAreaElement,
     annotatorStatusDiv: annotatorStatusDiv as HTMLDivElement,
+    previousAnnotationSeverity: previousAnnotationSeverity as HTMLSelectElement,
+    annotationCount: annotationCount as HTMLSpanElement,
     startButton: startButton as HTMLButtonElement,
     taskSpecField: taskSpecField as HTMLTextAreaElement,
     agentStatusDiv: agentTaskStatusDiv as HTMLDivElement,
@@ -121,6 +129,8 @@ userGuideButton.addEventListener('click', () => chrome.tabs.create({url: 'user_m
 
 annotatorStartButton.addEventListener('click', manager.startActionAnnotationBatch);
 annotatorEndButton.addEventListener('click', manager.endActionAnnotationBatch);
+
+previousAnnotationSeverity.addEventListener('change', manager.processPreviousAnnotationSeverityChange);
 
 startButton.addEventListener('click', manager.startTaskClickHandler);
 

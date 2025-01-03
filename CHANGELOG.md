@@ -4,11 +4,21 @@ Nontrivial changes to the extension are documented here.
 
 ## [Unreleased]
 ### Added
-
+- ability to view and revise the choice of severity level for the previous action annotation
+- ability to see how many action annotations have been made so far in the current batch
+- better handling of annotator side panel state reset when background or content scripts encounter problem during batch
+- better handling of annotator side panel elements being disabled when appropriate
+- improved visual rendering for disabled elements
 ### Updated
-
+- QoL improvement: severity dropdown stays at prior value after an annotation
+  - often you'll annotate a bunch of elements with the same level in a row
+  - the collapsing of MEDIUM into HIGH has made a streak of HIGH annotations more likely
 ### Removed
+- MEDIUM level for action state change severity (incorporated into HIGH level per researcher decision)
 
+
+## [1.1.0.A] - 2025-01-03?
+TODO
 
 ## [1.0.2.A] - 2024-12-19
 First annotator-mode-only version 
