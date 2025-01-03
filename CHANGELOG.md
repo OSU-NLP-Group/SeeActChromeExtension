@@ -4,6 +4,15 @@ Nontrivial changes to the extension are documented here.
 
 ## [Unreleased]
 ### Added
+
+### Updated
+
+### Removed
+
+
+
+## [1.1.0.A] - 2025-01-03
+### Added
 - ability to view and revise the choice of severity level for the previous action annotation
 - ability to see how many action annotations have been made so far in the current batch
 - better handling of annotator side panel state reset when background or content scripts encounter problem during batch
@@ -11,7 +20,7 @@ Nontrivial changes to the extension are documented here.
 - improved visual rendering for disabled elements
 - recording of statistic to allow post-processing scripts to make more confident determinations of when the mouse coordinates for an annotation are probably wrong
   - e.g. because the mouse cursor was moved inside a cross-origin iframe where the mouse position tracking doesn't work
-  - Note that using this measure _alone_ to detect annotations spoiled by cross-origin iframes will result in lots of false positives 
+  - Note that using this measure _alone_ to detect annotations spoiled by cross-origin iframes will result in lots of false positives
     - e.g. someone just puts the mouse over the target element and doesn't move it for 1-2 seconds while performing the keyboard combination for capturing an annotation
     - Better to use this only to disambiguate cases where the target element couldn't be determined
 - extra opt-in logging to troubleshoot very slow loading of side panel UI in some cases
@@ -22,10 +31,6 @@ Nontrivial changes to the extension are documented here.
 - when two notifications have the same summary message that's displayed and the second event occurs before the first notification's message disappeared, there'll be a ~10ms flicker of the summary message to indicate that a second event occurred which had the same summary message (but likely different details that're accessible on hover)
 ### Removed
 - MEDIUM level for action state change severity (incorporated into HIGH level per researcher decision)
-
-
-## [1.1.0.A] - 2025-01-03?
-TODO
 
 ## [1.0.2.A] - 2024-12-19
 First annotator-mode-only version 
