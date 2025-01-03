@@ -1,10 +1,14 @@
-// import {createNamedLogger} from "./utils/shared_logging_setup";
+import {createNamedLogger} from "./utils/shared_logging_setup";
+
+const logger = createNamedLogger('side-panel', false);
+logger.trace('side panel script loaded, beginning remainder of imports (after logging import)');
+
 import {SidePanelManager} from "./utils/SidePanelManager";
 
 import "./global_styles.css";
 import "./side_panel.css";
 
-// const logger = createNamedLogger('side-panel', false);
+logger.trace('side panel script imports finished, identifying elements by id');
 
 const eulaComplaintElem = document.getElementById('eula-complaint');
 if (!(eulaComplaintElem && eulaComplaintElem instanceof HTMLDivElement)) throw new Error('valid eula-complaint div not found');
@@ -35,6 +39,12 @@ if (!(annotatorExplanationField && annotatorExplanationField instanceof HTMLText
 
 const annotatorStatusDiv = document.getElementById('annotator-status');
 if (!(annotatorStatusDiv && annotatorStatusDiv instanceof HTMLDivElement)) throw new Error('valid annotator status div not found');
+
+const previousAnnotationSeverity = document.getElementById('previous-annotation-severity');
+if (!(previousAnnotationSeverity && previousAnnotationSeverity instanceof HTMLSelectElement)) throw new Error('valid previous-annotation-severity not found');
+
+const annotationCount = document.getElementById('annotation-count');
+if (!(annotationCount && annotationCount instanceof HTMLSpanElement)) throw new Error('valid annotation-count not found');
 
 //buttons rather than links b/c we want to open in new tab and <a> behaves unintuitively in side panel
 const annotationGuideButton = document.getElementById('annotation-guide');
@@ -85,6 +95,8 @@ if (!(monitorApproveButton && monitorApproveButton instanceof HTMLButtonElement)
 const monitorRejectButton = document.getElementById('reject');
 if (!(monitorRejectButton && monitorRejectButton instanceof HTMLButtonElement)) throw new Error('valid reject button not found');
 
+logger.trace('side panel script finished identifying elements by id, creating Side Panel Manager');
+
 const manager = new SidePanelManager({
     eulaComplaintContainer: eulaComplaintElem as HTMLDivElement,
     annotatorContainer: annotatorModeContainer as HTMLDivElement,
@@ -95,6 +107,8 @@ const manager = new SidePanelManager({
     annotatorActionStateChangeSeverity: annotatorActionStateChangeSeverity as HTMLSelectElement,
     annotatorExplanationField: annotatorExplanationField as HTMLTextAreaElement,
     annotatorStatusDiv: annotatorStatusDiv as HTMLDivElement,
+    previousAnnotationSeverity: previousAnnotationSeverity as HTMLSelectElement,
+    annotationCount: annotationCount as HTMLSpanElement,
     startButton: startButton as HTMLButtonElement,
     taskSpecField: taskSpecField as HTMLTextAreaElement,
     agentStatusDiv: agentTaskStatusDiv as HTMLDivElement,
@@ -110,6 +124,8 @@ const manager = new SidePanelManager({
     logsExportTimeScopeSelect: logsTimeScopeSelect as HTMLSelectElement,
 });
 
+logger.trace('side panel script finished creating Side Panel Manager, adding event listeners');
+
 document.addEventListener('mousemove', (e) => {
     manager.mouseClientX = e.clientX;
     manager.mouseClientY = e.clientY;
@@ -121,6 +137,8 @@ userGuideButton.addEventListener('click', () => chrome.tabs.create({url: 'user_m
 
 annotatorStartButton.addEventListener('click', manager.startActionAnnotationBatch);
 annotatorEndButton.addEventListener('click', manager.endActionAnnotationBatch);
+
+previousAnnotationSeverity.addEventListener('change', manager.processPreviousAnnotationSeverityChange);
 
 startButton.addEventListener('click', manager.startTaskClickHandler);
 
@@ -138,3 +156,5 @@ monitorRejectButton.addEventListener('click', manager.monitorRejectButtonClickHa
 agentTaskStatusDiv.addEventListener('mouseenter', manager.displayStatusPopup);
 agentTaskStatusDiv.addEventListener('mouseleave', () => manager.handleMouseLeaveStatus(agentTaskStatusDiv));
 statusPopup.addEventListener('mouseleave', () => manager.handleMouseLeaveStatus(statusPopup));
+
+logger.trace('side panel script finished adding event listeners, UI logic loading done');

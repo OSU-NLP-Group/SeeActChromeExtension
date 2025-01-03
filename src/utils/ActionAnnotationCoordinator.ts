@@ -8,7 +8,7 @@ import {
     base64ToByteArray,
     defaultIsAnnotatorMode,
     exampleSerializableElemData,
-    exampleViewportDetails,
+    exampleViewportDetails, isActionStateChangeSeverity,
     makeStrSafeForFilename,
     renderTs,
     renderUnknownValue,
@@ -81,6 +81,7 @@ export class ActionAnnotationCoordinator {
     targetElementsInBatch: Array<SerializableElementData | undefined> = [];
     annotationViewportInfosInBatch: ViewportDetails[] = [];
     mouseCoordsInBatch: { x: number, y: number }[] = [];
+    mouseCaptureStalenessesInBatch: number[] = [];
     mouseElemsInBatch: Array<SerializableElementData | undefined> = [];
     highlitElemsInBatch: Array<SerializableElementData | undefined> = [];
     contextScreenshotsInBatch: string[] = [];
@@ -99,6 +100,7 @@ export class ActionAnnotationCoordinator {
     currActionTargetElement: SerializableElementData | undefined;
     currActionViewportInfo: ViewportDetails | undefined;
     currActionMouseCoords: { x: number, y: number } | undefined;
+    currActionMouseCaptureStaleness: number | undefined;
     mousePosElement: SerializableElementData | undefined;
     highlitElement: SerializableElementData | undefined;
 
@@ -161,6 +163,8 @@ export class ActionAnnotationCoordinator {
             await this.mutex.runExclusive(async () => this.processAnnotationDetails(message));
         } else if (message.type === PanelToAnnotationCoordinatorPortMsgType.END_ANNOTATION_BATCH) {
             await this.mutex.runExclusive(async () => await this.concludeAnnotationsBatch());
+        } else if (message.type === PanelToAnnotationCoordinatorPortMsgType.REVISE_PREVIOUS_ANNOTATION_SEVERITY) {
+            await this.mutex.runExclusive(async () => await this.revisePreviousAnnotationSeverity(message));
         } else {
             this.logger.warn(`unrecognized message type from side panel: ${message.type} on port ${sidePanelPort.name}: ${JSON.stringify(message)
                 .slice(0, 100)}`);
@@ -256,6 +260,36 @@ export class ActionAnnotationCoordinator {
         });
     }
 
+    revisePreviousAnnotationSeverity = async (message: any) => {
+        if (this.state !== AnnotationCoordinatorState.IDLE) {
+            this.resetAnnotationCaptureCoordinator(`received 'revise previous annotation severity' message while in state ${AnnotationCoordinatorState[this.state]}`);
+            return;
+        }
+        if (this.actionSeveritiesInBatch.length === 0) {
+            this.resetAnnotationCaptureCoordinator("asked to revise previous annotation severity, but there are no annotations in the batch so far");
+            return;
+        }
+        if (!this.portToSidePanel) {
+            this.resetAnnotationCaptureCoordinator("no side panel port to send confirmation message (about revising previous annotation's severity) to");
+            return;
+        }
+
+        const newSeverityVal = message.newSeverity;
+        if (!isActionStateChangeSeverity(newSeverityVal)) {
+            this.resetAnnotationCaptureCoordinator(`invalid new severity value ${renderUnknownValue(newSeverityVal)} in message to revise previous annotation severity`);
+            return;
+        }
+
+        const prevAnnotIndex = this.actionSeveritiesInBatch.length - 1;
+        const prevAnnotSeverity = this.actionSeveritiesInBatch[prevAnnotIndex];
+
+        this.actionSeveritiesInBatch[prevAnnotIndex] = newSeverityVal;
+        this.portToSidePanel.postMessage({
+            type: AnnotationCoordinator2PanelPortMsgType.NOTIFICATION, msg: "Annotation severity revised",
+            details: `severity changed from ${prevAnnotSeverity} to ${newSeverityVal}`
+        });
+    }
+
     concludeAnnotationsBatch = async () => {
         if (this.state !== AnnotationCoordinatorState.IDLE) {
             this.resetAnnotationCaptureCoordinator(`asked to conclude annotations batch while in state ${AnnotationCoordinatorState[this.state]}`);
@@ -274,21 +308,25 @@ export class ActionAnnotationCoordinator {
             return;
         }
 
-        const numIds = this.annotationIdsInBatch.length, numActionTypes = this.actionTypesInBatch.length;
+        const numIds = this.annotationIdsInBatch.length;
+        const numActionTypes = this.actionTypesInBatch.length;
         const numSeverities = this.actionSeveritiesInBatch.length;
-        const numDescriptions = this.actionDescriptionsInBatch.length, numUrls = this.actionUrlsInBatch.length;
+        const numDescriptions = this.actionDescriptionsInBatch.length;
+        const numUrls = this.actionUrlsInBatch.length;
         const numTargetElems = this.targetElementsInBatch.length;
         const numViewportInfos = this.annotationViewportInfosInBatch.length;
-        const numMouseCoords = this.mouseCoordsInBatch.length, numMouseElems = this.mouseElemsInBatch.length;
+        const numMouseCoords = this.mouseCoordsInBatch.length;
+        const numMouseCaptureStalenesses = this.mouseCaptureStalenessesInBatch.length;
+        const numMouseElems = this.mouseElemsInBatch.length;
         const numHighlitElems = this.highlitElemsInBatch.length;
         const numContextScreenshots = this.contextScreenshotsInBatch.length;
         const numSetsOfInteractiveElements = this.interactiveElementsSetsForAnnotationsInBatch.length;
         const numHtmlDumps = this.annotationHtmlDumpsInBatch.length;
         if (numIds !== numActionTypes || numActionTypes !== numSeverities || numSeverities !== numDescriptions
             || numDescriptions !== numUrls || numUrls !== numTargetElems || numTargetElems !== numViewportInfos
-            || numViewportInfos !== numMouseCoords || numMouseCoords !== numMouseElems
-            || numMouseElems !== numHighlitElems || numHighlitElems !== numContextScreenshots
-            || numContextScreenshots !== numSetsOfInteractiveElements
+            || numViewportInfos !== numMouseCoords || numMouseCoords !== numMouseCaptureStalenesses
+            || numMouseCaptureStalenesses !== numMouseElems || numMouseElems !== numHighlitElems
+            || numHighlitElems !== numContextScreenshots || numContextScreenshots !== numSetsOfInteractiveElements
             || numSetsOfInteractiveElements !== numHtmlDumps) {
             this.resetAnnotationCaptureCoordinator("at end of batch, the lists for accumulating the different parts of each annotation in the batch had different lengths!",
                 `# annotations: ${numIds}, # action types: ${numActionTypes}, # severities: ${numSeverities}, # descriptions: ${numDescriptions}, # url's: ${numUrls}, # target elements (including entries where target element is undefined): ${numTargetElems}, # viewport info's: ${numViewportInfos}, # mouse coordinates: ${numMouseCoords}, # mouse elements: ${numMouseElems}; # highlighted elements: ${numHighlitElems}, # context screenshots: ${numContextScreenshots}, # sets of interactive elements: ${numSetsOfInteractiveElements}, # html dumps: ${numHtmlDumps}`);
@@ -309,7 +347,7 @@ export class ActionAnnotationCoordinator {
         } else { this.currAnnotationAction = actionTypeVal; }
 
         const actionStateChangeSeverityVal = message.actionStateChangeSeverity;
-        if (!Object.values(ActionStateChangeSeverity).includes(actionStateChangeSeverityVal)) {
+        if (!isActionStateChangeSeverity(actionStateChangeSeverityVal)) {
             return `invalid action state change severity value ${renderUnknownValue(actionStateChangeSeverityVal)} in annotation details message from side panel`;
         } else { this.currAnnotationStateChangeSeverity = actionStateChangeSeverityVal; }
 
@@ -399,7 +437,9 @@ export class ActionAnnotationCoordinator {
             this.logger.error("no current action viewport info when storing a completed action annotation");
         } else if (!this.currActionMouseCoords) {
             this.logger.error("no current action mouse coordinates when storing a completed action annotation");
-        } //mouse position element can be undefined, same with highlighted element
+        } else if (this.currActionMouseCaptureStaleness === undefined) {
+            this.logger.error("no current action mouse capture staleness when storing a completed action annotation");
+        }//mouse position element can be undefined, same with highlighted element
         else if (!this.currActionContextScreenshotBase64) {
             this.logger.error("no current action context screenshot when storing a completed action annotation");
         }//targeted screenshot can be undefined
@@ -416,20 +456,22 @@ export class ActionAnnotationCoordinator {
             this.targetElementsInBatch.push(this.currActionTargetElement);
             this.annotationViewportInfosInBatch.push(this.currActionViewportInfo);
             this.mouseCoordsInBatch.push(this.currActionMouseCoords);
+            this.mouseCaptureStalenessesInBatch.push(this.currActionMouseCaptureStaleness);
             this.mouseElemsInBatch.push(this.mousePosElement);
             this.highlitElemsInBatch.push(this.highlitElement);
             this.contextScreenshotsInBatch.push(this.currActionContextScreenshotBase64);
             this.interactiveElementsSetsForAnnotationsInBatch.push(this.currActionInteractiveElements);
             this.annotationHtmlDumpsInBatch.push(this.currActionHtmlDump);
 
-            let annotationSummary = `annotation id ${this.currAnnotationId}; mouse coords: ${JSON.stringify(this.currActionMouseCoords)}, scroll position: ${this.currActionViewportInfo.scrollX}, ${this.currActionViewportInfo.scrollY}`;
+            let annotationSummary = `annotation id ${this.currAnnotationId}; mouse coords: ${JSON.stringify(this.currActionMouseCoords)}, mouse capture staleness (in milliseconds): ${this.currActionMouseCaptureStaleness}, scroll position: ${this.currActionViewportInfo.scrollX}, ${this.currActionViewportInfo.scrollY}`;
             if (this.currActionTargetElement) {annotationSummary += `;\ntarget element: ${this.currActionTargetElement.description.slice(100)}`;}
             if (this.currAnnotationActionDesc) {annotationSummary += `;\naction description: ${this.currAnnotationActionDesc.slice(100)}`;}
             this.portToSidePanel!.postMessage({//null check was performed at top of function
                 type: AnnotationCoordinator2PanelPortMsgType.ANNOTATION_CAPTURED_CONFIRMATION,
                 summary: annotationSummary, wasTargetIdentified: this.currActionTargetElement !== undefined || this.mousePosElement !== undefined,
                 wasTargetNotRecognizedAsInteractive: this.mousePosElement !== undefined && this.currActionTargetElement === undefined,
-                annotId: this.currAnnotationId
+                annotId: this.currAnnotationId, severity: this.currAnnotationStateChangeSeverity,
+                annotationCount: this.annotationIdsInBatch.length
             });
             this.resetCurrAnnotationDetails();
             this.logger.trace("action annotation stored in batch");
@@ -460,6 +502,11 @@ export class ActionAnnotationCoordinator {
         if (typeof mouseXVal !== "number" || typeof mouseYVal !== "number") {
             return `invalid mouse coordinates ${renderUnknownValue(mouseXVal)}, ${renderUnknownValue(mouseYVal)} in annotation page info message from content script`;
         } else { this.currActionMouseCoords = {x: mouseXVal, y: mouseYVal}; }
+
+        const mouseCaptureStalenessVal = message.mouseCaptureStaleness;
+        if (typeof mouseCaptureStalenessVal !== "number" || mouseCaptureStalenessVal < 0) {
+            return `invalid mouse capture staleness value ${renderUnknownValue(mouseCaptureStalenessVal)} in annotation page info message from content script`;
+        } else { this.currActionMouseCaptureStaleness = mouseCaptureStalenessVal; }
 
         const htmlDumpVal: unknown = message.htmlDump;
         if (typeof htmlDumpVal !== "string") {
@@ -625,6 +672,7 @@ export class ActionAnnotationCoordinator {
             const targetElementData = this.targetElementsInBatch[annotationIdx];
             const viewportInfo = this.annotationViewportInfosInBatch[annotationIdx];
             const mouseCoords = this.mouseCoordsInBatch[annotationIdx];
+            const mouseCaptureStaleness = this.mouseCaptureStalenessesInBatch[annotationIdx];
             const mousePosElementData = this.mouseElemsInBatch[annotationIdx];
             const highlitElementData = this.highlitElemsInBatch[annotationIdx];
             const contextScreenshotBase64 = this.contextScreenshotsInBatch[annotationIdx];
@@ -642,7 +690,8 @@ export class ActionAnnotationCoordinator {
                 annotationId: annotationId, actionType: actionType,
                 actionStateChangeSeverity: actionStateChangeSeverity, description: actionDescription,
                 url: annotationUrl, targetElementData: targetElementData, viewportInfo: viewportInfo,
-                mousePosition: mouseCoords, mousePosElementData: mousePosElementData,
+                mousePosition: mouseCoords, mouseCaptureStalenessInMs: mouseCaptureStaleness,
+                mousePosElementData: mousePosElementData,
                 actuallyHighlightedElementData: highlitElementData
             };
             const annotationDetailsStr = JSON.stringify(annotationDtlsObj, replaceBlankWithNull, 4);
@@ -765,8 +814,16 @@ export class ActionAnnotationCoordinator {
 
     resetAnnotationCaptureCoordinator = (reason: string, details?: string, wasResetFromError = true): void => {
         (wasResetFromError ? this.logger.error : this.logger.info)(`terminating the capture of action annotation batch ${this.batchId}${this.currAnnotationId ? ` (with in-progress annotation id ${this.currAnnotationId})`: ""} for reason: ${reason} with details ${details}`);
-        this.portToSidePanel?.postMessage(
-            {type: AnnotationCoordinator2PanelPortMsgType.NOTIFICATION, msg: reason, details: details});
+        if (this.batchId && wasResetFromError) {
+            this.portToSidePanel?.postMessage({
+                type: AnnotationCoordinator2PanelPortMsgType.ABORT_ANNOTATION_BATCH,
+                error: `Annotation batch terminated for reason: ${reason};\ndetails: ${details}`
+            })
+        } else {
+            this.portToSidePanel?.postMessage(
+                {type: AnnotationCoordinator2PanelPortMsgType.NOTIFICATION, msg: reason, details: details});
+        }
+
         this.state = AnnotationCoordinatorState.IDLE;
         this.isBatchInDialog = false;
         this.batchId = undefined;
@@ -786,6 +843,7 @@ export class ActionAnnotationCoordinator {
         this.targetElementsInBatch = [];
         this.annotationViewportInfosInBatch = [];
         this.mouseCoordsInBatch = [];
+        this.mouseCaptureStalenessesInBatch = [];
         this.mouseElemsInBatch = [];
         this.highlitElemsInBatch = [];
         this.contextScreenshotsInBatch = [];
@@ -804,6 +862,7 @@ export class ActionAnnotationCoordinator {
         this.currActionTargetElement = undefined;
         this.currActionViewportInfo = undefined;
         this.currActionMouseCoords = undefined;
+        this.currActionMouseCaptureStaleness = undefined;
         this.mousePosElement = undefined;
         this.highlitElement = undefined;
         this.currActionContextScreenshotBase64 = undefined;

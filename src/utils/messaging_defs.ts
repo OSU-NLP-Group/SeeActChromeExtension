@@ -64,6 +64,7 @@ export enum PanelToAnnotationCoordinatorPortMsgType {
     ANNOTATION_DETAILS = "annotationDetails",
     START_ANNOTATION_BATCH = "startAnnotationBatch",
     END_ANNOTATION_BATCH = "endAnnotationBatch",
+    REVISE_PREVIOUS_ANNOTATION_SEVERITY= "revisePreviousAnnotationLevel",
 }
 
 export enum AnnotationCoordinator2PanelPortMsgType {
@@ -72,6 +73,7 @@ export enum AnnotationCoordinator2PanelPortMsgType {
     NOTIFICATION = "annotationNotification",
     ANNOTATION_CAPTURED_CONFIRMATION = "annotationCapturedConfirmation",
     ABORT_CHUNKED_DOWNLOAD = "abortChunkedDownload",//for when the controller needs to tell the side panel to abort a chunked download (i.e. something went wrong while sending a huge annotations-batch zip file to the side panel for download)
+    ABORT_ANNOTATION_BATCH = "abortAnnotationBatch",
 }
 
 export enum Page2AnnotationCoordinatorPortMsgType {
